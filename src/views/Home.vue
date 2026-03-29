@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch } from "vue"
 import { db } from "../firebase"
-import { collection, query, where, getDocs } from "firebase/firestore"
+import { doc, getDoc } from "firebase/firestore"
 
 const props = defineProps({
   uid: String
@@ -16,100 +16,82 @@ const loadSite = async (uid) => {
   loading.value = true
 
   try {
-    // 🔥 QUERY PAR userId
-    const q = query(
-      collection(db, "sites"),
-      where("userId", "==", uid)
-    )
+    const cleanUid = uid.trim()
 
-    const snap = await getDocs(q)
+    console.log("🔥 UID:", cleanUid)
 
-    if (!snap.empty) {
-      const data = snap.docs[0].data()
+    const refDoc = doc(db, "users", cleanUid)
+    const snap = await getDoc(refDoc)
+
+    if (snap.exists()) {
+      const data = snap.data()
+
+      console.log("🔥 DATA FOUND:", data)
 
       site.value = {
-        ...data,
+        plan: data.plan || "free",
         sections: Array.isArray(data.sections) ? data.sections : []
       }
-
-      console.log("🔥 SITE CHARGÉ =", site.value)
     } else {
+      console.log("❌ DOC NOT FOUND")
       site.value = null
-      console.log("❌ Aucun site trouvé pour userId =", uid)
     }
 
   } catch (e) {
-    console.error("Firestore error:", e)
+    console.error("🔥 ERROR:", e)
+    site.value = null
   }
 
   loading.value = false
 }
 
-// 🔥 reactive au changement de uid
-watch(
-  () => props.uid,
-  (v) => loadSite(v),
-  { immediate: true }
-)
+watch(() => props.uid, (newUid) => {
+  loadSite(newUid)
+}, { immediate: true })
 </script>
 
 <template>
   <div class="p-6">
 
-    <h1 class="text-xl font-bold mb-4">
+    <h1 class="text-xl font-bold">
       SaaasGenerator
     </h1>
 
-    <p class="text-gray-500 mb-4">
-      UID client : {{ props.uid }}
+    <p v-if="uid">
+      UID client : {{ uid }}
     </p>
 
-    <div v-if="loading">
+    <p v-if="loading">
       Chargement...
-    </div>
+    </p>
 
     <div v-else-if="site">
+      <p>Plan: {{ site.plan }}</p>
 
-      <h2 class="font-bold text-lg mb-2">
-        Plan: {{ site.plan }}
-      </h2>
-
-      <!-- SECTIONS -->
       <div v-if="site.sections.length">
-
         <div
-          v-for="(section, index) in site.sections"
-          :key="index"
-          class="border p-2 mb-2"
+          v-for="(section, i) in site.sections"
+          :key="i"
+          class="p-4 border mt-2"
         >
+          <div v-if="section.type === 'text'">
+            {{ section.content }}
+          </div>
 
-          <!-- HERO -->
-          <div v-if="section.type === 'hero'">
+          <div v-else-if="section.type === 'hero'">
             <h2 class="text-2xl font-bold">
               {{ section.title }}
             </h2>
           </div>
-
-          <!-- TEXT -->
-          <div v-else-if="section.type === 'text'">
-            <p>
-              {{ section.content }}
-            </p>
-          </div>
-
         </div>
-
       </div>
 
-      <p v-else class="text-red-500">
-        Aucune section disponible
-      </p>
-
+      <p v-else>Aucune section</p>
     </div>
 
-    <div v-else class="text-red-500">
+    <p v-else class="text-red-500">
       Site introuvable
-    </div>
+    </p>
 
   </div>
 </template>

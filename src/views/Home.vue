@@ -9,45 +9,57 @@ const props = defineProps({
 
 const site = ref(null)
 const loading = ref(false)
+const error = ref(null)
 
 const loadSite = async (uid) => {
-  if (!uid) return
+  if (!uid) {
+    error.value = "UID manquant"
+    return
+  }
 
   loading.value = true
+  error.value = null
 
   try {
-    const cleanUid = uid.trim()
+    const cleanUid = decodeURIComponent(uid).trim()
 
-    console.log("🔥 UID:", cleanUid)
+    console.log("🔥 CLEAN UID =", cleanUid)
 
-    const refDoc = doc(db, "users", cleanUid)
-    const snap = await getDoc(refDoc)
+    const docRef = doc(db, "users", cleanUid)
+    const snap = await getDoc(docRef)
+
+    console.log("🔥 EXISTS =", snap.exists())
 
     if (snap.exists()) {
       const data = snap.data()
 
-      console.log("🔥 DATA FOUND:", data)
+      console.log("🔥 DATA =", data)
 
       site.value = {
         plan: data.plan || "free",
         sections: Array.isArray(data.sections) ? data.sections : []
       }
     } else {
-      console.log("❌ DOC NOT FOUND")
       site.value = null
+      error.value = "Site introuvable"
     }
 
   } catch (e) {
-    console.error("🔥 ERROR:", e)
+    console.error("🔥 FIRESTORE ERROR:", e)
+    error.value = "Erreur chargement Firestore"
     site.value = null
   }
 
   loading.value = false
 }
 
-watch(() => props.uid, (newUid) => {
-  loadSite(newUid)
-}, { immediate: true })
+watch(
+  () => props.uid,
+  (newUid) => {
+    loadSite(newUid)
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -65,15 +77,24 @@ watch(() => props.uid, (newUid) => {
       Chargement...
     </p>
 
-    <div v-else-if="site">
-      <p>Plan: {{ site.plan }}</p>
+    <p v-if="error" class="text-red-500">
+      {{ error }}
+    </p>
+
+    <div v-if="site">
+
+      <p class="font-bold mt-2">
+        Plan: {{ site.plan }}
+      </p>
 
       <div v-if="site.sections.length">
+
         <div
           v-for="(section, i) in site.sections"
           :key="i"
-          class="p-4 border mt-2"
+          class="border p-3 mt-2 rounded"
         >
+
           <div v-if="section.type === 'text'">
             {{ section.content }}
           </div>
@@ -83,15 +104,20 @@ watch(() => props.uid, (newUid) => {
               {{ section.title }}
             </h2>
           </div>
+
+          <div v-else>
+            {{ section }}
+          </div>
+
         </div>
+
       </div>
 
-      <p v-else>Aucune section</p>
-    </div>
+      <p v-else class="text-gray-500">
+        Aucune section
+      </p>
 
-    <p v-else class="text-red-500">
-      Site introuvable
-    </p>
+    </div>
 
   </div>
 </template>

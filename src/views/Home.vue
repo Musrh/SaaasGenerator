@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue"
+import { ref, watch } from "vue"
 import { db } from "../firebase"
 import { doc, getDoc } from "firebase/firestore"
 
@@ -8,105 +8,87 @@ const props = defineProps({
 })
 
 const site = ref(null)
-const loading = ref(true)
-const error = ref(false)
+const loading = ref(false)
 
-/* 🔥 LOAD FIRESTORE SITE */
-const loadSite = async () => {
+const loadSite = async (uid) => {
+  if (!uid) return
+
+  const cleanUid = uid.trim().replace(/\s/g, "")
+
+  loading.value = true
+
   try {
-
-    if (!props.uid) {
-      error.value = true
-      loading.value = false
-      return
-    }
-
-    // 🔥 COLLECTION CORRECTE : sites
-    const snap = await getDoc(doc(db, "sites", props.uid))
+    const snap = await getDoc(doc(db, "sites", cleanUid))
 
     if (snap.exists()) {
-      site.value = snap.data()
+      const data = snap.data()
+
+      console.log("🔥 RAW DATA =", data)
+
+      site.value = {
+        ...data,
+        sections: Array.isArray(data.sections) ? data.sections : []
+      }
+
+      console.log("🔥 SECTIONS =", site.value.sections)
+
     } else {
-      console.log("Site introuvable")
-      error.value = true
+      site.value = null
     }
 
   } catch (e) {
     console.error("Firestore error:", e)
-    error.value = true
-  } finally {
-    loading.value = false
   }
+
+  loading.value = false
 }
 
-onMounted(loadSite)
+watch(
+  () => props.uid,
+  (v) => loadSite(v),
+  { immediate: true }
+)
 </script>
 
 <template>
   <div class="p-6">
 
-    <!-- LOADING -->
-    <div v-if="loading" class="text-center text-gray-500">
-      Chargement du site...
-    </div>
+    <h1 class="text-xl font-bold">SaaasGenerator</h1>
 
-    <!-- ERROR -->
-    <div v-else-if="error" class="text-red-500 text-center">
-      Site introuvable ou erreur de chargement
-    </div>
+    <p class="text-gray-500 mb-4">
+      UID: {{ props.uid }}
+    </p>
 
-    <!-- SITE RENDER -->
-    <div v-else>
+    <div v-if="loading">Chargement...</div>
 
-      <!-- PLAN -->
-      <h1 class="text-2xl font-bold mb-4">
+    <div v-else-if="site">
+
+      <h2 class="font-bold">
         Plan: {{ site.plan }}
-      </h1>
+      </h2>
 
-      <!-- SECTIONS -->
-      <div v-if="site.sections && site.sections.length">
+      <div v-if="site.sections.length">
 
         <div
-          v-for="(section, index) in site.sections"
-          :key="index"
-          class="mb-4"
+          v-for="(s, i) in site.sections"
+          :key="i"
+          class="border p-2 mt-2"
         >
-
-          <!-- TEXT -->
-          <p v-if="section.type === 'text'" class="text-lg">
-            {{ section.content }}
+          <p v-if="s.type === 'text'">
+            {{ s.content }}
           </p>
-
-          <!-- TITLE (bonus futur) -->
-          <h2 v-else-if="section.type === 'title'" class="text-2xl font-bold">
-            {{ section.content }}
-          </h2>
-
-          <!-- IMAGE (bonus futur) -->
-          <img
-            v-else-if="section.type === 'image'"
-            :src="section.url"
-            class="w-full rounded-lg"
-          />
-
-          <!-- BUTTON (bonus futur) -->
-          <a
-            v-else-if="section.type === 'button'"
-            :href="section.link"
-            class="inline-block bg-blue-500 text-white px-4 py-2 rounded"
-          >
-            {{ section.text }}
-          </a>
-
         </div>
 
       </div>
 
-      <!-- EMPTY STATE -->
-      <div v-else class="text-gray-400 text-center">
+      <p v-else class="text-red-500">
         Aucune section disponible
-      </div>
+      </p>
 
+    </div>
+
+    <div v-else class="text-red-500">
+      Site introuvable
     </div>
 
   </div>

@@ -1,17 +1,32 @@
 <script setup>
-import { useRoute } from "vue-router"
 
-const route = useRoute()
+// 🔥 récupérer UID depuis URL (SANS vue-router)
+const hash = window.location.hash
 
-// 🔥 récupérer uid depuis URL
-const uid = route.query.uid
+let uid = null
 
-console.log("USER ID =", uid)
+if (hash.includes("uid=")) {
+  uid = hash.split("uid=")[1]
+}
+
+console.log("UID =", uid)
+
 </script>
 
 <template>
-  <div>
-    <h1>SaaasGenerator</h1>
-    <p>UID : {{ uid }}</p>
+  <div class="p-6">
+
+    <h1 class="text-2xl font-bold">
+      SaaasGenerator
+    </h1>
+
+    <p v-if="uid">
+      UID client : {{ uid }}
+    </p>
+
+    <p v-else class="text-red-500">
+      Aucun UID reçu
+    </p>
+
   </div>
 </template>

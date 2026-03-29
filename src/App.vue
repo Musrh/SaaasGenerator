@@ -6,10 +6,18 @@ const hash = window.location.hash
 let uid = null
 
 if (hash.includes("uid=")) {
-  uid = hash.split("uid=")[1].split("&")[0].trim()
+  uid = hash.split("uid=")[1].split("&")[0]
 }
+
+if (uid) {
+  uid = decodeURIComponent(uid).trim()
+}
+
+console.log("🔥 UID FINAL =", uid)
 </script>
 
 <template>
-  <Home :uid="uid" />
+  <div>
+    <Home :uid="uid" />
+  </div>
 </template>

@@ -18,15 +18,14 @@ const site = ref({
       name: "Home",
       sections: []
     }
-  ],
-  menu: ["Home"]
+  ]
 })
 
 const mode = ref("edit")
 const loading = ref(false)
 const error = ref("")
 const activeSectionIndex = ref(null)
-const currentPageIndex = ref(0)
+const currentPageName = ref("Home")
 
 /* ================= LOAD ================= */
 const loadSite = async (uid) => {
@@ -45,9 +44,10 @@ const loadSite = async (uid) => {
         theme: data.theme || site.value.theme,
         pages: data.pages?.length
           ? data.pages
-          : [{ id: Date.now(), name: "Home", sections: [] }],
-        menu: data.menu?.length ? data.menu : ["Home"]
+          : [{ id: Date.now(), name: "Home", sections: [] }]
       }
+
+      currentPageName.value = site.value.pages[0].name
     } else {
       error.value = "Site introuvable"
     }
@@ -61,7 +61,12 @@ const loadSite = async (uid) => {
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= PAGES ================= */
+/* ================= GET PAGE ================= */
+const currentPage = () => {
+  return site.value.pages.find(p => p.name === currentPageName.value)
+}
+
+/* ================= MENU ================= */
 const addPage = () => {
   const newName = "Page " + (site.value.pages.length + 1)
 
@@ -71,26 +76,28 @@ const addPage = () => {
     sections: []
   })
 
-  site.value.menu.push(newName)
+  currentPageName.value = newName
 }
 
 const deletePage = (i) => {
-  site.value.pages.splice(i, 1)
-  site.value.menu.splice(i, 1)
+  const removed = site.value.pages[i]
 
-  if (currentPageIndex.value >= site.value.pages.length) {
-    currentPageIndex.value = 0
+  site.value.pages.splice(i, 1)
+
+  if (currentPageName.value === removed.name) {
+    currentPageName.value = site.value.pages[0]?.name || ""
   }
 }
 
-/* ================= MENU NAV ================= */
-const goToPage = (index) => {
-  currentPageIndex.value = index
+const goToPage = (name) => {
+  currentPageName.value = name
   activeSectionIndex.value = null
 }
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
+  const page = currentPage()
+
   const map = {
     hero: { type: "hero", title: "Hero", style: {} },
     text: { type: "text", content: "Texte...", style: {} },
@@ -100,14 +107,15 @@ const addSection = (type) => {
     footer: { type: "footer", text: "Footer", style: {} }
   }
 
-  site.value.pages[currentPageIndex.value].sections.push({
+  page.sections.push({
     id: Date.now(),
     ...map[type]
   })
 }
 
 const deleteSection = (i) => {
-  site.value.pages[currentPageIndex.value].sections.splice(i, 1)
+  const page = currentPage()
+  page.sections.splice(i, 1)
   activeSectionIndex.value = null
 }
 
@@ -117,31 +125,13 @@ const saveSite = async () => {
 
   await updateDoc(doc(db, "users", props.uid), {
     theme: site.value.theme,
-    pages: site.value.pages,
-    menu: site.value.menu
+    pages: site.value.pages
   })
 
   alert("Saved ✔")
 }
 
-/* ================= UPLOAD ================= */
-const uploadImage = (e, section) => {
-  const file = e.target.files[0]
-  const reader = new FileReader()
-
-  reader.onload = () => section.url = reader.result
-  reader.readAsDataURL(file)
-}
-
-const uploadGallery = (e, section) => {
-  Array.from(e.target.files).forEach(file => {
-    const reader = new FileReader()
-    reader.onload = () => section.images.push(reader.result)
-    reader.readAsDataURL(file)
-  })
-}
-
-/* ================= STYLE ================= */
+/* ================= STYLE (RÉTABLI) ================= */
 const setStyle = (section, type) => {
   section.style = section.style || {}
 
@@ -174,6 +164,23 @@ const setColor = (section, e) => {
 const setBg = (section, e) => {
   section.style = section.style || {}
   section.style.backgroundColor = e.target.value
+}
+
+/* ================= MEDIA ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  const reader = new FileReader()
+
+  reader.onload = () => section.url = reader.result
+  reader.readAsDataURL(file)
+}
+
+const uploadGallery = (e, section) => {
+  Array.from(e.target.files).forEach(file => {
+    const reader = new FileReader()
+    reader.onload = () => section.images.push(reader.result)
+    reader.readAsDataURL(file)
+  })
 }
 </script>
 
@@ -211,25 +218,25 @@ const setBg = (section, e) => {
 <p v-if="loading">Loading...</p>
 <p v-if="error" class="text-red-500">{{ error }}</p>
 
-<!-- 🔥 MENU -->
+<!-- 🔥 MENU (liens pages) -->
 <div class="flex gap-4 mb-6 border-b pb-2">
 
   <div
-    v-for="(m,i) in site.menu"
-    :key="i"
-    @click="goToPage(i)"
-    class="cursor-pointer px-2 py-1 border rounded"
-    :class="currentPageIndex===i ? 'bg-black text-white' : ''"
+    v-for="(p,i) in site.pages"
+    :key="p.id"
+    @click="goToPage(p.name)"
+    class="cursor-pointer px-3 py-1 border rounded"
+    :class="currentPageName===p.name ? 'bg-black text-white' : ''"
   >
-    {{ m }}
+    {{ p.name }}
   </div>
 
 </div>
 
-<!-- 🔥 EDIT -->
+<!-- 🔥 EDIT MODE -->
 <div v-if="mode==='edit'">
 
-  <!-- pages edit -->
+  <!-- pages editor -->
   <div class="mb-4">
     <div v-for="(p,i) in site.pages" :key="p.id" class="flex gap-2 mb-2">
 
@@ -239,9 +246,9 @@ const setBg = (section, e) => {
     </div>
   </div>
 
-  <!-- sections -->
+  <!-- SECTIONS -->
   <div
-    v-for="(s,i) in site.pages[currentPageIndex].sections"
+    v-for="(s,i) in currentPage().sections"
     :key="s.id"
     class="border p-3 mb-3 cursor-pointer"
     @click="activeSectionIndex=i"
@@ -257,7 +264,7 @@ const setBg = (section, e) => {
 
     <div v-if="s.type==='image'">
       <input type="file" @change="uploadImage($event,s)" />
-      <img v-if="s.url" :src="s.url" class="w-full"/>
+      <img v-if="s.url" :src="s.url"/>
     </div>
 
     <div v-if="s.type==='gallery'">
@@ -273,7 +280,7 @@ const setBg = (section, e) => {
 <!-- 🔥 PREVIEW -->
 <div v-else>
 
-  <div v-for="s in site.pages[currentPageIndex].sections" :key="s.id" :style="s.style">
+  <div v-for="s in currentPage().sections" :key="s.id" :style="s.style">
 
     <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
     <p v-if="s.type==='text'">{{ s.content }}</p>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, onMounted, watch } from "vue"
 
 /* ================= SITE ================= */
 const site = ref({
@@ -17,6 +17,27 @@ const site = ref({
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
+const isSaved = ref(true)
+
+/* ================= LOAD ================= */
+onMounted(() => {
+  const saved = localStorage.getItem("siteData")
+  if (saved) {
+    site.value = JSON.parse(saved)
+  }
+})
+
+/* ================= AUTO UNSAVED ================= */
+watch(site, () => {
+  isSaved.value = false
+}, { deep: true })
+
+/* ================= SAVE ================= */
+const saveSite = () => {
+  localStorage.setItem("siteData", JSON.stringify(site.value))
+  isSaved.value = true
+  alert("✅ Site sauvegardé")
+}
 
 /* ================= PAGE ================= */
 const currentPage = computed(() =>
@@ -33,7 +54,7 @@ const addPage = () => {
     id: Date.now(),
     name: "Nouvelle page",
     sections: [
-      { id: Date.now(), type: "text", content: "Nouvelle page ✨", style: {} }
+      { id: Date.now(), type: "text", content: "Contenu de la page ✨", style: {} }
     ]
   })
 }
@@ -80,17 +101,9 @@ const setStyle = (type, value=null) => {
     s.style.textDecoration = s.style.textDecoration === "underline" ? "none" : "underline"
   }
 
-  if (type === "align") {
-    s.style.textAlign = value
-  }
-
-  if (type === "color") {
-    s.style.color = value
-  }
-
-  if (type === "bg") {
-    s.style.backgroundColor = value
-  }
+  if (type === "align") s.style.textAlign = value
+  if (type === "color") s.style.color = value
+  if (type === "bg") s.style.backgroundColor = value
 }
 
 /* ================= IMAGE ================= */
@@ -104,77 +117,90 @@ const uploadImage = (e, section) => {
   }
   reader.readAsDataURL(file)
 }
+
+/* ================= PREVIEW ================= */
+const goPreview = () => {
+  if (!isSaved.value) {
+    alert("⚠️ Sauvegarde avant Aperçu")
+    return
+  }
+  mode.value = "preview"
+}
 </script>
 
 <template>
 <div class="min-h-screen bg-gray-50">
 
-<!-- ================= NAVBAR SITE ================= -->
+<!-- ================= NAVBAR ================= -->
 <div class="fixed top-0 w-full bg-white shadow z-50">
 
-  <!-- MENU SITE -->
-  <div class="flex items-center justify-between px-4 py-3 border-b">
+  <div class="flex justify-between items-center px-4 py-3 border-b">
 
-    <div class="font-bold text-lg">🌐 Mon Site</div>
+    <div class="font-bold">🌐 Mon Site</div>
 
-    <div class="flex gap-4 items-center">
-
+    <div class="flex gap-4">
       <div
         v-for="(p,i) in site.pages"
         :key="p.id"
         @click="goToPage(i)"
-        class="cursor-pointer hover:text-blue-500"
+        class="cursor-pointer"
         :class="currentPageIndex===i ? 'text-blue-600 font-bold' : ''"
       >
         {{ p.name }}
       </div>
 
-      <!-- EDIT ONLY -->
-      <button v-if="mode==='edit'" @click="addPage" class="text-green-600">
-        ➕
+      <button v-if="mode==='edit'" @click="addPage">➕</button>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="flex gap-2">
+
+      <button
+        v-if="mode==='edit'"
+        @click="saveSite"
+        class="bg-green-500 text-white px-3 py-1 rounded"
+      >
+        💾 Sauvegarder
+      </button>
+
+      <button
+        v-if="mode==='edit'"
+        @click="goPreview"
+        class="bg-blue-500 text-white px-3 py-1 rounded"
+      >
+        👁 Aperçu
+      </button>
+
+      <button
+        v-else
+        @click="mode='edit'"
+        class="bg-black text-white px-3 py-1 rounded"
+      >
+        ✏️ Edit
       </button>
 
     </div>
 
-    <!-- MODE SWITCH -->
-    <button
-      v-if="mode==='edit'"
-      @click="mode='preview'"
-      class="bg-blue-500 text-white px-3 py-1 rounded"
-    >
-      👁 Aperçu
-    </button>
-
-    <button
-      v-else
-      @click="mode='edit'"
-      class="bg-black text-white px-3 py-1 rounded"
-    >
-      ✏️ Edit
-    </button>
-
   </div>
 
-  <!-- ================= TOOLBAR ================= -->
-  <div v-if="mode==='edit'" class="flex flex-wrap gap-2 p-2 bg-gray-100">
+  <!-- TOOLBAR -->
+  <div v-if="mode==='edit'" class="flex gap-2 p-2 bg-gray-100">
 
-    <button @click="addSection('text')" class="btn">📝 Texte</button>
-    <button @click="addSection('main')" class="btn">📦 Section</button>
-    <button @click="addSection('image')" class="btn">🖼 Image</button>
+    <button @click="addSection('text')" class="btn">📝</button>
+    <button @click="addSection('main')" class="btn">📦</button>
+    <button @click="addSection('image')" class="btn">🖼</button>
 
     <div v-if="activeSection" class="flex gap-2 ml-4">
-
-      <button @click="setStyle('bold')" class="btn">𝐁</button>
-      <button @click="setStyle('italic')" class="btn">𝑰</button>
-      <button @click="setStyle('underline')" class="btn">U̲</button>
+      <button @click="setStyle('bold')" class="btn">B</button>
+      <button @click="setStyle('italic')" class="btn">I</button>
+      <button @click="setStyle('underline')" class="btn">U</button>
 
       <button @click="setStyle('align','left')" class="btn">⬅</button>
       <button @click="setStyle('align','center')" class="btn">⬛</button>
       <button @click="setStyle('align','right')" class="btn">➡</button>
 
-      🎨 <input type="color" @input="setStyle('color',$event.target.value)" />
-      🧱 <input type="color" @input="setStyle('bg',$event.target.value)" />
-
+      <input type="color" @input="setStyle('color',$event.target.value)" />
+      <input type="color" @input="setStyle('bg',$event.target.value)" />
     </div>
 
   </div>
@@ -184,13 +210,13 @@ const uploadImage = (e, section) => {
 <!-- ================= CONTENT ================= -->
 <div class="pt-28 p-4">
 
-  <!-- EDIT MODE -->
+  <!-- EDIT -->
   <div v-if="mode==='edit'">
 
     <div
       v-for="(s,i) in currentPage.sections"
       :key="s.id"
-      class="bg-white p-4 mb-3 rounded shadow cursor-pointer"
+      class="bg-white p-4 mb-3 rounded shadow"
       @click="activeSectionIndex=i"
       :style="s.style"
     >
@@ -199,47 +225,30 @@ const uploadImage = (e, section) => {
         ❌
       </button>
 
-      <input
-        v-if="s.type==='text'"
-        v-model="s.content"
-        class="w-full border p-2 rounded"
-      />
+      <input v-if="s.type==='text'" v-model="s.content" class="w-full border p-2"/>
 
       <textarea
         v-if="s.type==='main'"
         v-model="s.content"
-        class="w-full min-h-[200px] border p-2 rounded"
+        class="w-full min-h-[200px] border"
       />
 
       <div v-if="s.type==='image'">
         <input type="file" @change="uploadImage($event,s)" />
-        <img v-if="s.url" :src="s.url" class="w-full mt-2 rounded"/>
+        <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
       </div>
 
     </div>
 
   </div>
 
-  <!-- PREVIEW MODE -->
+  <!-- PREVIEW -->
   <div v-else>
-
-    <div
-      v-for="s in currentPage.sections"
-      :key="s.id"
-      :style="s.style"
-      class="mb-4"
-    >
-
+    <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
       <p v-if="s.type==='text'">{{ s.content }}</p>
-
-      <div v-if="s.type==='main'" class="min-h-[300px]">
-        {{ s.content }}
-      </div>
-
-      <img v-if="s.type==='image'" :src="s.url" class="w-full"/>
-
+      <div v-if="s.type==='main'">{{ s.content }}</div>
+      <img v-if="s.type==='image'" :src="s.url"/>
     </div>
-
   </div>
 
 </div>
@@ -252,8 +261,5 @@ const uploadImage = (e, section) => {
   padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid #ddd;
-}
-.btn:hover {
-  background: #f3f4f6;
 }
 </style>

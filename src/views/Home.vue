@@ -51,12 +51,12 @@ const loadSite = async (uid) => {
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= ADD SECTION ================= */
+/* ================= ADD ================= */
 const addSection = (type) => {
   const map = {
     hero: { type: "hero", title: "Hero title", style: {}, class: "" },
-    text: { type: "text", content: "Texte...", style: {}, class: "" },
-    main: { type: "main", content: "Main section...", style: {}, class: "" },
+    text: { type: "text", content: "Texte...\nNouvelle ligne", style: {}, class: "" },
+    main: { type: "main", content: "Main section...\nNouvelle ligne", style: {}, class: "" },
     menu: { type: "menu", items: ["Home", "About"] },
     image: { type: "image", url: "" },
     gallery: { type: "gallery", images: [] },
@@ -88,7 +88,7 @@ const saveSite = async () => {
   alert("Saved ✔")
 }
 
-/* ================= IMAGE (FileReader) ================= */
+/* ================= IMAGE ================= */
 const uploadImage = (e, section) => {
   const file = e.target.files[0]
   if (!file) return
@@ -110,34 +110,25 @@ const uploadGallery = (e, section) => {
 const setStyle = (section, type) => {
   section.style = section.style || {}
 
-  if (type === "bold") {
-    section.style.fontWeight =
-      section.style.fontWeight === "bold" ? "normal" : "bold"
-  }
+  if (type === "bold")
+    section.style.fontWeight = section.style.fontWeight === "bold" ? "normal" : "bold"
 
-  if (type === "italic") {
-    section.style.fontStyle =
-      section.style.fontStyle === "italic" ? "normal" : "italic"
-  }
+  if (type === "italic")
+    section.style.fontStyle = section.style.fontStyle === "italic" ? "normal" : "italic"
 
-  if (type === "underline") {
-    section.style.textDecoration =
-      section.style.textDecoration === "underline" ? "none" : "underline"
-  }
+  if (type === "underline")
+    section.style.textDecoration = section.style.textDecoration === "underline" ? "none" : "underline"
 }
 
 const setAlign = (section, val) => {
-  section.style = section.style || {}
   section.style.textAlign = val
 }
 
 const setColor = (section, e) => {
-  section.style = section.style || {}
   section.style.color = e.target.value
 }
 
 const setBg = (section, e) => {
-  section.style = section.style || {}
   section.style.backgroundColor = e.target.value
 }
 
@@ -148,13 +139,22 @@ const viewCode = () => {
   const s = site.value.sections[activeSectionIndex.value]
 
   const code = `
-<div class="${s.class || ""}" style="${JSON.stringify(s.style)}">
+<div class="${s.class || ""}" style='${JSON.stringify(s.style)}'>
 ${s.content || s.title || ""}
 </div>
   `
 
-  const win = window.open()
-  win.document.write(`<pre>${code}</pre>`)
+  const sectionName = `section-${s.type}`
+
+  const win = window.open("", "_blank")
+
+  win.document.write(`
+    <title>${sectionName}</title>
+    <h2>${sectionName}</h2>
+    <pre>${code.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+  `)
+
+  win.document.close()
 }
 </script>
 
@@ -168,10 +168,10 @@ ${s.content || s.title || ""}
     @click.self="activeSectionIndex=null"
   >
 
-    <!-- 🔥 TOP BAR -->
+    <!-- TOP BAR -->
     <div class="fixed top-0 left-0 w-full bg-white border-b p-2 z-50 flex flex-wrap gap-2 justify-between">
 
-      <!-- SECTIONS -->
+      <!-- ADD -->
       <div class="flex gap-2 flex-wrap">
         <button @click="addSection('hero')" class="border px-2">Hero</button>
         <button @click="addSection('text')" class="border px-2">Text</button>
@@ -182,9 +182,8 @@ ${s.content || s.title || ""}
         <button @click="addSection('footer')" class="border px-2">Footer</button>
       </div>
 
-      <!-- STYLE BAR -->
+      <!-- STYLE -->
       <div v-if="activeSectionIndex !== null" class="flex gap-2 flex-wrap">
-
         <button @click="setStyle(site.sections[activeSectionIndex],'bold')" class="border px-2">B</button>
         <button @click="setStyle(site.sections[activeSectionIndex],'italic')" class="border px-2">I</button>
         <button @click="setStyle(site.sections[activeSectionIndex],'underline')" class="border px-2">U</button>
@@ -196,18 +195,15 @@ ${s.content || s.title || ""}
         <input type="color" @input="e => setColor(site.sections[activeSectionIndex], e)" />
         <input type="color" @input="e => setBg(site.sections[activeSectionIndex], e)" />
 
-        <!-- Tailwind classes -->
         <input
           v-model="site.sections[activeSectionIndex].class"
-          placeholder="ex: text-xl bg-blue-500 p-4"
+          placeholder="Tailwind classes"
           class="border px-2"
         />
 
-        <!-- View code -->
         <button @click="viewCode" class="bg-black text-white px-2">
           Code
         </button>
-
       </div>
 
       <!-- ACTIONS -->
@@ -220,18 +216,15 @@ ${s.content || s.title || ""}
     </div>
 
     <!-- CONTENT -->
-    <div class="pt-20 p-4">
+    <div class="pt-20 p-6 space-y-6">
 
-      <p v-if="loading">Loading...</p>
-      <p v-if="error" class="text-red-500">{{ error }}</p>
-
-      <!-- ================= EDIT ================= -->
+      <!-- EDIT -->
       <div v-if="mode==='edit'">
 
         <div
           v-for="(s,i) in site.sections"
           :key="s.id"
-          class="border p-3 mb-3 cursor-pointer"
+          class="border p-4 rounded-lg shadow-sm bg-white cursor-pointer"
           :class="activeSectionIndex===i ? 'border-blue-500' : ''"
           @click.stop="activeSectionIndex=i"
           :style="s.style"
@@ -239,69 +232,38 @@ ${s.content || s.title || ""}
 
           <button class="text-red-500 float-right" @click.stop="deleteSection(i)">✕</button>
 
-          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full"/>
+          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full p-2"/>
 
-          <!-- TEXT + MAIN -->
           <textarea
             v-if="s.type==='text' || s.type==='main'"
             v-model="s.content"
-            class="w-full min-h-[200px] border p-2 whitespace-pre-wrap"
+            class="w-full min-h-[200px] border p-3 whitespace-pre-wrap"
           />
-
-          <!-- MENU -->
-          <div v-if="s.type==='menu'">
-            <input v-for="(m,i) in s.items" :key="i" v-model="s.items[i]" class="border m-1"/>
-          </div>
-
-          <!-- IMAGE -->
-          <div v-if="s.type==='image'">
-            <input type="file" @change="uploadImage($event,s)" />
-            <img v-if="s.url" :src="s.url" class="w-full"/>
-          </div>
-
-          <!-- GALLERY -->
-          <div v-if="s.type==='gallery'">
-            <input type="file" multiple @change="uploadGallery($event,s)" />
-          </div>
-
-          <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
 
         </div>
 
       </div>
 
-      <!-- ================= PREVIEW ================= -->
+      <!-- PREVIEW -->
       <div v-else>
 
         <div
           v-for="s in site.sections"
           :key="s.id"
+          class="mb-10"
           :class="s.class"
           :style="s.style"
-          class="mb-6"
         >
 
           <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
 
-          <p v-if="s.type==='text'" style="white-space: pre-wrap;">
+          <p v-if="s.type==='text'" style="white-space: pre-line;">
             {{ s.content }}
           </p>
 
-          <div v-if="s.type==='main'" class="min-h-[500px]" style="white-space: pre-wrap;">
+          <div v-if="s.type==='main'" style="white-space: pre-line;">
             {{ s.content }}
           </div>
-
-          <div v-if="s.type==='menu'" class="flex gap-4">
-            <span v-for="(m,i) in s.items" :key="i">{{ m }}</span>
-          </div>
-
-          <img v-if="s.type==='image'" :src="s.url"/>
-
-          <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
-            <img v-for="(img,i) in s.images" :key="i" :src="img"/>
-          </div>
-
-          <footer v-if="s.type==='footer'">{{ s.text }}</footer>
 
         </div>
 

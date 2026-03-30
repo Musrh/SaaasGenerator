@@ -1,3 +1,4 @@
+//home à améliorer 
 <script setup>
 import { ref, computed } from "vue"
 
@@ -17,7 +18,6 @@ const site = ref({
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
-const showCode = ref(false)
 
 /* ================= PAGE ACTIVE ================= */
 const currentPage = computed(() =>
@@ -30,9 +30,9 @@ const goToPage = (i) => {
   activeSectionIndex.value = null
 }
 
-/* ================= RENAME PAGE (SYNC DIRECT) ================= */
-const renamePage = (i, value) => {
-  site.value.pages[i].name = value
+/* ================= MENU SYNC NAME EDIT ================= */
+const renamePage = (i, event) => {
+  site.value.pages[i].name = event.target.value
 }
 
 /* ================= ADD / DELETE PAGE ================= */
@@ -74,12 +74,12 @@ const deleteSection = (i) => {
   activeSectionIndex.value = null
 }
 
-/* ================= ACTIVE SECTION ================= */
+/* ================= SAFE ACTIVE SECTION ================= */
 const activeSection = computed(() =>
   currentPage.value.sections?.[activeSectionIndex.value]
 )
 
-/* ================= STYLE ================= */
+/* ================= STYLE BAR (FIXED 100%) ================= */
 const setStyle = (section, type) => {
   if (!section) return
   section.style ||= {}
@@ -99,11 +99,6 @@ const setStyle = (section, type) => {
       section.style.textDecoration === "underline" ? "none" : "underline"
   }
 }
-
-/* ================= CODE VIEW ================= */
-const getPageCode = () => {
-  return JSON.stringify(currentPage.value, null, 2)
-}
 </script>
 
 <template>
@@ -118,48 +113,26 @@ const getPageCode = () => {
     <button @click="addPage" class="border px-2">+ Page</button>
   </div>
 
-  <!-- STYLE BAR -->
+  <!-- 🔥 STYLE BAR FIXED (IMPORTANT: MUST NOT DEPEND ON NULL INDEX) -->
   <div class="flex gap-2" v-if="activeSection">
+
     <button @click="setStyle(activeSection,'bold')">B</button>
     <button @click="setStyle(activeSection,'italic')">I</button>
     <button @click="setStyle(activeSection,'underline')">U</button>
-  </div>
-
-  <div class="flex gap-2">
-    <button @click="showCode=true" class="border px-2">Code</button>
-
-    <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
-      Aperçu
-    </button>
-  </div>
-
-</div>
-
-<!-- ================= CODE MODAL ================= -->
-<div v-if="showCode" class="fixed inset-0 bg-black/70 z-50 p-6">
-
-  <div class="bg-white h-full p-4 overflow-auto">
-
-    <div class="flex justify-between mb-3">
-      <h2 class="font-bold">Code de la page</h2>
-      <button @click="showCode=false" class="bg-red-500 text-white px-3">
-        Fermer
-      </button>
-    </div>
-
-    <pre class="text-sm">
-{{ getPageCode() }}
-    </pre>
 
   </div>
+
+  <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
+    Aperçu
+  </button>
 
 </div>
 
 <!-- ================= CONTENT ================= -->
 <div class="pt-20 p-4">
 
-<!-- ================= MENU ================= -->
-<div class="flex gap-3 border-b pb-2 mb-4 flex-wrap">
+<!-- 🔥 MENU + RENAMING + DELETE -->
+<div class="flex gap-3 border-b pb-2 mb-4">
 
   <div
     v-for="(p,i) in site.pages"
@@ -167,7 +140,7 @@ const getPageCode = () => {
     class="flex items-center gap-2"
   >
 
-    <!-- PAGE BUTTON -->
+    <!-- CLICK PAGE -->
     <div
       @click="goToPage(i)"
       class="cursor-pointer px-3 py-1 border rounded"
@@ -176,10 +149,10 @@ const getPageCode = () => {
       {{ p.name }}
     </div>
 
-    <!-- RENAME -->
+    <!-- 🔥 EDIT NAME (SYNC LIVE) -->
     <input
-      :value="p.name"
-      @input="renamePage(i, $event.target.value)"
+      v-model="p.name"
+      @input="renamePage(i, $event)"
       class="border px-2 text-sm w-28"
     />
 
@@ -190,7 +163,7 @@ const getPageCode = () => {
 
 </div>
 
-<!-- ================= EDIT ================= -->
+<!-- ================= EDIT MODE ================= -->
 <div v-if="mode==='edit'">
 
   <div
@@ -205,11 +178,7 @@ const getPageCode = () => {
 
     <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
 
-    <textarea
-      v-if="s.type==='main'"
-      v-model="s.content"
-      class="w-full min-h-[200px] border"
-    />
+    <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[150px] border"/>
 
   </div>
 
@@ -231,9 +200,7 @@ const getPageCode = () => {
 
       <p v-if="s.type==='text'">{{ s.content }}</p>
 
-      <div v-if="s.type==='main'" style="min-height:500px">
-        {{ s.content }}
-      </div>
+      <div v-if="s.type==='main'">{{ s.content }}</div>
 
     </div>
 

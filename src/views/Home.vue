@@ -21,26 +21,32 @@ const activeSectionIndex = ref(null)
 const showAddMenu = ref(false)
 const isSaved = ref(true)
 
-/* ================= ACTIVE PAGE ================= */
-const currentPage = computed(() =>
-  site.value.pages[currentPageIndex.value]
-)
+/* ================= SAFE CURRENT PAGE ================= */
+const currentPage = computed(() => {
+  return site.value.pages[currentPageIndex.value] || site.value.pages[0]
+})
 
-const activeSection = computed(() =>
-  currentPage.value?.sections?.[activeSectionIndex.value]
-)
-
-/* ================= WATCH SAVE ================= */
-watch(site, () => {
-  isSaved.value = false
-}, { deep: true })
+const activeSection = computed(() => {
+  return currentPage.value?.sections?.[activeSectionIndex.value]
+})
 
 /* ================= LOAD ================= */
 onMounted(() => {
   const saved = localStorage.getItem("siteData")
-  if (saved) site.value = JSON.parse(saved)
+  if (saved) {
+    site.value = JSON.parse(saved)
+  }
 })
 
+watch(site, () => {
+  isSaved.value = false
+}, { deep: true })
+
+watch(currentPageIndex, () => {
+  activeSectionIndex.value = null
+})
+
+/* ================= SAVE ================= */
 const saveSite = () => {
   localStorage.setItem("siteData", JSON.stringify(site.value))
   isSaved.value = true
@@ -52,21 +58,12 @@ const goToPage = (i) => {
   activeSectionIndex.value = null
 }
 
-/* 🔥 EDIT PAGE NAME */
-const renamePage = (i, name) => {
-  site.value.pages[i].name = name
+/* 🔥 EDIT NAME PAGE */
+const renamePage = (i, value) => {
+  site.value.pages[i].name = value
 }
 
-/* 🔥 DELETE PAGE + CLEAN */
-const deletePage = (i) => {
-  site.value.pages.splice(i, 1)
-
-  if (currentPageIndex.value >= site.value.pages.length) {
-    currentPageIndex.value = 0
-  }
-}
-
-/* ================= PAGE ADD ================= */
+/* 🔥 ADD PAGE */
 const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
@@ -74,13 +71,32 @@ const addPage = () => {
     style: {},
     sections: []
   })
+
+  currentPageIndex.value = site.value.pages.length - 1
+}
+
+/* 🔥 DELETE PAGE SAFE */
+const deletePage = (i) => {
+  site.value.pages.splice(i, 1)
+
+  if (site.value.pages.length === 0) {
+    site.value.pages.push({
+      id: Date.now(),
+      name: "Nouvelle page",
+      style: {},
+      sections: []
+    })
+  }
+
+  currentPageIndex.value = Math.max(0, site.value.pages.length - 1)
+  activeSectionIndex.value = null
 }
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
   const map = {
     text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Section...", style: {} },
+    main: { type: "main", content: "Section principale...", style: {} },
     image: { type: "image", url: "" },
     form: { type: "form", style: {} }
   }
@@ -99,7 +115,7 @@ const deleteSection = (i) => {
   activeSectionIndex.value = null
 }
 
-/* ================= IMAGE UPLOAD ================= */
+/* ================= IMAGE ================= */
 const uploadImage = (e, section) => {
   const file = e.target.files[0]
   if (!file) return
@@ -111,8 +127,8 @@ const uploadImage = (e, section) => {
   reader.readAsDataURL(file)
 }
 
-/* ================= STYLE SECTION ================= */
-const setStyle = (type, value=null) => {
+/* ================= STYLE ================= */
+const setStyle = (type, value = null) => {
   const s = activeSection.value
   if (!s) return
 
@@ -141,7 +157,6 @@ const setPageStyle = (type, value) => {
 
   if (type === "bg") currentPage.value.style.backgroundColor = value
   if (type === "color") currentPage.value.style.color = value
-  if (type === "align") currentPage.value.style.textAlign = value
 }
 
 /* ================= PREVIEW ================= */
@@ -163,15 +178,15 @@ const goPreview = () => {
 
     <div class="flex gap-4 items-center">
 
-      <!-- PAGES -->
-      <div class="flex gap-3">
+      <div class="flex gap-3 items-center">
+
         <div
           v-for="(p,i) in site.pages"
           :key="p.id"
-          class="flex items-center gap-1"
+          class="flex items-center gap-2"
         >
 
-          <!-- LINK -->
+          <!-- PAGE BUTTON -->
           <div
             @click="goToPage(i)"
             class="cursor-pointer px-2 py-1 border rounded"
@@ -184,20 +199,20 @@ const goPreview = () => {
           <input
             v-model="p.name"
             @input="renamePage(i, p.name)"
-            class="border px-2 text-sm w-24"
+            class="border px-2 text-sm w-28"
           />
 
           <!-- DELETE PAGE -->
           <button @click="deletePage(i)" class="text-red-500">✕</button>
 
         </div>
+
       </div>
 
-      <button @click="addPage">➕</button>
+      <button @click="addPage" class="px-2">➕</button>
 
     </div>
 
-    <!-- ACTIONS -->
     <div class="flex gap-2">
       <button @click="saveSite" class="bg-green-500 text-white px-3 rounded">💾</button>
       <button @click="goPreview" class="bg-blue-500 text-white px-3 rounded">👁</button>
@@ -207,29 +222,20 @@ const goPreview = () => {
   </div>
 
   <!-- TOOLBAR -->
-  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex flex-wrap gap-2">
+  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex gap-2 flex-wrap">
 
-    <!-- ADD SECTION -->
-    <div class="relative">
-      <button @click="showAddMenu=!showAddMenu">➕ Section</button>
+    <button @click="addSection('text')">Text</button>
+    <button @click="addSection('main')">Main</button>
+    <button @click="addSection('image')">Image</button>
+    <button @click="addSection('form')">Form</button>
 
-      <div v-if="showAddMenu" class="absolute bg-white border p-2 z-50">
-        <div @click="addSection('text')">Text</div>
-        <div @click="addSection('main')">Main</div>
-        <div @click="addSection('image')">Image</div>
-        <div @click="addSection('form')">Form</div>
-      </div>
-    </div>
-
-    <!-- STYLE -->
-    <div v-if="activeSection" class="flex gap-2">
+    <div v-if="activeSection" class="flex gap-2 ml-4">
       <button @click="setStyle('bold')">B</button>
       <button @click="setStyle('italic')">I</button>
       <input type="color" @input="setStyle('color',$event.target.value)" />
     </div>
 
-    <!-- PAGE STYLE -->
-    <div class="flex gap-2">
+    <div class="flex gap-2 ml-4">
       🎨
       <input type="color" @input="setPageStyle('bg',$event.target.value)" />
       <input type="color" @input="setPageStyle('color',$event.target.value)" />
@@ -240,13 +246,13 @@ const goPreview = () => {
 </div>
 
 <!-- ================= CONTENT ================= -->
-<div class="pt-32 p-4" :style="currentPage.style">
+<div class="pt-32 p-4" :style="currentPage?.style">
 
   <!-- EDIT MODE -->
   <div v-if="mode==='edit'">
 
     <div
-      v-for="(s,i) in currentPage.sections"
+      v-for="(s,i) in (currentPage?.sections || [])"
       :key="s.id"
       class="border p-4 mb-3 rounded"
       @click="activeSectionIndex=i"
@@ -259,7 +265,7 @@ const goPreview = () => {
       <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
 
       <!-- MAIN -->
-      <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[200px] border"/>
+      <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[180px] border"/>
 
       <!-- IMAGE -->
       <div v-if="s.type==='image'">
@@ -285,10 +291,8 @@ const goPreview = () => {
     <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
 
       <p v-if="s.type==='text'">{{ s.content }}</p>
-
       <div v-if="s.type==='main'">{{ s.content }}</div>
-
-      <img v-if="s.type==='image'" :src="s.url" />
+      <img v-if="s.type==='image'" :src="s.url"/>
 
       <div v-if="s.type==='form'">
         <input placeholder="Nom" class="border w-full"/>

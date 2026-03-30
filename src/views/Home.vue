@@ -1,117 +1,88 @@
 <script setup>
-import { ref, watch, computed } from "vue"
-import { db } from "../firebase"
-import { doc, getDoc, updateDoc } from "firebase/firestore"
+import { ref, computed } from "vue"
 
-const props = defineProps({ uid: String })
-
-/* ================= STATE ================= */
+/* ================= SITE ================= */
 const site = ref({
-  plan: "free",
-  theme: {
-    background: "#ffffff",
-    text: "#111"
-  },
-  pages: []
-})
-
-const activePageIndex = ref(0)
-const activeSectionIndex = ref(null)
-const mode = ref("edit")
-const showCode = ref(false)
-const loading = ref(false)
-const error = ref("")
-
-/* ================= LOAD ================= */
-const loadSite = async (uid) => {
-  if (!uid) return
-
-  loading.value = true
-
-  const snap = await getDoc(doc(db, "users", uid))
-
-  if (snap.exists()) {
-    const data = snap.data()
-
-    site.value = {
-      plan: data.plan || "free",
-      theme: data.theme || site.value.theme,
-      pages: data.pages || [
-        {
-          name: "Home",
-          menuName: "Home",
-          sections: []
-        }
+  pages: [
+    {
+      id: 1,
+      name: "Home",
+      sections: [
+        { id: 1, type: "text", content: "Bienvenue", style: {} }
       ]
     }
-  } else {
-    error.value = "Site introuvable"
-  }
+  ]
+})
 
-  loading.value = false
-}
+const mode = ref("edit")
+const currentPageIndex = ref(0)
+const activeSectionIndex = ref(null)
+const showCode = ref(false)
 
-watch(() => props.uid, v => v && loadSite(v), { immediate: true })
-
-/* ================= CURRENT PAGE ================= */
+/* ================= PAGE ACTIVE ================= */
 const currentPage = computed(() =>
-  site.value.pages[activePageIndex.value]
+  site.value.pages[currentPageIndex.value]
 )
 
-/* ================= SAVE ================= */
-const saveSite = async () => {
-  await updateDoc(doc(db, "users", props.uid), {
-    plan: site.value.plan,
-    theme: site.value.theme,
-    pages: site.value.pages
-  })
-
-  alert("Saved ✔")
+/* ================= MENU NAV ================= */
+const goToPage = (i) => {
+  currentPageIndex.value = i
+  activeSectionIndex.value = null
 }
 
-/* ================= MENU ================= */
+/* ================= RENAME PAGE (SYNC DIRECT) ================= */
+const renamePage = (i, value) => {
+  site.value.pages[i].name = value
+}
+
+/* ================= ADD / DELETE PAGE ================= */
 const addPage = () => {
   site.value.pages.push({
-    name: "New Page",
-    menuName: "New Page",
-    sections: []
+    id: Date.now(),
+    name: "Nouvelle page",
+    sections: [
+      { id: Date.now() + 1, type: "text", content: "Contenu", style: {} }
+    ]
   })
+
+  currentPageIndex.value = site.value.pages.length - 1
 }
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-  if (activePageIndex.value >= site.value.pages.length) {
-    activePageIndex.value = 0
-  }
-}
 
-/* ================= SYNC MENU NAME ================= */
-const syncMenuName = (page) => {
-  page.name = page.menuName
+  if (currentPageIndex.value >= site.value.pages.length) {
+    currentPageIndex.value = 0
+  }
 }
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
-  const page = currentPage.value
-
   const map = {
-    hero: { id: Date.now(), type: "hero", title: "Hero", style: {} },
-    text: { id: Date.now(), type: "text", content: "" },
-    main: { id: Date.now(), type: "main", content: "" },
-    footer: { id: Date.now(), type: "footer", text: "" },
-    image: { id: Date.now(), type: "image", url: "" }
+    text: { type: "text", content: "Texte...", style: {} },
+    main: { type: "main", content: "Zone principale...", style: {} }
   }
 
-  page.sections.push(map[type])
+  currentPage.value.sections.push({
+    id: Date.now(),
+    ...map[type]
+  })
 }
 
 const deleteSection = (i) => {
   currentPage.value.sections.splice(i, 1)
+  activeSectionIndex.value = null
 }
+
+/* ================= ACTIVE SECTION ================= */
+const activeSection = computed(() =>
+  currentPage.value.sections?.[activeSectionIndex.value]
+)
 
 /* ================= STYLE ================= */
 const setStyle = (section, type) => {
-  section.style = section.style || {}
+  if (!section) return
+  section.style ||= {}
 
   if (type === "bold") {
     section.style.fontWeight =
@@ -129,11 +100,6 @@ const setStyle = (section, type) => {
   }
 }
 
-const setAlign = (section, val) => {
-  section.style = section.style || {}
-  section.style.textAlign = val
-}
-
 /* ================= CODE VIEW ================= */
 const getPageCode = () => {
   return JSON.stringify(currentPage.value, null, 2)
@@ -141,110 +107,140 @@ const getPageCode = () => {
 </script>
 
 <template>
-  <div class="min-h-screen" :style="site.theme">
+<div class="min-h-screen">
 
-    <!-- ================= TOP BAR ================= -->
-    <div class="fixed top-0 left-0 w-full bg-white border-b p-2 z-50 flex flex-wrap gap-2">
+<!-- ================= TOOLBAR ================= -->
+<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white border-b p-2 flex justify-between z-50">
 
-      <!-- MENU PAGES -->
-      <div class="flex gap-2 items-center">
-        <button
-          v-for="(p,i) in site.pages"
-          :key="i"
-          @click="activePageIndex=i"
-          class="border px-2"
-        >
-          {{ p.menuName }}
-        </button>
-
-        <button @click="addPage">＋ Page</button>
-      </div>
-
-      <!-- EDIT PAGE NAME -->
-      <div v-if="currentPage" class="flex gap-2">
-        <input v-model="currentPage.menuName" @input="syncMenuName(currentPage)" />
-        <button @click="deletePage(activePageIndex)">🗑</button>
-      </div>
-
-      <!-- ACTIONS -->
-      <div class="ml-auto flex gap-2">
-        <button @click="mode='edit'">Edit</button>
-        <button @click="mode='preview'">Preview</button>
-        <button @click="saveSite">Save</button>
-        <button @click="showCode=true">Code</button>
-      </div>
-    </div>
-
-    <!-- ================= CODE VIEWER ================= -->
-    <div v-if="showCode" class="fixed inset-0 bg-black/80 z-50 p-10">
-
-      <button @click="showCode=false" class="bg-red-500 text-white px-3 mb-3">
-        Close
-      </button>
-
-      <pre class="bg-white p-4 overflow-auto h-full">
-{{ getPageCode() }}
-      </pre>
-
-    </div>
-
-    <!-- ================= CONTENT ================= -->
-    <div class="pt-20 p-4">
-
-      <!-- ================= EDIT ================= -->
-      <div v-if="mode==='edit'">
-
-        <button @click="addSection('hero')">Hero</button>
-        <button @click="addSection('text')">Text</button>
-        <button @click="addSection('main')">Main</button>
-        <button @click="addSection('footer')">Footer</button>
-        <button @click="addSection('image')">Image</button>
-
-        <div
-          v-for="(s,i) in currentPage.sections"
-          :key="s.id"
-          class="border p-3 mt-3"
-        >
-
-          <button @click="deleteSection(i)">✕</button>
-
-          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full"/>
-
-          <textarea
-            v-if="s.type==='text' || s.type==='main'"
-            v-model="s.content"
-            class="w-full min-h-[150px] border"
-          />
-
-          <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
-
-          <input v-if="s.type==='image'" v-model="s.url" class="border w-full"/>
-
-        </div>
-
-      </div>
-
-      <!-- ================= PREVIEW ================= -->
-      <div v-else>
-
-        <div v-for="s in currentPage.sections" :key="s.id">
-
-          <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
-
-          <p v-if="s.type==='text'">{{ s.content }}</p>
-
-          <div v-if="s.type==='main'" style="min-height:500px">
-            {{ s.content }}
-          </div>
-
-          <footer v-if="s.type==='footer'">{{ s.text }}</footer>
-
-          <img v-if="s.type==='image'" :src="s.url" />
-
-        </div>
-
-      </div>
-
-    </div>
+  <div class="flex gap-2">
+    <button @click="addSection('text')">Text</button>
+    <button @click="addSection('main')">Main</button>
+    <button @click="addPage" class="border px-2">+ Page</button>
   </div>
+
+  <!-- STYLE BAR -->
+  <div class="flex gap-2" v-if="activeSection">
+    <button @click="setStyle(activeSection,'bold')">B</button>
+    <button @click="setStyle(activeSection,'italic')">I</button>
+    <button @click="setStyle(activeSection,'underline')">U</button>
+  </div>
+
+  <div class="flex gap-2">
+    <button @click="showCode=true" class="border px-2">Code</button>
+
+    <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
+      Aperçu
+    </button>
+  </div>
+
+</div>
+
+<!-- ================= CODE MODAL ================= -->
+<div v-if="showCode" class="fixed inset-0 bg-black/70 z-50 p-6">
+
+  <div class="bg-white h-full p-4 overflow-auto">
+
+    <div class="flex justify-between mb-3">
+      <h2 class="font-bold">Code de la page</h2>
+      <button @click="showCode=false" class="bg-red-500 text-white px-3">
+        Fermer
+      </button>
+    </div>
+
+    <pre class="text-sm">
+{{ getPageCode() }}
+    </pre>
+
+  </div>
+
+</div>
+
+<!-- ================= CONTENT ================= -->
+<div class="pt-20 p-4">
+
+<!-- ================= MENU ================= -->
+<div class="flex gap-3 border-b pb-2 mb-4 flex-wrap">
+
+  <div
+    v-for="(p,i) in site.pages"
+    :key="p.id"
+    class="flex items-center gap-2"
+  >
+
+    <!-- PAGE BUTTON -->
+    <div
+      @click="goToPage(i)"
+      class="cursor-pointer px-3 py-1 border rounded"
+      :class="currentPageIndex===i ? 'bg-black text-white' : ''"
+    >
+      {{ p.name }}
+    </div>
+
+    <!-- RENAME -->
+    <input
+      :value="p.name"
+      @input="renamePage(i, $event.target.value)"
+      class="border px-2 text-sm w-28"
+    />
+
+    <!-- DELETE -->
+    <button @click="deletePage(i)" class="text-red-500">✕</button>
+
+  </div>
+
+</div>
+
+<!-- ================= EDIT ================= -->
+<div v-if="mode==='edit'">
+
+  <div
+    v-for="(s,i) in currentPage.sections"
+    :key="s.id"
+    class="border p-3 mb-2 cursor-pointer"
+    @click="activeSectionIndex=i"
+    :style="s.style"
+  >
+
+    <button @click.stop="deleteSection(i)" class="text-red-500 float-right">✕</button>
+
+    <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
+
+    <textarea
+      v-if="s.type==='main'"
+      v-model="s.content"
+      class="w-full min-h-[200px] border"
+    />
+
+  </div>
+
+</div>
+
+<!-- ================= PREVIEW ================= -->
+<div v-else>
+
+  <div class="fixed top-0 w-full bg-black text-white p-2 flex justify-between z-50">
+    <span>Mode Aperçu</span>
+    <button @click="mode='edit'" class="bg-white text-black px-3">
+      Retour Edit
+    </button>
+  </div>
+
+  <div class="pt-12">
+
+    <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
+
+      <p v-if="s.type==='text'">{{ s.content }}</p>
+
+      <div v-if="s.type==='main'" style="min-height:500px">
+        {{ s.content }}
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+</div>
+</div>
 </template>

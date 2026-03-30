@@ -51,13 +51,13 @@ const loadSite = async (uid) => {
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= ADD ================= */
+/* ================= ADD SECTION ================= */
 const addSection = (type) => {
   const map = {
     hero: { type: "hero", title: "Hero title", style: {}, class: "" },
     text: { type: "text", content: "Texte...\nNouvelle ligne", style: {}, class: "" },
-    main: { type: "main", content: "Main section...\nNouvelle ligne", style: {}, class: "" },
-    menu: { type: "menu", items: ["Home", "About"] },
+    main: { type: "main", content: "Main content...\nNouvelle section", style: {}, class: "" },
+    menu: { type: "menu", items: ["Home", "About"], style: {}, class: "" },
     image: { type: "image", url: "" },
     gallery: { type: "gallery", images: [] },
     footer: { type: "footer", text: "Footer text", style: {}, class: "" }
@@ -106,55 +106,64 @@ const uploadGallery = (e, section) => {
   })
 }
 
+/* ================= MENU ================= */
+const addMenuItem = (section) => {
+  section.items.push("New Item")
+}
+
+const removeMenuItem = (section, index) => {
+  section.items.splice(index, 1)
+}
+
 /* ================= STYLE ================= */
 const setStyle = (section, type) => {
   section.style = section.style || {}
 
-  if (type === "bold")
-    section.style.fontWeight = section.style.fontWeight === "bold" ? "normal" : "bold"
+  if (type === "bold") {
+    section.style.fontWeight =
+      section.style.fontWeight === "bold" ? "normal" : "bold"
+  }
 
-  if (type === "italic")
-    section.style.fontStyle = section.style.fontStyle === "italic" ? "normal" : "italic"
+  if (type === "italic") {
+    section.style.fontStyle =
+      section.style.fontStyle === "italic" ? "normal" : "italic"
+  }
 
-  if (type === "underline")
-    section.style.textDecoration = section.style.textDecoration === "underline" ? "none" : "underline"
+  if (type === "underline") {
+    section.style.textDecoration =
+      section.style.textDecoration === "underline" ? "none" : "underline"
+  }
 }
 
 const setAlign = (section, val) => {
+  section.style = section.style || {}
   section.style.textAlign = val
 }
 
 const setColor = (section, e) => {
+  section.style = section.style || {}
   section.style.color = e.target.value
 }
 
 const setBg = (section, e) => {
+  section.style = section.style || {}
   section.style.backgroundColor = e.target.value
 }
 
-/* ================= VIEW CODE ================= */
+/* ================= VIEW CODE (NEW PAGE) ================= */
 const viewCode = () => {
   if (activeSectionIndex.value === null) return
 
   const s = site.value.sections[activeSectionIndex.value]
 
   const code = `
-<div class="${s.class || ""}" style='${JSON.stringify(s.style)}'>
+<div class="${s.class || ""}" style="${JSON.stringify(s.style)}">
 ${s.content || s.title || ""}
 </div>
   `
 
-  const sectionName = `section-${s.type}`
-
-  const win = window.open("", "_blank")
-
-  win.document.write(`
-    <title>${sectionName}</title>
-    <h2>${sectionName}</h2>
-    <pre>${code.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
-  `)
-
-  win.document.close()
+  const encoded = encodeURIComponent(code)
+  window.open(`/#/code-section?code=${encoded}`, "_blank")
 }
 </script>
 
@@ -168,10 +177,10 @@ ${s.content || s.title || ""}
     @click.self="activeSectionIndex=null"
   >
 
-    <!-- TOP BAR -->
+    <!-- 🔥 TOP BAR -->
     <div class="fixed top-0 left-0 w-full bg-white border-b p-2 z-50 flex flex-wrap gap-2 justify-between">
 
-      <!-- ADD -->
+      <!-- SECTIONS -->
       <div class="flex gap-2 flex-wrap">
         <button @click="addSection('hero')" class="border px-2">Hero</button>
         <button @click="addSection('text')" class="border px-2">Text</button>
@@ -216,7 +225,7 @@ ${s.content || s.title || ""}
     </div>
 
     <!-- CONTENT -->
-    <div class="pt-20 p-6 space-y-6">
+    <div class="pt-20 p-4">
 
       <!-- EDIT -->
       <div v-if="mode==='edit'">
@@ -224,21 +233,46 @@ ${s.content || s.title || ""}
         <div
           v-for="(s,i) in site.sections"
           :key="s.id"
-          class="border p-4 rounded-lg shadow-sm bg-white cursor-pointer"
+          class="border p-4 mb-6 rounded-lg shadow-sm cursor-pointer"
           :class="activeSectionIndex===i ? 'border-blue-500' : ''"
           @click.stop="activeSectionIndex=i"
-          :style="s.style"
         >
 
           <button class="text-red-500 float-right" @click.stop="deleteSection(i)">✕</button>
 
-          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full p-2"/>
+          <!-- HERO -->
+          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full"/>
 
+          <!-- TEXT / MAIN -->
           <textarea
             v-if="s.type==='text' || s.type==='main'"
             v-model="s.content"
-            class="w-full min-h-[200px] border p-3 whitespace-pre-wrap"
+            class="w-full min-h-[200px] border p-2 whitespace-pre-wrap"
           />
+
+          <!-- MENU -->
+          <div v-if="s.type==='menu'">
+            <div v-for="(item,index) in s.items" :key="index" class="flex gap-2 mb-2">
+              <input v-model="s.items[index]" class="border p-1 w-full"/>
+              <button @click="removeMenuItem(s,index)" class="text-red-500">✕</button>
+            </div>
+            <button @click="addMenuItem(s)" class="bg-blue-500 text-white px-2 py-1 rounded">
+              + Ajouter
+            </button>
+          </div>
+
+          <!-- IMAGE -->
+          <div v-if="s.type==='image'">
+            <input type="file" @change="uploadImage($event,s)" />
+            <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
+          </div>
+
+          <!-- GALLERY -->
+          <div v-if="s.type==='gallery'">
+            <input type="file" multiple @change="uploadGallery($event,s)" />
+          </div>
+
+          <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
 
         </div>
 
@@ -250,20 +284,32 @@ ${s.content || s.title || ""}
         <div
           v-for="s in site.sections"
           :key="s.id"
-          class="mb-10"
           :class="s.class"
           :style="s.style"
+          class="mb-10"
         >
 
           <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
 
-          <p v-if="s.type==='text'" style="white-space: pre-line;">
+          <p v-if="s.type==='text'" style="white-space: pre-wrap;">
             {{ s.content }}
           </p>
 
-          <div v-if="s.type==='main'" style="white-space: pre-line;">
+          <div v-if="s.type==='main'" style="white-space: pre-wrap;">
             {{ s.content }}
           </div>
+
+          <div v-if="s.type==='menu'" class="flex gap-4">
+            <span v-for="(m,i) in s.items" :key="i">{{ m }}</span>
+          </div>
+
+          <img v-if="s.type==='image'" :src="s.url"/>
+
+          <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
+            <img v-for="(img,i) in s.images" :key="i" :src="img"/>
+          </div>
+
+          <footer v-if="s.type==='footer'">{{ s.text }}</footer>
 
         </div>
 

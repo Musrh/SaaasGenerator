@@ -1,271 +1,228 @@
 <script setup>
 import { ref, computed } from "vue"
 
-/* ================= SITE ================= */
+/* ================= STATE ================= */
+const mode = ref("edit")
+const selectedSectionId = ref(null)
+
 const site = ref({
   pages: [
     {
       id: 1,
       name: "Accueil",
-      style: {},
       sections: [
-        { id: 1, type: "text", content: "Bienvenue 👋", style: {} }
+        {
+          id: 1,
+          type: "hero",
+          content: "Bienvenue sur mon site",
+          style: "text-center text-3xl font-bold",
+          bg: "",
+          color: ""
+        }
       ]
     }
   ]
 })
 
-const mode = ref("edit")
-const currentPageIndex = ref(0)
+const currentPage = computed(() => site.value.pages[0])
 
-/* ================= PAGE ================= */
-const currentPage = computed(() => {
-  return site.value.pages[currentPageIndex.value]
-})
-
-const goToPage = (i) => {
-  currentPageIndex.value = i
+/* ================= SELECT SECTION ================= */
+const selectSection = (id) => {
+  selectedSectionId.value = id
 }
 
-/* ================= PAGES ================= */
-const addPage = () => {
-  site.value.pages.push({
-    id: Date.now(),
-    name: "Nouvelle page",
-    style: {},
-    sections: []
-  })
-}
-
-const deletePage = (i) => {
-  site.value.pages.splice(i, 1)
-  currentPageIndex.value = 0
-}
+const selectedSection = computed(() =>
+  currentPage.value.sections.find(s => s.id === selectedSectionId.value)
+)
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
+  const base = {
+    id: Date.now(),
+    style: "",
+    bg: "",
+    color: ""
+  }
+
   const map = {
-    text: {
-      type: "text",
-      content: "Texte..."
-    },
-    main: {
-      type: "main",
-      content: "Main section..."
-    },
-    image: {
-      type: "image",
-      url: ""
-    },
+    hero: { ...base, type: "hero", content: "Hero section" },
+    text: { ...base, type: "text", content: "Texte..." },
+    image: { ...base, type: "image", url: "" },
+    spacer: { ...base, type: "spacer" },
 
-    /* 🧾 FORMULAIRE */
     form: {
-      type: "form"
+      ...base,
+      type: "form",
+      fields: {
+        name: "",
+        email: "",
+        message: ""
+      }
     },
 
-    /* 🖼️ GALLERY */
     gallery: {
+      ...base,
       type: "gallery",
       images: []
+    },
+
+    container: {
+      ...base,
+      type: "container",
+      children: []
     }
   }
 
-  currentPage.value.sections.push({
-    id: Date.now(),
-    ...map[type]
-  })
+  currentPage.value.sections.push(map[type])
 }
 
-const deleteSection = (i) => {
-  currentPage.value.sections.splice(i, 1)
+/* ================= DELETE ================= */
+const deleteSection = (id) => {
+  currentPage.value.sections =
+    currentPage.value.sections.filter(s => s.id !== id)
 }
 
 /* ================= IMAGE ================= */
 const uploadImage = (e, section) => {
   const file = e.target.files[0]
-  if (!file) return
-
   const reader = new FileReader()
-  reader.onload = (ev) => {
-    section.url = ev.target.result
-  }
+  reader.onload = (ev) => section.url = ev.target.result
   reader.readAsDataURL(file)
 }
 
 /* ================= GALLERY ================= */
 const uploadGallery = (e, section) => {
   const files = Array.from(e.target.files)
-
   files.forEach(file => {
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      section.images.push(ev.target.result)
-    }
+    reader.onload = (ev) => section.images.push(ev.target.result)
     reader.readAsDataURL(file)
   })
 }
 </script>
 
 <template>
-<div class="min-h-screen">
+<div class="h-screen flex flex-col">
 
 <!-- ================= TOP BAR ================= -->
-<div class="fixed top-0 w-full bg-white shadow z-50">
+<div class="bg-black text-white flex justify-between p-3">
 
-  <div class="flex justify-between items-center px-4 py-3 border-b">
+  <div class="font-bold">⚡ Webflow SaaS Builder</div>
 
-    <div class="font-bold">🌐 SaaS Builder</div>
-
-    <div class="flex gap-3 items-center">
-
-      <div v-for="(p,i) in site.pages" :key="p.id" class="flex gap-2 items-center">
-
-        <div
-          @click="goToPage(i)"
-          class="px-2 py-1 border cursor-pointer"
-          :class="currentPageIndex===i ? 'bg-black text-white' : ''"
-        >
-          {{ p.name }}
-        </div>
-
-        <button v-if="mode==='edit'" @click="deletePage(i)" class="text-red-500">✕</button>
-
-      </div>
-
-      <button @click="addPage">➕</button>
-
-    </div>
-
-    <div class="flex gap-2">
-      <button @click="mode='edit'" class="bg-black text-white px-3 rounded">Edit</button>
-      <button @click="mode='preview'" class="bg-blue-500 text-white px-3 rounded">Preview</button>
-    </div>
-
-  </div>
-
-  <!-- TOOLBAR -->
-  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex gap-2">
-
-    <button @click="addSection('text')">Text</button>
-    <button @click="addSection('main')">Main</button>
-    <button @click="addSection('image')">Image</button>
-
-    <!-- 🧾 FORMULAIRE -->
-    <button @click="addSection('form')">Formulaire</button>
-
-    <!-- 🖼️ GALLERY -->
-    <button @click="addSection('gallery')">Gallery</button>
-
+  <div class="flex gap-2">
+    <button @click="mode='edit'" class="px-3 bg-gray-700 rounded">Edit</button>
+    <button @click="mode='preview'" class="px-3 bg-blue-600 rounded">Preview</button>
   </div>
 
 </div>
 
-<!-- ================= CONTENT ================= -->
-<div class="pt-32 p-4">
+<!-- ================= TOOLBAR ================= -->
+<div v-if="mode==='edit'" class="bg-gray-100 p-2 flex gap-2 flex-wrap">
 
-  <!-- EDIT -->
+  <button @click="addSection('hero')">Hero</button>
+  <button @click="addSection('text')">Text</button>
+  <button @click="addSection('image')">Image</button>
+  <button @click="addSection('form')">Form</button>
+  <button @click="addSection('gallery')">Gallery</button>
+  <button @click="addSection('container')">Container</button>
+  <button @click="addSection('spacer')">Spacer</button>
+
+</div>
+
+<!-- ================= EDIT PANEL ================= -->
+<div v-if="mode==='edit' && selectedSection" class="bg-white border p-2">
+
+  <div class="font-bold mb-2">Style Editor</div>
+
+  <input v-model="selectedSection.style" placeholder="Tailwind classes"
+         class="border w-full p-1 mb-2"/>
+
+  <input v-model="selectedSection.bg" placeholder="Background color"
+         class="border w-full p-1 mb-2"/>
+
+  <input v-model="selectedSection.color" placeholder="Text color"
+         class="border w-full p-1"/>
+
+</div>
+
+<!-- ================= CONTENT ================= -->
+<div class="flex-1 overflow-auto p-4">
+
+  <!-- EDIT MODE -->
   <div v-if="mode==='edit'">
 
     <div
-      v-for="(s,i) in currentPage.sections"
+      v-for="s in currentPage.sections"
       :key="s.id"
-      class="border p-4 mb-3 rounded"
+      @click="selectSection(s.id)"
+      class="border p-4 mb-3 cursor-pointer"
+      :class="selectedSectionId===s.id ? 'ring-2 ring-blue-500' : ''"
+      :style="{ background: s.bg, color: s.color }"
     >
 
-      <button @click="deleteSection(i)" class="text-red-500 float-right">❌</button>
+      <button @click.stop="deleteSection(s.id)" class="text-red-500 float-right">✕</button>
+
+      <!-- HERO -->
+      <h1 v-if="s.type==='hero'" :class="s.style">
+        {{ s.content }}
+      </h1>
 
       <!-- TEXT -->
-      <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
-
-      <!-- MAIN -->
-      <textarea v-if="s.type==='main'" v-model="s.content" class="border w-full min-h-[120px]"/>
+      <p v-if="s.type==='text'" :class="s.style">
+        {{ s.content }}
+      </p>
 
       <!-- IMAGE -->
       <div v-if="s.type==='image'">
         <input type="file" @change="uploadImage($event,s)" />
-        <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
+        <img v-if="s.url" :src="s.url" class="mt-2 max-w-full"/>
       </div>
 
-      <!-- 🧾 FORMULAIRE -->
+      <!-- FORM -->
       <div v-if="s.type==='form'" class="flex flex-col">
-
-        <input placeholder="Nom" class="border w-full p-2"/>
-        <div class="h-2"></div>
-
-        <input placeholder="Email" class="border w-full p-2"/>
-        <div class="h-2"></div>
-
-        <textarea placeholder="Message" class="border w-full p-2 min-h-[100px]"></textarea>
-        <div class="h-2"></div>
-
+        <input placeholder="Nom" class="border p-2 mb-2"/>
+        <input placeholder="Email" class="border p-2 mb-2"/>
+        <textarea placeholder="Message" class="border p-2 mb-2"/>
         <div class="flex justify-end gap-2">
-          <button class="bg-green-500 text-white px-4 py-1 rounded">Ok</button>
-          <button class="bg-gray-300 px-4 py-1 rounded">Annuler</button>
+          <button class="bg-green-500 text-white px-3">OK</button>
+          <button class="bg-gray-300 px-3">Annuler</button>
         </div>
-
       </div>
 
-      <!-- 🖼️ GALLERY -->
+      <!-- GALLERY -->
       <div v-if="s.type==='gallery'">
-
         <input type="file" multiple @change="uploadGallery($event,s)" />
-
         <div class="grid grid-cols-3 gap-2 mt-2">
-          <img
-            v-for="(img,idx) in s.images"
-            :key="idx"
-            :src="img"
-            class="w-full h-20 object-cover rounded"
-          />
+          <img v-for="(img,i) in s.images" :key="i" :src="img"/>
         </div>
-
       </div>
+
+      <!-- SPACER -->
+      <div v-if="s.type==='spacer'" class="h-10"></div>
 
     </div>
 
   </div>
 
-  <!-- PREVIEW -->
+  <!-- PREVIEW MODE -->
   <div v-else>
 
     <div v-for="s in currentPage.sections" :key="s.id">
 
+      <h1 v-if="s.type==='hero'" :class="s.style">{{ s.content }}</h1>
       <p v-if="s.type==='text'">{{ s.content }}</p>
-
-      <div v-if="s.type==='main'">{{ s.content }}</div>
 
       <img v-if="s.type==='image'" :src="s.url"/>
 
-      <!-- FORM PREVIEW -->
-      <div v-if="s.type==='form'" class="flex flex-col">
-
-        <input placeholder="Nom" class="border w-full p-2"/>
-        <div class="h-2"></div>
-
-        <input placeholder="Email" class="border w-full p-2"/>
-        <div class="h-2"></div>
-
-        <textarea placeholder="Message" class="border w-full p-2 min-h-[100px]"/>
-
-        <div class="h-2"></div>
-
-        <div class="flex justify-end gap-2">
-          <button class="bg-green-500 text-white px-4 py-1 rounded">Ok</button>
-          <button class="bg-gray-300 px-4 py-1 rounded">Annuler</button>
-        </div>
-
+      <div v-if="s.type==='form'">
+        <input placeholder="Nom" class="border p-2 mb-2 w-full"/>
+        <input placeholder="Email" class="border p-2 mb-2 w-full"/>
+        <textarea class="border p-2 w-full mb-2"/>
+        <button class="bg-green-500 text-white px-3">Envoyer</button>
       </div>
 
-      <!-- GALLERY PREVIEW -->
       <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
-
-        <img
-          v-for="(img,i) in s.images"
-          :key="i"
-          :src="img"
-          class="w-full h-20 object-cover rounded"
-        />
-
+        <img v-for="(img,i) in s.images" :key="i" :src="img"/>
       </div>
 
     </div>

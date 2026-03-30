@@ -18,10 +18,9 @@ const site = ref({
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
-const showAddMenu = ref(false)
 const isSaved = ref(true)
 
-/* ================= SAFE CURRENT PAGE ================= */
+/* ================= CURRENT PAGE ================= */
 const currentPage = computed(() => {
   return site.value.pages[currentPageIndex.value] || site.value.pages[0]
 })
@@ -30,23 +29,16 @@ const activeSection = computed(() => {
   return currentPage.value?.sections?.[activeSectionIndex.value]
 })
 
-/* ================= LOAD ================= */
+/* ================= LOAD/SAVE ================= */
 onMounted(() => {
   const saved = localStorage.getItem("siteData")
-  if (saved) {
-    site.value = JSON.parse(saved)
-  }
+  if (saved) site.value = JSON.parse(saved)
 })
 
 watch(site, () => {
   isSaved.value = false
 }, { deep: true })
 
-watch(currentPageIndex, () => {
-  activeSectionIndex.value = null
-})
-
-/* ================= SAVE ================= */
 const saveSite = () => {
   localStorage.setItem("siteData", JSON.stringify(site.value))
   isSaved.value = true
@@ -58,12 +50,6 @@ const goToPage = (i) => {
   activeSectionIndex.value = null
 }
 
-/* 🔥 EDIT NAME PAGE */
-const renamePage = (i, value) => {
-  site.value.pages[i].name = value
-}
-
-/* 🔥 ADD PAGE */
 const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
@@ -75,7 +61,6 @@ const addPage = () => {
   currentPageIndex.value = site.value.pages.length - 1
 }
 
-/* 🔥 DELETE PAGE SAFE */
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
 
@@ -88,43 +73,27 @@ const deletePage = (i) => {
     })
   }
 
-  currentPageIndex.value = Math.max(0, site.value.pages.length - 1)
-  activeSectionIndex.value = null
+  currentPageIndex.value = 0
 }
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
   const map = {
-    text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Section principale...", style: {} },
+    text: { type: "text", content: "Texte..." },
+    main: { type: "main", content: "Section principale..." },
     image: { type: "image", url: "" },
-    form: { type: "form", style: {} }
+    form: { type: "form" }
   }
 
   currentPage.value.sections.push({
     id: Date.now(),
     ...map[type]
   })
-
-  showAddMenu.value = false
 }
 
-/* 🔥 DELETE SECTION */
 const deleteSection = (i) => {
   currentPage.value.sections.splice(i, 1)
   activeSectionIndex.value = null
-}
-
-/* ================= IMAGE ================= */
-const uploadImage = (e, section) => {
-  const file = e.target.files[0]
-  if (!file) return
-
-  const reader = new FileReader()
-  reader.onload = (ev) => {
-    section.url = ev.target.result
-  }
-  reader.readAsDataURL(file)
 }
 
 /* ================= STYLE ================= */
@@ -145,13 +114,8 @@ const setStyle = (type, value = null) => {
   if (type === "color") {
     s.style.color = value
   }
-
-  if (type === "align") {
-    s.style.textAlign = value
-  }
 }
 
-/* ================= PAGE STYLE ================= */
 const setPageStyle = (type, value) => {
   currentPage.value.style ||= {}
 
@@ -159,70 +123,27 @@ const setPageStyle = (type, value) => {
   if (type === "color") currentPage.value.style.color = value
 }
 
-/* ================= PREVIEW ================= */
-const goPreview = () => {
-  mode.value = "preview"
+/* ================= IMAGE ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    section.url = ev.target.result
+  }
+  reader.readAsDataURL(file)
 }
 </script>
 
 <template>
 <div class="min-h-screen">
 
-<!-- ================= NAVBAR ================= -->
-<div class="fixed top-0 w-full bg-white shadow z-50">
-
-  <!-- MENU PAGES -->
-  <div class="flex justify-between items-center px-4 py-3 border-b">
-
-    <div class="font-bold">🌐 SaaS Builder</div>
-
-    <div class="flex gap-4 items-center">
-
-      <div class="flex gap-3 items-center">
-
-        <div
-          v-for="(p,i) in site.pages"
-          :key="p.id"
-          class="flex items-center gap-2"
-        >
-
-          <!-- PAGE BUTTON -->
-          <div
-            @click="goToPage(i)"
-            class="cursor-pointer px-2 py-1 border rounded"
-            :class="currentPageIndex===i ? 'bg-black text-white' : ''"
-          >
-            {{ p.name }}
-          </div>
-
-          <!-- EDIT NAME -->
-          <input
-            v-model="p.name"
-            @input="renamePage(i, p.name)"
-            class="border px-2 text-sm w-28"
-          />
-
-          <!-- DELETE PAGE -->
-          <button @click="deletePage(i)" class="text-red-500">✕</button>
-
-        </div>
-
-      </div>
-
-      <button @click="addPage" class="px-2">➕</button>
-
-    </div>
-
-    <div class="flex gap-2">
-      <button @click="saveSite" class="bg-green-500 text-white px-3 rounded">💾</button>
-      <button @click="goPreview" class="bg-blue-500 text-white px-3 rounded">👁</button>
-      <button v-if="mode==='preview'" @click="mode='edit'" class="bg-black text-white px-3 rounded">✏️</button>
-    </div>
-
-  </div>
+<!-- ================= EDIT TOP BAR ================= -->
+<div v-if="mode === 'edit'" class="fixed top-0 w-full bg-white shadow z-50">
 
   <!-- TOOLBAR -->
-  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex gap-2 flex-wrap">
+  <div class="p-2 bg-gray-100 flex gap-2 flex-wrap border-b">
 
     <button @click="addSection('text')">Text</button>
     <button @click="addSection('main')">Main</button>
@@ -243,16 +164,91 @@ const goPreview = () => {
 
   </div>
 
+  <!-- PAGES MENU -->
+  <div class="flex justify-between items-center px-4 py-3 border-b">
+
+    <div class="font-bold">🌐 SaaS Builder</div>
+
+    <div class="flex gap-3 items-center">
+
+      <div
+        v-for="(p,i) in site.pages"
+        :key="p.id"
+        class="flex items-center gap-2"
+      >
+
+        <div
+          @click="goToPage(i)"
+          class="cursor-pointer px-2 py-1 border rounded"
+          :class="currentPageIndex===i ? 'bg-black text-white' : ''"
+        >
+          {{ p.name }}
+        </div>
+
+        <input v-model="p.name" class="border px-2 text-sm w-28"/>
+
+        <!-- ✔ DELETE ONLY EDIT -->
+        <button @click="deletePage(i)" class="text-red-500">✕</button>
+
+      </div>
+
+      <button @click="addPage">➕</button>
+
+    </div>
+
+    <div class="flex gap-2">
+      <button @click="saveSite" class="bg-green-500 text-white px-3 rounded">💾</button>
+      <button @click="mode='preview'" class="bg-blue-500 text-white px-3 rounded">👁</button>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- ================= PREVIEW TOP BAR ================= -->
+<div v-else class="fixed top-0 w-full bg-white shadow z-50">
+
+  <div class="flex justify-between items-center px-4 py-3 border-b">
+
+    <div class="font-bold">🌐 Preview</div>
+
+    <div class="flex gap-3 items-center">
+
+      <div
+        v-for="(p,i) in site.pages"
+        :key="p.id"
+        class="flex items-center gap-2"
+      >
+
+        <div
+          @click="goToPage(i)"
+          class="cursor-pointer px-2 py-1 border rounded"
+          :class="currentPageIndex===i ? 'bg-black text-white' : ''"
+        >
+          {{ p.name }}
+        </div>
+
+        <!-- ❌ DELETE HIDDEN IN PREVIEW -->
+      </div>
+
+    </div>
+
+    <button @click="mode='edit'" class="bg-black text-white px-3 rounded">
+      ✏️ Edit
+    </button>
+
+  </div>
+
 </div>
 
 <!-- ================= CONTENT ================= -->
 <div class="pt-32 p-4" :style="currentPage?.style">
 
-  <!-- EDIT MODE -->
+  <!-- EDIT -->
   <div v-if="mode==='edit'">
 
     <div
-      v-for="(s,i) in (currentPage?.sections || [])"
+      v-for="(s,i) in currentPage.sections"
       :key="s.id"
       class="border p-4 mb-3 rounded"
       @click="activeSectionIndex=i"
@@ -261,24 +257,18 @@ const goPreview = () => {
 
       <button @click.stop="deleteSection(i)" class="text-red-500 float-right">❌</button>
 
-      <!-- TEXT -->
       <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
-
-      <!-- MAIN -->
       <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[180px] border"/>
 
-      <!-- IMAGE -->
       <div v-if="s.type==='image'">
         <input type="file" @change="uploadImage($event,s)" />
         <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
       </div>
 
-      <!-- FORM -->
-      <div v-if="s.type==='form'" class="space-y-2">
-        <input placeholder="Nom" class="border w-full p-2"/>
-        <input placeholder="Email" class="border w-full p-2"/>
-        <textarea placeholder="Message" class="border w-full p-2"/>
-        <button class="bg-blue-500 text-white px-3 py-1 rounded">Envoyer</button>
+      <div v-if="s.type==='form'">
+        <input placeholder="Nom" class="border w-full"/>
+        <input placeholder="Email" class="border w-full"/>
+        <textarea class="border w-full"/>
       </div>
 
     </div>
@@ -298,7 +288,6 @@ const goPreview = () => {
         <input placeholder="Nom" class="border w-full"/>
         <input placeholder="Email" class="border w-full"/>
         <textarea class="border w-full"/>
-        <button>Envoyer</button>
       </div>
 
     </div>

@@ -7,6 +7,7 @@ const site = ref({
     {
       id: 1,
       name: "Accueil",
+      style: {},
       sections: [
         { id: 1, type: "text", content: "Bienvenue 👋", style: {} }
       ]
@@ -18,16 +19,14 @@ const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
 const isSaved = ref(true)
+const showAddMenu = ref(false)
 
 /* ================= LOAD ================= */
 onMounted(() => {
   const saved = localStorage.getItem("siteData")
-  if (saved) {
-    site.value = JSON.parse(saved)
-  }
+  if (saved) site.value = JSON.parse(saved)
 })
 
-/* ================= AUTO UNSAVED ================= */
 watch(site, () => {
   isSaved.value = false
 }, { deep: true })
@@ -36,7 +35,7 @@ watch(site, () => {
 const saveSite = () => {
   localStorage.setItem("siteData", JSON.stringify(site.value))
   isSaved.value = true
-  alert("✅ Site sauvegardé")
+  alert("✅ Sauvegardé")
 }
 
 /* ================= PAGE ================= */
@@ -53,9 +52,8 @@ const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
     name: "Nouvelle page",
-    sections: [
-      { id: Date.now(), type: "text", content: "Contenu de la page ✨", style: {} }
-    ]
+    style: {},
+    sections: []
   })
 }
 
@@ -63,65 +61,63 @@ const addPage = () => {
 const addSection = (type) => {
   const map = {
     text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Zone principale...", style: {} },
-    image: { type: "image", url: "" }
+    main: { type: "main", content: "Section...", style: {} },
+    image: { type: "image", url: "" },
+    form: { type: "form", style: {} }
   }
 
   currentPage.value.sections.push({
     id: Date.now(),
     ...map[type]
   })
+
+  showAddMenu.value = false
 }
 
-const deleteSection = (i) => {
-  currentPage.value.sections.splice(i, 1)
+/* ================= IMAGE FIX ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  if (!file) return
+
+  const reader = new FileReader()
+
+  reader.onload = (event) => {
+    section.url = event.target.result
+  }
+
+  reader.readAsDataURL(file)
 }
 
-/* ================= ACTIVE ================= */
+/* ================= STYLE SECTION ================= */
 const activeSection = computed(() =>
   currentPage.value.sections?.[activeSectionIndex.value]
 )
 
-/* ================= STYLE ================= */
 const setStyle = (type, value=null) => {
   const s = activeSection.value
   if (!s) return
 
   s.style ||= {}
 
-  if (type === "bold") {
-    s.style.fontWeight = s.style.fontWeight === "bold" ? "normal" : "bold"
-  }
-
-  if (type === "italic") {
-    s.style.fontStyle = s.style.fontStyle === "italic" ? "normal" : "italic"
-  }
-
-  if (type === "underline") {
-    s.style.textDecoration = s.style.textDecoration === "underline" ? "none" : "underline"
-  }
-
+  if (type === "bold") s.style.fontWeight = s.style.fontWeight === "bold" ? "normal" : "bold"
+  if (type === "italic") s.style.fontStyle = s.style.fontStyle === "italic" ? "normal" : "italic"
   if (type === "align") s.style.textAlign = value
   if (type === "color") s.style.color = value
-  if (type === "bg") s.style.backgroundColor = value
 }
 
-/* ================= IMAGE ================= */
-const uploadImage = (e, section) => {
-  const file = e.target.files[0]
-  if (!file) return
+/* ================= STYLE PAGE ================= */
+const setPageStyle = (type, value) => {
+  currentPage.value.style ||= {}
 
-  const reader = new FileReader()
-  reader.onload = () => {
-    section.url = reader.result
-  }
-  reader.readAsDataURL(file)
+  if (type === "bg") currentPage.value.style.backgroundColor = value
+  if (type === "color") currentPage.value.style.color = value
+  if (type === "align") currentPage.value.style.textAlign = value
 }
 
 /* ================= PREVIEW ================= */
 const goPreview = () => {
   if (!isSaved.value) {
-    alert("⚠️ Sauvegarde avant Aperçu")
+    alert("⚠️ Sauvegarde avant")
     return
   }
   mode.value = "preview"
@@ -129,16 +125,18 @@ const goPreview = () => {
 </script>
 
 <template>
-<div class="min-h-screen bg-gray-50">
+<div class="min-h-screen">
 
 <!-- ================= NAVBAR ================= -->
 <div class="fixed top-0 w-full bg-white shadow z-50">
 
+  <!-- MENU -->
   <div class="flex justify-between items-center px-4 py-3 border-b">
 
     <div class="font-bold">🌐 Mon Site</div>
 
     <div class="flex gap-4">
+
       <div
         v-for="(p,i) in site.pages"
         :key="p.id"
@@ -149,58 +147,63 @@ const goPreview = () => {
         {{ p.name }}
       </div>
 
-      <button v-if="mode==='edit'" @click="addPage">➕</button>
+      <button @click="addPage">➕</button>
+
     </div>
 
     <!-- ACTIONS -->
     <div class="flex gap-2">
 
-      <button
-        v-if="mode==='edit'"
-        @click="saveSite"
-        class="bg-green-500 text-white px-3 py-1 rounded"
-      >
-        💾 Sauvegarder
+      <button @click="saveSite" class="bg-green-500 text-white px-3 rounded">
+        💾
       </button>
 
-      <button
-        v-if="mode==='edit'"
-        @click="goPreview"
-        class="bg-blue-500 text-white px-3 py-1 rounded"
-      >
-        👁 Aperçu
+      <button @click="goPreview" class="bg-blue-500 text-white px-3 rounded">
+        👁
       </button>
 
-      <button
-        v-else
-        @click="mode='edit'"
-        class="bg-black text-white px-3 py-1 rounded"
-      >
-        ✏️ Edit
+      <button v-if="mode==='preview'" @click="mode='edit'" class="bg-black text-white px-3 rounded">
+        ✏️
       </button>
 
     </div>
 
   </div>
 
-  <!-- TOOLBAR -->
-  <div v-if="mode==='edit'" class="flex gap-2 p-2 bg-gray-100">
+  <!-- ================= TOOLBAR ================= -->
+  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex flex-wrap gap-2">
 
-    <button @click="addSection('text')" class="btn">📝</button>
-    <button @click="addSection('main')" class="btn">📦</button>
-    <button @click="addSection('image')" class="btn">🖼</button>
+    <!-- ADD MENU -->
+    <div class="relative">
+      <button @click="showAddMenu = !showAddMenu" class="btn">➕ Ajouter</button>
 
+      <div v-if="showAddMenu" class="absolute bg-white shadow p-2 mt-1 rounded z-50">
+
+        <div @click="addSection('text')" class="item">📝 Texte</div>
+        <div @click="addSection('main')" class="item">📦 Section</div>
+        <div @click="addSection('image')" class="item">🖼 Image</div>
+        <div @click="addSection('form')" class="item">📩 Formulaire</div>
+
+      </div>
+    </div>
+
+    <!-- SECTION STYLE -->
     <div v-if="activeSection" class="flex gap-2 ml-4">
       <button @click="setStyle('bold')" class="btn">B</button>
       <button @click="setStyle('italic')" class="btn">I</button>
-      <button @click="setStyle('underline')" class="btn">U</button>
-
-      <button @click="setStyle('align','left')" class="btn">⬅</button>
-      <button @click="setStyle('align','center')" class="btn">⬛</button>
-      <button @click="setStyle('align','right')" class="btn">➡</button>
 
       <input type="color" @input="setStyle('color',$event.target.value)" />
-      <input type="color" @input="setStyle('bg',$event.target.value)" />
+    </div>
+
+    <!-- PAGE STYLE -->
+    <div class="flex gap-2 ml-6">
+      🎨 Page:
+      <input type="color" @input="setPageStyle('bg',$event.target.value)" />
+      <input type="color" @input="setPageStyle('color',$event.target.value)" />
+
+      <button @click="setPageStyle('align','left')" class="btn">⬅</button>
+      <button @click="setPageStyle('align','center')" class="btn">⬛</button>
+      <button @click="setPageStyle('align','right')" class="btn">➡</button>
     </div>
 
   </div>
@@ -208,7 +211,7 @@ const goPreview = () => {
 </div>
 
 <!-- ================= CONTENT ================= -->
-<div class="pt-28 p-4">
+<div class="pt-28 p-4" :style="currentPage.style">
 
   <!-- EDIT -->
   <div v-if="mode==='edit'">
@@ -221,21 +224,28 @@ const goPreview = () => {
       :style="s.style"
     >
 
-      <button @click.stop="deleteSection(i)" class="float-right text-red-500">
+      <button @click.stop="currentPage.sections.splice(i,1)" class="float-right text-red-500">
         ❌
       </button>
 
       <input v-if="s.type==='text'" v-model="s.content" class="w-full border p-2"/>
 
-      <textarea
-        v-if="s.type==='main'"
-        v-model="s.content"
-        class="w-full min-h-[200px] border"
-      />
+      <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[200px] border"/>
 
+      <!-- IMAGE FIX -->
       <div v-if="s.type==='image'">
         <input type="file" @change="uploadImage($event,s)" />
         <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
+      </div>
+
+      <!-- FORM -->
+      <div v-if="s.type==='form'" class="space-y-2">
+        <input placeholder="Nom" class="border p-2 w-full"/>
+        <input placeholder="Email" class="border p-2 w-full"/>
+        <textarea placeholder="Message" class="border p-2 w-full"></textarea>
+        <button class="bg-blue-500 text-white px-4 py-2 rounded">
+          Envoyer
+        </button>
       </div>
 
     </div>
@@ -244,11 +254,26 @@ const goPreview = () => {
 
   <!-- PREVIEW -->
   <div v-else>
+
     <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
+
       <p v-if="s.type==='text'">{{ s.content }}</p>
+
       <div v-if="s.type==='main'">{{ s.content }}</div>
+
       <img v-if="s.type==='image'" :src="s.url"/>
+
+      <div v-if="s.type==='form'">
+        <input placeholder="Nom" class="border p-2 w-full"/>
+        <input placeholder="Email" class="border p-2 w-full"/>
+        <textarea placeholder="Message" class="border p-2 w-full"></textarea>
+        <button class="bg-blue-500 text-white px-4 py-2 rounded">
+          Envoyer
+        </button>
+      </div>
+
     </div>
+
   </div>
 
 </div>
@@ -259,7 +284,14 @@ const goPreview = () => {
 .btn {
   background: white;
   padding: 6px 10px;
-  border-radius: 6px;
   border: 1px solid #ddd;
+  border-radius: 6px;
+}
+.item {
+  padding: 6px;
+  cursor: pointer;
+}
+.item:hover {
+  background: #f3f4f6;
 }
 </style>

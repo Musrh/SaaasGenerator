@@ -18,7 +18,6 @@ const site = ref({
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
-const isSaved = ref(true)
 
 /* ================= CURRENT PAGE ================= */
 const currentPage = computed(() => {
@@ -29,20 +28,13 @@ const activeSection = computed(() => {
   return currentPage.value?.sections?.[activeSectionIndex.value]
 })
 
-/* ================= LOAD/SAVE ================= */
+/* ================= LOAD ================= */
 onMounted(() => {
   const saved = localStorage.getItem("siteData")
   if (saved) site.value = JSON.parse(saved)
 })
 
-watch(site, () => {
-  isSaved.value = false
-}, { deep: true })
-
-const saveSite = () => {
-  localStorage.setItem("siteData", JSON.stringify(site.value))
-  isSaved.value = true
-}
+watch(site, () => {}, { deep: true })
 
 /* ================= PAGE ================= */
 const goToPage = (i) => {
@@ -57,13 +49,11 @@ const addPage = () => {
     style: {},
     sections: []
   })
-
   currentPageIndex.value = site.value.pages.length - 1
 }
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-
   if (site.value.pages.length === 0) {
     site.value.pages.push({
       id: Date.now(),
@@ -72,7 +62,6 @@ const deletePage = (i) => {
       sections: []
     })
   }
-
   currentPageIndex.value = 0
 }
 
@@ -93,7 +82,6 @@ const addSection = (type) => {
 
 const deleteSection = (i) => {
   currentPage.value.sections.splice(i, 1)
-  activeSectionIndex.value = null
 }
 
 /* ================= STYLE ================= */
@@ -118,7 +106,6 @@ const setStyle = (type, value = null) => {
 
 const setPageStyle = (type, value) => {
   currentPage.value.style ||= {}
-
   if (type === "bg") currentPage.value.style.backgroundColor = value
   if (type === "color") currentPage.value.style.color = value
 }
@@ -139,11 +126,10 @@ const uploadImage = (e, section) => {
 <template>
 <div class="min-h-screen">
 
-<!-- ================= EDIT TOP BAR ================= -->
-<div v-if="mode === 'edit'" class="fixed top-0 w-full bg-white shadow z-50">
+<!-- ================= TOP BAR ================= -->
+<div class="fixed top-0 w-full bg-white shadow z-50">
 
-  <!-- TOOLBAR -->
-  <div class="p-2 bg-gray-100 flex gap-2 flex-wrap border-b">
+  <div v-if="mode==='edit'" class="p-2 bg-gray-100 flex gap-2 flex-wrap border-b">
 
     <button @click="addSection('text')">Text</button>
     <button @click="addSection('main')">Main</button>
@@ -164,18 +150,14 @@ const uploadImage = (e, section) => {
 
   </div>
 
-  <!-- PAGES MENU -->
+  <!-- MENU -->
   <div class="flex justify-between items-center px-4 py-3 border-b">
 
     <div class="font-bold">🌐 SaaS Builder</div>
 
     <div class="flex gap-3 items-center">
 
-      <div
-        v-for="(p,i) in site.pages"
-        :key="p.id"
-        class="flex items-center gap-2"
-      >
+      <div v-for="(p,i) in site.pages" :key="p.id" class="flex items-center gap-2">
 
         <div
           @click="goToPage(i)"
@@ -187,8 +169,7 @@ const uploadImage = (e, section) => {
 
         <input v-model="p.name" class="border px-2 text-sm w-28"/>
 
-        <!-- ✔ DELETE ONLY EDIT -->
-        <button @click="deletePage(i)" class="text-red-500">✕</button>
+        <button v-if="mode==='edit'" @click="deletePage(i)" class="text-red-500">✕</button>
 
       </div>
 
@@ -197,45 +178,9 @@ const uploadImage = (e, section) => {
     </div>
 
     <div class="flex gap-2">
-      <button @click="saveSite" class="bg-green-500 text-white px-3 rounded">💾</button>
+      <button @click="mode='edit'" class="bg-black text-white px-3 rounded">✏️</button>
       <button @click="mode='preview'" class="bg-blue-500 text-white px-3 rounded">👁</button>
     </div>
-
-  </div>
-
-</div>
-
-<!-- ================= PREVIEW TOP BAR ================= -->
-<div v-else class="fixed top-0 w-full bg-white shadow z-50">
-
-  <div class="flex justify-between items-center px-4 py-3 border-b">
-
-    <div class="font-bold">🌐 Preview</div>
-
-    <div class="flex gap-3 items-center">
-
-      <div
-        v-for="(p,i) in site.pages"
-        :key="p.id"
-        class="flex items-center gap-2"
-      >
-
-        <div
-          @click="goToPage(i)"
-          class="cursor-pointer px-2 py-1 border rounded"
-          :class="currentPageIndex===i ? 'bg-black text-white' : ''"
-        >
-          {{ p.name }}
-        </div>
-
-        <!-- ❌ DELETE HIDDEN IN PREVIEW -->
-      </div>
-
-    </div>
-
-    <button @click="mode='edit'" class="bg-black text-white px-3 rounded">
-      ✏️ Edit
-    </button>
 
   </div>
 
@@ -258,6 +203,7 @@ const uploadImage = (e, section) => {
       <button @click.stop="deleteSection(i)" class="text-red-500 float-right">❌</button>
 
       <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
+
       <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[180px] border"/>
 
       <div v-if="s.type==='image'">
@@ -265,10 +211,30 @@ const uploadImage = (e, section) => {
         <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
       </div>
 
-      <div v-if="s.type==='form'">
-        <input placeholder="Nom" class="border w-full"/>
-        <input placeholder="Email" class="border w-full"/>
-        <textarea class="border w-full"/>
+      <!-- ================= FORMULAIRE CORRIGÉ ================= -->
+      <div v-if="s.type==='form'" class="space-y-3">
+
+        <input placeholder="Nom" class="border w-full p-2 rounded"/>
+
+        <input placeholder="Email" class="border w-full p-2 rounded"/>
+
+        <textarea
+          placeholder="Message"
+          class="border w-full p-2 rounded min-h-[120px]"
+        ></textarea>
+
+        <div class="flex justify-end gap-2 pt-2">
+
+          <button class="bg-green-500 text-white px-4 py-1 rounded">
+            Ok
+          </button>
+
+          <button class="bg-gray-300 px-4 py-1 rounded">
+            Annuler
+          </button>
+
+        </div>
+
       </div>
 
     </div>
@@ -284,10 +250,30 @@ const uploadImage = (e, section) => {
       <div v-if="s.type==='main'">{{ s.content }}</div>
       <img v-if="s.type==='image'" :src="s.url"/>
 
-      <div v-if="s.type==='form'">
-        <input placeholder="Nom" class="border w-full"/>
-        <input placeholder="Email" class="border w-full"/>
-        <textarea class="border w-full"/>
+      <!-- FORM PREVIEW -->
+      <div v-if="s.type==='form'" class="space-y-3">
+
+        <input placeholder="Nom" class="border w-full p-2 rounded"/>
+
+        <input placeholder="Email" class="border w-full p-2 rounded"/>
+
+        <textarea
+          placeholder="Message"
+          class="border w-full p-2 rounded min-h-[120px]"
+        ></textarea>
+
+        <div class="flex justify-end gap-2 pt-2">
+
+          <button class="bg-green-500 text-white px-4 py-1 rounded">
+            Ok
+          </button>
+
+          <button class="bg-gray-300 px-4 py-1 rounded">
+            Annuler
+          </button>
+
+        </div>
+
       </div>
 
     </div>

@@ -1,5 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
+import { db, auth } from "../firebase.js"
+import { doc, getDoc, setDoc } from "firebase/firestore"
+import { onAuthStateChanged } from "firebase/auth"
 
 /* ================= SITE ================= */
 const site = ref({
@@ -20,6 +23,8 @@ const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
 const isSaved = ref(true)
+const isSaving = ref(false)
+const currentUser = ref(null)
 const showPageMenu = ref(false)
 const sidebarTab = ref("sections") // 'sections' | 'style' | 'pages'
 const showNotif = ref(false)
@@ -32,8 +37,27 @@ const activeSection = computed(() => currentPage.value?.sections?.[activeSection
 
 /* ================= LOAD ================= */
 onMounted(() => {
-  const saved = localStorage.getItem("siteDataPro")
-  if (saved) site.value = JSON.parse(saved)
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) return
+    currentUser.value = user
+
+    try {
+      const docRef = doc(db, "users", user.uid)
+      const snap = await getDoc(docRef)
+      if (snap.exists() && snap.data().siteData) {
+        site.value = snap.data().siteData
+      } else {
+        // Fallback localStorage
+        const saved = localStorage.getItem("siteDataPro")
+        if (saved) site.value = JSON.parse(saved)
+      }
+    } catch (e) {
+      console.error("Erreur chargement Firestore :", e)
+      notify("Erreur de chargement. Données locales utilisées.")
+      const saved = localStorage.getItem("siteDataPro")
+      if (saved) site.value = JSON.parse(saved)
+    }
+  })
 })
 
 watch(site, () => { isSaved.value = false }, { deep: true })
@@ -47,10 +71,27 @@ const notify = (msg) => {
 }
 
 /* ================= SAVE ================= */
-const saveSite = () => {
-  localStorage.setItem("siteDataPro", JSON.stringify(site.value))
-  isSaved.value = true
-  notify("Projet sauvegardé ✓")
+const saveSite = async () => {
+  if (!currentUser.value) {
+    notify("⚠️ Vous devez être connecté pour sauvegarder.")
+    return
+  }
+  if (isSaving.value) return
+
+  isSaving.value = true
+  try {
+    const docRef = doc(db, "users", currentUser.value.uid)
+    await setDoc(docRef, { siteData: site.value }, { merge: true })
+    // Backup local aussi
+    localStorage.setItem("siteDataPro", JSON.stringify(site.value))
+    isSaved.value = true
+    notify("Projet sauvegardé ✓")
+  } catch (e) {
+    console.error("Erreur sauvegarde Firestore :", e)
+    notify("❌ Erreur de sauvegarde. Réessayez.")
+  } finally {
+    isSaving.value = false
+  }
 }
 
 /* ================= PAGES ================= */
@@ -197,7 +238,10 @@ const setPageStyle = (type, value) => {
 
     <div class="topbar-actions">
       <span class="save-status" :class="{ saved: isSaved }">{{ isSaved ? '✓ Sauvegardé' : '● Non sauvegardé' }}</span>
-      <button class="btn-action" @click="saveSite">Sauvegarder</button>
+      <button class="btn-action" @click="saveSite" :disabled="isSaving || !currentUser" :class="{ saving: isSaving }">
+        <span v-if="isSaving" class="spinner"/>
+        <span>{{ isSaving ? 'Sauvegarde...' : !currentUser ? 'Non connecté' : 'Sauvegarder' }}</span>
+      </button>
       <button class="btn-action primary" @click="mode = mode === 'preview' ? 'edit' : 'preview'">
         {{ mode === 'preview' ? '✏ Éditer' : '▶ Aperçu' }}
       </button>
@@ -550,6 +594,22 @@ body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-s
   color: white;
 }
 .btn-action.primary:hover { background: #7c73ff; }
+
+.btn-action:disabled {
+  opacity: .45; cursor: not-allowed;
+}
+.btn-action.saving { opacity: .8; }
+
+.spinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: white; border-radius: 50%;
+  animation: spin .6s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.btn-action { display: flex; align-items: center; gap: 6px; }
 
 /* ===== WORKSPACE ===== */
 .workspace {

@@ -3,13 +3,9 @@ import { ref, watch } from "vue"
 import { db } from "../firebase"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
 
-const props = defineProps({
-  uid: String
-})
+const props = defineProps({ uid: String })
 
-/* ======================
-   STATE
-====================== */
+/* ================= STATE ================= */
 const site = ref({
   plan: "free",
   theme: {
@@ -23,10 +19,9 @@ const site = ref({
 const mode = ref("edit")
 const loading = ref(false)
 const error = ref("")
+const activeSectionIndex = ref(null)
 
-/* ======================
-   LOAD SITE
-====================== */
+/* ================= LOAD ================= */
 const loadSite = async (uid) => {
   if (!uid) return
 
@@ -41,11 +36,7 @@ const loadSite = async (uid) => {
 
       site.value = {
         plan: data.plan || "free",
-        theme: data.theme || {
-          primary: "#000000",
-          background: "#ffffff",
-          text: "#111111"
-        },
+        theme: data.theme || site.value.theme,
         sections: Array.isArray(data.sections) ? data.sections : []
       }
     } else {
@@ -53,24 +44,15 @@ const loadSite = async (uid) => {
     }
 
   } catch (e) {
-    console.log(e)
     error.value = "Erreur Firestore"
   }
 
   loading.value = false
 }
 
-watch(
-  () => props.uid,
-  (v) => {
-    if (v) loadSite(v)
-  },
-  { immediate: true }
-)
+watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ======================
-   ADD SECTION
-====================== */
+/* ================= SECTIONS ================= */
 const addSection = (type) => {
   const map = {
     hero: { type: "hero", title: "Hero title", style: {} },
@@ -91,69 +73,43 @@ const addSection = (type) => {
   })
 }
 
-/* ======================
-   DELETE SECTION
-====================== */
 const deleteSection = (i) => {
   site.value.sections.splice(i, 1)
+  activeSectionIndex.value = null
 }
 
-/* ======================
-   SAVE SITE
-====================== */
+/* ================= SAVE ================= */
 const saveSite = async () => {
   if (!props.uid) return
 
-  try {
-    await updateDoc(doc(db, "users", props.uid), {
-      plan: site.value.plan,
-      theme: site.value.theme,
-      sections: site.value.sections
-    })
+  await updateDoc(doc(db, "users", props.uid), {
+    plan: site.value.plan,
+    theme: site.value.theme,
+    sections: site.value.sections
+  })
 
-    alert("Saved ✔")
-  } catch (e) {
-    console.log(e)
-    alert("Save error")
-  }
+  alert("Saved ✔")
 }
 
-/* ======================
-   IMAGE UPLOAD (BASE64)
-====================== */
-const uploadImage = (event, section) => {
-  const file = event.target.files[0]
+/* ================= IMAGE ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
   if (!file) return
 
   const reader = new FileReader()
-
-  reader.onload = () => {
-    section.url = reader.result
-  }
-
+  reader.onload = () => section.url = reader.result
   reader.readAsDataURL(file)
 }
 
-/* ======================
-   GALLERY UPLOAD
-====================== */
 const uploadGallery = (e, section) => {
-  const files = Array.from(e.target.files)
-
-  files.forEach(file => {
+  Array.from(e.target.files).forEach(file => {
     const reader = new FileReader()
-
-    reader.onload = () => {
-      section.images.push(reader.result)
-    }
-
+    reader.onload = () => section.images.push(reader.result)
     reader.readAsDataURL(file)
   })
 }
 
-/* ======================
-   STYLE EDITOR
-====================== */
+/* ================= STYLE ================= */
 const setStyle = (section, type) => {
   section.style = section.style || {}
 
@@ -196,10 +152,11 @@ const setBg = (section, e) => {
       backgroundColor: site.theme.background,
       color: site.theme.text
     }"
+    @click.self="activeSectionIndex=null"
   >
 
     <!-- HEADER -->
-    <div class="flex justify-between mb-4">
+    <div class="flex justify-between mb-3">
       <h1 class="font-bold text-xl">SaaS Builder</h1>
 
       <div class="flex gap-2">
@@ -213,116 +170,91 @@ const setBg = (section, e) => {
       </div>
     </div>
 
+    <!-- GLOBAL TOOLBAR -->
+    <div
+      v-if="mode==='edit' && activeSectionIndex !== null"
+      class="sticky top-0 bg-white border p-2 mb-3 z-50 flex gap-2 flex-wrap"
+    >
+      <span class="font-bold">Edit Section</span>
+
+      <button @click="setStyle(site.sections[activeSectionIndex],'bold')" class="border px-2">B</button>
+      <button @click="setStyle(site.sections[activeSectionIndex],'italic')" class="border px-2">I</button>
+      <button @click="setStyle(site.sections[activeSectionIndex],'underline')" class="border px-2">U</button>
+
+      <button @click="setAlign(site.sections[activeSectionIndex],'left')" class="border px-2">⬅</button>
+      <button @click="setAlign(site.sections[activeSectionIndex],'center')" class="border px-2">⬌</button>
+      <button @click="setAlign(site.sections[activeSectionIndex],'right')" class="border px-2">➡</button>
+
+      <input type="color" @input="e => setColor(site.sections[activeSectionIndex], e)" />
+      <input type="color" @input="e => setBg(site.sections[activeSectionIndex], e)" />
+    </div>
+
     <p v-if="loading">Loading...</p>
     <p v-if="error" class="text-red-500">{{ error }}</p>
 
-    <p class="font-bold mb-3">Plan: {{ site.plan }}</p>
-
-    <!-- ================= THEME ================= -->
+    <!-- THEME -->
     <div v-if="mode==='edit'" class="border p-2 mb-4">
-
-      <h3 class="font-bold">🎨 Theme</h3>
-
+      <h3 class="font-bold">Theme</h3>
       <input type="color" v-model="site.theme.primary" />
       <input type="color" v-model="site.theme.background" />
       <input type="color" v-model="site.theme.text" />
-
     </div>
 
-    <!-- ================= EDIT MODE ================= -->
+    <!-- EDIT MODE -->
     <div v-if="mode==='edit'">
 
       <div
         v-for="(s,i) in site.sections"
         :key="s.id"
-        class="border p-3 mb-3 relative"
+        class="border p-3 mb-3 cursor-pointer"
+        :class="activeSectionIndex===i ? 'border-blue-500' : ''"
+        @click.stop="activeSectionIndex=i"
         :style="s.style"
       >
 
-        <button
-          class="absolute top-1 right-1 text-red-500"
-          @click="deleteSection(i)"
-        >
-          ✕
-        </button>
+        <button class="text-red-500 float-right" @click.stop="deleteSection(i)">✕</button>
 
-        <!-- TOOLBAR -->
-        <div class="flex gap-2 mb-2 flex-wrap text-xs" v-if="s.type!=='image'">
+        <input v-if="s.type==='hero'" v-model="s.title" class="border w-full p-2"/>
+        <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
+        <textarea v-if="s.type==='main'" v-model="s.content" class="w-full h-[500px] border p-2"/>
 
-          <button @click="setStyle(s,'bold')" class="border px-2">B</button>
-          <button @click="setStyle(s,'italic')" class="border px-2">I</button>
-          <button @click="setStyle(s,'underline')" class="border px-2">U</button>
-
-          <button @click="setAlign(s,'left')" class="border px-2">⬅</button>
-          <button @click="setAlign(s,'center')" class="border px-2">⬌</button>
-          <button @click="setAlign(s,'right')" class="border px-2">➡</button>
-
-          <input type="color" @input="e=>setColor(s,e)" />
-          <input type="color" @input="e=>setBg(s,e)" />
-
-        </div>
-
-        <!-- HERO -->
-        <input v-if="s.type==='hero'" v-model="s.title" class="border p-2 w-full text-xl"/>
-
-        <!-- TEXT -->
-        <input v-if="s.type==='text'" v-model="s.content" class="border p-2 w-full"/>
-
-        <!-- MAIN -->
-        <textarea v-if="s.type==='main'" v-model="s.content" class="w-full h-[500px] border p-4"/>
-
-        <!-- MENU -->
         <div v-if="s.type==='menu'">
-          <input v-for="(m,i) in s.items" :key="i" v-model="s.items[i]" class="border m-1 p-1"/>
+          <input v-for="(m,i) in s.items" :key="i" v-model="s.items[i]" class="border m-1"/>
         </div>
 
-        <!-- IMAGE -->
         <div v-if="s.type==='image'">
           <input type="file" @change="uploadImage($event,s)"/>
-          <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
+          <img v-if="s.url" :src="s.url" class="w-full"/>
         </div>
 
-        <!-- GALLERY -->
         <div v-if="s.type==='gallery'">
           <input type="file" multiple @change="uploadGallery($event,s)"/>
         </div>
 
-        <!-- FEATURES -->
-        <div v-if="s.type==='features'">
-          <input v-for="(f,i) in s.items" :key="i" v-model="s.items[i]" class="border m-1 p-1"/>
-        </div>
+        <input v-if="s.type==='video'" v-model="s.url" class="border w-full"/>
 
-        <!-- VIDEO -->
-        <input v-if="s.type==='video'" v-model="s.url" class="border p-2 w-full"/>
-
-        <!-- FOOTER -->
-        <input v-if="s.type==='footer'" v-model="s.text" class="border p-2 w-full"/>
+        <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
 
       </div>
 
-      <!-- ACTIONS -->
-      <div class="flex flex-wrap gap-2 mt-4">
-
+      <div class="flex flex-wrap gap-2">
         <button @click="addSection('hero')" class="border px-2">Hero</button>
         <button @click="addSection('text')" class="border px-2">Text</button>
         <button @click="addSection('main')" class="border px-2">Main</button>
         <button @click="addSection('menu')" class="border px-2">Menu</button>
         <button @click="addSection('image')" class="border px-2">Image</button>
-        <button @click="addSection('footer')" class="border px-2">Footer</button>
-        <button @click="addSection('banner')" class="border px-2">Banner</button>
-        <button @click="addSection('features')" class="border px-2">Features</button>
         <button @click="addSection('gallery')" class="border px-2">Gallery</button>
         <button @click="addSection('video')" class="border px-2">Video</button>
+        <button @click="addSection('footer')" class="border px-2">Footer</button>
 
         <button @click="saveSite" class="bg-green-600 text-white px-3">
           Save
         </button>
-
       </div>
 
     </div>
 
-    <!-- ================= PREVIEW ================= -->
+    <!-- PREVIEW -->
     <div v-else>
 
       <div v-for="s in site.sections" :key="s.id" class="mb-6" :style="s.style">
@@ -343,10 +275,6 @@ const setBg = (section, e) => {
 
         <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
           <img v-for="(img,i) in s.images" :key="i" :src="img"/>
-        </div>
-
-        <div v-if="s.type==='features'">
-          <div v-for="(f,i) in s.items" :key="i">{{ f }}</div>
         </div>
 
         <iframe v-if="s.type==='video'" :src="s.url" class="w-full h-64"/>

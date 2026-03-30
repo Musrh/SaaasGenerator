@@ -8,7 +8,7 @@ const site = ref({
       id: 1,
       name: "Home",
       sections: [
-        { id: 1, type: "text", content: "Bienvenue", style: {} }
+        { id: 1, type: "text", content: "Bienvenue 👋", style: {} }
       ]
     }
   ]
@@ -18,7 +18,6 @@ const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
 const showCode = ref(false)
-const showFileMenu = ref(false)
 
 /* ================= PAGE ACTIVE ================= */
 const currentPage = computed(() =>
@@ -36,15 +35,15 @@ const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
     name: "Nouvelle page",
-    sections: []
+    sections: [
+      { id: Date.now(), type: "text", content: "Nouvelle page ✨", style: {} }
+    ]
   })
 }
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-  if (currentPageIndex.value >= site.value.pages.length) {
-    currentPageIndex.value = 0
-  }
+  currentPageIndex.value = 0
 }
 
 /* ================= SECTIONS ================= */
@@ -52,7 +51,7 @@ const addSection = (type) => {
   const map = {
     text: { type: "text", content: "Texte...", style: {} },
     main: { type: "main", content: "Zone principale...", style: {} },
-    image: { type: "image", url: "", style: {} }
+    image: { type: "image", url: "" }
   }
 
   currentPage.value.sections.push({
@@ -72,7 +71,7 @@ const activeSection = computed(() =>
 )
 
 /* ================= STYLE ================= */
-const setStyle = (section, type, value = null) => {
+const setStyle = (section, type, value=null) => {
   if (!section) return
   section.style ||= {}
 
@@ -91,9 +90,17 @@ const setStyle = (section, type, value = null) => {
       section.style.textDecoration === "underline" ? "none" : "underline"
   }
 
-  if (type === "align") section.style.textAlign = value
-  if (type === "color") section.style.color = value
-  if (type === "bg") section.style.backgroundColor = value
+  if (type === "align") {
+    section.style.textAlign = value
+  }
+
+  if (type === "color") {
+    section.style.color = value
+  }
+
+  if (type === "bg") {
+    section.style.backgroundColor = value
+  }
 }
 
 /* ================= IMAGE ================= */
@@ -115,166 +122,135 @@ const getPageCode = () => {
 </script>
 
 <template>
-<div class="min-h-screen bg-gray-100">
+<div class="min-h-screen bg-gray-50">
 
-<!-- ================= WORD UI ================= -->
-<div v-if="mode==='edit'" class="fixed top-0 w-full z-50 shadow">
+<!-- ================= WORD BAR ================= -->
+<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white shadow z-50">
 
-  <!-- 🔷 MENU BAR -->
-  <div class="bg-gray-100 border-b px-4 py-2 flex gap-6 text-sm font-medium">
-
-    <!-- FILE MENU -->
-    <div class="relative">
-      <button @click="showFileMenu=!showFileMenu">File</button>
-
-      <div v-if="showFileMenu" class="absolute bg-white border shadow p-2 mt-1 w-40">
-        <div class="menu-item">New</div>
-        <div class="menu-item">Save</div>
-        <div class="menu-item">Export</div>
-      </div>
-    </div>
-
-    <div>Edit</div>
-    <div>View</div>
-    <div>Insert</div>
-    <div>Format</div>
-    <div>Tools</div>
-
+  <!-- MENU WORD -->
+  <div class="flex gap-6 px-4 py-2 border-b text-sm font-semibold">
+    <span class="cursor-pointer">📁 File</span>
+    <span class="cursor-pointer">✏️ Edit</span>
+    <span class="cursor-pointer">➕ Insert</span>
+    <span class="cursor-pointer">🎨 Format</span>
+    <span class="cursor-pointer">🛠 Tools</span>
   </div>
 
-  <!-- 🔷 TOOLBAR -->
-  <div class="bg-white px-4 py-2 flex flex-wrap items-center gap-3 border-b">
+  <!-- TOOLBAR -->
+  <div class="flex flex-wrap items-center gap-2 px-4 py-2">
 
-    <!-- INSERT -->
-    <div class="flex gap-2 border-r pr-3">
-      <button @click="addSection('text')" class="btn">Text</button>
-      <button @click="addSection('main')" class="btn">Main</button>
-      <button @click="addSection('image')" class="btn">Image</button>
-      <button @click="addPage" class="btn bg-green-500 text-white">+ Page</button>
-    </div>
+    <button @click="addSection('text')" class="btn">📝 Texte</button>
+    <button @click="addSection('main')" class="btn">📦 Section</button>
+    <button @click="addSection('image')" class="btn">🖼 Image</button>
+    <button @click="addPage" class="btn">📄 Page</button>
 
     <!-- STYLE -->
-    <div v-if="activeSection" class="flex gap-2 border-r pr-3">
-
-      <button @click="setStyle(activeSection,'bold')" class="btn font-bold">B</button>
-      <button @click="setStyle(activeSection,'italic')" class="btn italic">I</button>
-      <button @click="setStyle(activeSection,'underline')" class="btn underline">U</button>
+    <div v-if="activeSection" class="flex gap-2 ml-4">
+      <button @click="setStyle(activeSection,'bold')" class="btn">𝐁</button>
+      <button @click="setStyle(activeSection,'italic')" class="btn">𝑰</button>
+      <button @click="setStyle(activeSection,'underline')" class="btn">U̲</button>
 
       <button @click="setStyle(activeSection,'align','left')" class="btn">⬅</button>
       <button @click="setStyle(activeSection,'align','center')" class="btn">⬛</button>
       <button @click="setStyle(activeSection,'align','right')" class="btn">➡</button>
 
-      <input type="color" @input="setStyle(activeSection,'color',$event.target.value)" />
-      <input type="color" @input="setStyle(activeSection,'bg',$event.target.value)" />
-
+      🎨 <input type="color" @input="setStyle(activeSection,'color',$event.target.value)" />
+      🧱 <input type="color" @input="setStyle(activeSection,'bg',$event.target.value)" />
     </div>
 
-    <!-- ACTION -->
-    <div class="flex gap-2 ml-auto">
-      <button @click="showCode=true" class="btn">Code</button>
-      <button @click="mode='preview'" class="bg-blue-600 text-white px-4 py-2 rounded">
-        Aperçu
+    <!-- RIGHT -->
+    <div class="ml-auto flex gap-2">
+      <button @click="showCode=true" class="btn">💻 Code</button>
+      <button @click="mode='preview'" class="bg-blue-600 text-white px-3 py-1 rounded">
+        👁 Aperçu
       </button>
     </div>
 
   </div>
-
 </div>
 
-<!-- ================= CODE VIEW ================= -->
+<!-- ================= CODE ================= -->
 <div v-if="showCode" class="fixed inset-0 bg-black/70 z-50 p-6">
-
-  <div class="bg-white h-full p-4 overflow-auto">
-
+  <div class="bg-white h-full p-4 overflow-auto rounded">
     <div class="flex justify-between mb-3">
-      <h2>Code page</h2>
-      <button @click="showCode=false" class="bg-red-500 text-white px-3">
+      <h2 class="font-bold">💻 Code page</h2>
+      <button @click="showCode=false" class="bg-red-500 text-white px-3 rounded">
         Fermer
       </button>
     </div>
-
     <pre>{{ getPageCode() }}</pre>
-
   </div>
-
 </div>
 
 <!-- ================= CONTENT ================= -->
 <div class="pt-28 p-4">
 
-<!-- 🔥 MENU PAGES -->
-<div v-if="mode==='edit'" class="flex gap-3 border-b pb-2 mb-4 flex-wrap">
-
+<!-- MENU PAGES -->
+<div v-if="mode==='edit'" class="flex gap-3 mb-4 flex-wrap">
   <div v-for="(p,i) in site.pages" :key="p.id" class="flex items-center gap-2">
 
-    <div
+    <button
       @click="goToPage(i)"
-      class="cursor-pointer px-3 py-1 border rounded"
+      class="px-3 py-1 rounded border"
       :class="currentPageIndex===i ? 'bg-black text-white' : ''"
     >
-      {{ p.name }}
-    </div>
+      📄 {{ p.name }}
+    </button>
 
-    <input v-model="p.name" class="border px-2 w-28" />
+    <input v-model="p.name" class="border px-2 rounded w-28" />
 
-    <button @click="deletePage(i)" class="text-red-500">✕</button>
+    <button @click="deletePage(i)" class="text-red-500">❌</button>
 
   </div>
-
 </div>
 
-<!-- ================= EDIT ================= -->
+<!-- EDIT MODE -->
 <div v-if="mode==='edit'">
-
   <div
     v-for="(s,i) in currentPage.sections"
     :key="s.id"
-    class="border p-3 mb-2 cursor-pointer bg-white"
+    class="bg-white p-4 mb-3 rounded shadow cursor-pointer"
     @click="activeSectionIndex=i"
     :style="s.style"
   >
 
-    <button @click.stop="deleteSection(i)" class="text-red-500 float-right">✕</button>
+    <button @click.stop="deleteSection(i)" class="float-right text-red-500">❌</button>
 
-    <input v-if="s.type==='text'" v-model="s.content" class="border w-full p-2"/>
+    <input v-if="s.type==='text'" v-model="s.content" class="w-full border p-2 rounded"/>
 
     <textarea
       v-if="s.type==='main'"
       v-model="s.content"
-      class="w-full min-h-[300px] border p-2"
+      class="w-full min-h-[200px] border p-2 rounded"
     />
 
-    <!-- IMAGE -->
     <div v-if="s.type==='image'">
       <input type="file" @change="uploadImage($event,s)" />
       <img v-if="s.url" :src="s.url" class="w-full mt-2 rounded"/>
     </div>
 
   </div>
-
 </div>
 
-<!-- ================= PREVIEW ================= -->
+<!-- PREVIEW -->
 <div v-else>
 
-  <div class="fixed top-0 w-full bg-black text-white p-2 text-center z-50">
-    Mode Aperçu
+  <div class="fixed top-0 w-full bg-black text-white p-2 text-center">
+    👁 Mode Aperçu
   </div>
 
-  <div class="pt-12 bg-white min-h-screen">
-
+  <div class="pt-12">
     <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
 
-      <p v-if="s.type==='text'" class="p-2">{{ s.content }}</p>
+      <p v-if="s.type==='text'">{{ s.content }}</p>
 
-      <div v-if="s.type==='main'" class="p-4 min-h-[500px]">
+      <div v-if="s.type==='main'" style="min-height:400px">
         {{ s.content }}
       </div>
 
       <img v-if="s.type==='image'" :src="s.url" class="w-full"/>
 
     </div>
-
   </div>
 
 </div>
@@ -283,25 +259,13 @@ const getPageCode = () => {
 </div>
 </template>
 
-<style>
+<style scoped>
 .btn {
-  padding: 6px 10px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: white;
-  transition: 0.2s;
-}
-
-.btn:hover {
   background: #f3f4f6;
+  padding: 6px 10px;
+  border-radius: 6px;
 }
-
-.menu-item {
-  padding: 6px;
-  cursor: pointer;
-}
-
-.menu-item:hover {
-  background: #eee;
+.btn:hover {
+  background: #e5e7eb;
 }
 </style>

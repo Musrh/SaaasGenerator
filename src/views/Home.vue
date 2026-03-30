@@ -10,102 +10,113 @@ const site = ref({
   plan: "free",
   theme: {
     background: "#ffffff",
-    text: "#111"
+    text: "#111111"
   },
   pages: [
     {
-      name: "Accueil",
+      id: Date.now(),
+      name: "Home",
       sections: []
     }
   ],
-  menu: ["Accueil"]
+  menu: ["Home"]
 })
 
 const mode = ref("edit")
-const currentPageIndex = ref(0)
+const loading = ref(false)
+const error = ref("")
 const activeSectionIndex = ref(null)
+const currentPageIndex = ref(0)
 
 /* ================= LOAD ================= */
 const loadSite = async (uid) => {
-  const snap = await getDoc(doc(db, "users", uid))
+  if (!uid) return
 
-  if (snap.exists()) {
-    const data = snap.data()
+  loading.value = true
 
-    site.value = {
-      plan: data.plan || "free",
-      theme: data.theme || {
-        background: "#ffffff",
-        text: "#111"
-      },
-      pages: (data.pages && data.pages.length)
-        ? data.pages
-        : [{ name: "Accueil", sections: [] }],
-      menu: data.menu || ["Accueil"]
+  try {
+    const snap = await getDoc(doc(db, "users", uid))
+
+    if (snap.exists()) {
+      const data = snap.data()
+
+      site.value = {
+        plan: data.plan || "free",
+        theme: data.theme || site.value.theme,
+        pages: data.pages?.length
+          ? data.pages
+          : [{ id: Date.now(), name: "Home", sections: [] }],
+        menu: data.menu?.length ? data.menu : ["Home"]
+      }
+    } else {
+      error.value = "Site introuvable"
     }
+
+  } catch (e) {
+    error.value = "Erreur Firestore"
   }
+
+  loading.value = false
 }
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= PAGE ================= */
+/* ================= PAGES ================= */
 const addPage = () => {
+  const newName = "Page " + (site.value.pages.length + 1)
+
   site.value.pages.push({
-    name: "Nouvelle page",
+    id: Date.now(),
+    name: newName,
     sections: []
   })
+
+  site.value.menu.push(newName)
 }
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-  currentPageIndex.value = 0
-}
-
-/* ================= MENU ================= */
-const addMenuItem = () => {
-  site.value.menu.push("Nouvelle page")
-}
-
-const deleteMenuItem = (i) => {
   site.value.menu.splice(i, 1)
+
+  if (currentPageIndex.value >= site.value.pages.length) {
+    currentPageIndex.value = 0
+  }
 }
 
-/* ================= SECTION ================= */
+/* ================= MENU NAV ================= */
+const goToPage = (index) => {
+  currentPageIndex.value = index
+  activeSectionIndex.value = null
+}
+
+/* ================= SECTIONS ================= */
 const addSection = (type) => {
   const map = {
-    text: { type: "text", content: "Texte..." },
-    main: { type: "main", content: "Main..." },
-    image: { type: "image", url: "" }
+    hero: { type: "hero", title: "Hero", style: {} },
+    text: { type: "text", content: "Texte...", style: {} },
+    main: { type: "main", content: "Main section...", style: {} },
+    image: { type: "image", url: "" },
+    gallery: { type: "gallery", images: [] },
+    footer: { type: "footer", text: "Footer", style: {} }
   }
 
-  site.value.pages[currentPageIndex.value]?.sections.push({
+  site.value.pages[currentPageIndex.value].sections.push({
     id: Date.now(),
     ...map[type]
   })
 }
 
 const deleteSection = (i) => {
-  site.value.pages[currentPageIndex.value]?.sections.splice(i, 1)
-}
-
-/* ================= DRAG DROP ================= */
-const dragIndex = ref(null)
-
-const dragStart = (i) => {
-  dragIndex.value = i
-}
-
-const drop = (i) => {
-  const list = site.value.pages[currentPageIndex.value]?.sections
-  if (!list || dragIndex.value === null) return
-
-  const item = list.splice(dragIndex.value, 1)[0]
-  list.splice(i, 0, item)
+  site.value.pages[currentPageIndex.value].sections.splice(i, 1)
+  activeSectionIndex.value = null
 }
 
 /* ================= SAVE ================= */
 const saveSite = async () => {
+  if (!props.uid) return
+
   await updateDoc(doc(db, "users", props.uid), {
+    theme: site.value.theme,
     pages: site.value.pages,
     menu: site.value.menu
   })
@@ -113,50 +124,92 @@ const saveSite = async () => {
   alert("Saved ✔")
 }
 
-/* ================= VIEW CODE ================= */
-const viewCode = () => {
-  const page = site.value.pages[currentPageIndex.value]
-  const s = page?.sections?.[activeSectionIndex.value]
+/* ================= UPLOAD ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  const reader = new FileReader()
 
-  if (!s) {
-    alert("Aucune section sélectionnée")
-    return
-  }
-
-  const code = `<div>${s.content || ""}</div>`
-
-  const url = `/section-code.html?code=${encodeURIComponent(code)}`
-  window.open(url, "_blank")
+  reader.onload = () => section.url = reader.result
+  reader.readAsDataURL(file)
 }
 
-/* ================= MENU NAV ================= */
-const goToPage = (name) => {
-  const index = site.value.pages.findIndex(p => p.name === name)
-  if (index !== -1) currentPageIndex.value = index
+const uploadGallery = (e, section) => {
+  Array.from(e.target.files).forEach(file => {
+    const reader = new FileReader()
+    reader.onload = () => section.images.push(reader.result)
+    reader.readAsDataURL(file)
+  })
+}
+
+/* ================= STYLE ================= */
+const setStyle = (section, type) => {
+  section.style = section.style || {}
+
+  if (type === "bold") {
+    section.style.fontWeight =
+      section.style.fontWeight === "bold" ? "normal" : "bold"
+  }
+
+  if (type === "italic") {
+    section.style.fontStyle =
+      section.style.fontStyle === "italic" ? "normal" : "italic"
+  }
+
+  if (type === "underline") {
+    section.style.textDecoration =
+      section.style.textDecoration === "underline" ? "none" : "underline"
+  }
+}
+
+const setAlign = (section, value) => {
+  section.style = section.style || {}
+  section.style.textAlign = value
+}
+
+const setColor = (section, e) => {
+  section.style = section.style || {}
+  section.style.color = e.target.value
+}
+
+const setBg = (section, e) => {
+  section.style = section.style || {}
+  section.style.backgroundColor = e.target.value
 }
 </script>
 
 <template>
-<div class="min-h-screen" :style="{background:site.theme.background,color:site.theme.text}">
+<div
+  class="min-h-screen"
+  :style="{
+    backgroundColor: site.theme.background,
+    color: site.theme.text
+  }"
+>
 
 <!-- 🔥 TOP BAR -->
-<div class="fixed top-0 w-full bg-white p-2 flex justify-between">
+<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white p-2 flex justify-between z-50">
 
   <div class="flex gap-2">
-    <button @click="addSection('text')" class="border px-2">Text</button>
-    <button @click="addSection('image')" class="border px-2">Image</button>
-    <button @click="addSection('main')" class="border px-2">Main</button>
+    <button @click="addSection('hero')">Hero</button>
+    <button @click="addSection('text')">Text</button>
+    <button @click="addSection('main')">Main</button>
+    <button @click="addSection('image')">Image</button>
+    <button @click="addSection('gallery')">Gallery</button>
+    <button @click="addSection('footer')">Footer</button>
   </div>
 
   <div class="flex gap-2">
-    <button @click="saveSite" class="bg-green-500 text-white px-3">Save</button>
-    <button @click="mode='preview'" class="bg-blue-500 text-white px-3">Preview</button>
-    <button @click="mode='edit'" class="border px-3">Edit</button>
+    <button @click="addPage" class="border px-2">+ Page</button>
+    <button @click="saveSite" class="bg-green-600 text-white px-3">Save</button>
+    <button @click="mode='preview'" class="bg-blue-600 text-white px-3">Preview</button>
   </div>
 
 </div>
 
-<div class="pt-16 p-4">
+<div class="pt-20 p-4">
+
+<p v-if="loading">Loading...</p>
+<p v-if="error" class="text-red-500">{{ error }}</p>
 
 <!-- 🔥 MENU -->
 <div class="flex gap-4 mb-6 border-b pb-2">
@@ -164,88 +217,76 @@ const goToPage = (name) => {
   <div
     v-for="(m,i) in site.menu"
     :key="i"
-    @click="goToPage(m)"
-    class="cursor-pointer"
+    @click="goToPage(i)"
+    class="cursor-pointer px-2 py-1 border rounded"
+    :class="currentPageIndex===i ? 'bg-black text-white' : ''"
   >
     {{ m }}
   </div>
 
 </div>
 
-<!-- 🔥 EDIT MENU -->
-<div v-if="mode==='edit'" class="mb-4">
-  <button @click="addMenuItem">+ Menu</button>
-
-  <div v-for="(m,i) in site.menu" :key="i">
-    <input v-model="site.menu[i]" class="border"/>
-    <button @click="deleteMenuItem(i)">✕</button>
-  </div>
-</div>
-
-<!-- 🔥 PAGES -->
-<div class="mb-4">
-  <button @click="addPage">+ Page</button>
-
-  <div v-for="(p,i) in site.pages" :key="i">
-    <input v-model="p.name" class="border"/>
-    <button @click="deletePage(i)">✕</button>
-  </div>
-</div>
-
-<!-- 🔥 SECTIONS (EDIT) -->
+<!-- 🔥 EDIT -->
 <div v-if="mode==='edit'">
 
-  <div
-    v-for="(s,i) in site.pages[currentPageIndex]?.sections || []"
-    :key="s.id"
-    draggable="true"
-    @dragstart="dragStart(i)"
-    @drop="drop(i)"
-    @dragover.prevent
-    class="border p-3 mb-3"
-    @click="activeSectionIndex=i"
-  >
+  <!-- pages edit -->
+  <div class="mb-4">
+    <div v-for="(p,i) in site.pages" :key="p.id" class="flex gap-2 mb-2">
 
-    <button @click.stop="deleteSection(i)" class="text-red-500">✕</button>
+      <input v-model="p.name" class="border px-2"/>
 
-    <textarea
-      v-if="s.type==='text' || s.type==='main'"
-      v-model="s.content"
-      class="w-full min-h-[120px]"
-      style="white-space: pre-wrap"
-    />
-
-    <div v-if="s.type==='image'">
-      <input type="file" @change="e=>{
-        const r=new FileReader()
-        r.onload=()=>s.url=r.result
-        r.readAsDataURL(e.target.files[0])
-      }"/>
-      <img v-if="s.url" :src="s.url"/>
+      <button @click="deletePage(i)" class="text-red-500">✕</button>
     </div>
-
   </div>
 
-  <button @click="viewCode" class="bg-black text-white px-2">
-    Voir code
-  </button>
+  <!-- sections -->
+  <div
+    v-for="(s,i) in site.pages[currentPageIndex].sections"
+    :key="s.id"
+    class="border p-3 mb-3 cursor-pointer"
+    @click="activeSectionIndex=i"
+    :style="s.style"
+  >
+
+    <button @click.stop="deleteSection(i)" class="text-red-500 float-right">✕</button>
+
+    <input v-if="s.type==='hero'" v-model="s.title" class="border w-full"/>
+    <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
+
+    <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[300px] border"/>
+
+    <div v-if="s.type==='image'">
+      <input type="file" @change="uploadImage($event,s)" />
+      <img v-if="s.url" :src="s.url" class="w-full"/>
+    </div>
+
+    <div v-if="s.type==='gallery'">
+      <input type="file" multiple @change="uploadGallery($event,s)" />
+    </div>
+
+    <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
+
+  </div>
 
 </div>
 
 <!-- 🔥 PREVIEW -->
 <div v-else>
 
-  <div v-for="s in site.pages[currentPageIndex]?.sections || []">
+  <div v-for="s in site.pages[currentPageIndex].sections" :key="s.id" :style="s.style">
 
-    <p v-if="s.type==='text'" style="white-space: pre-wrap">
-      {{ s.content }}
-    </p>
+    <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
+    <p v-if="s.type==='text'">{{ s.content }}</p>
 
-    <div v-if="s.type==='main'" style="white-space: pre-wrap">
-      {{ s.content }}
-    </div>
+    <div v-if="s.type==='main'">{{ s.content }}</div>
 
     <img v-if="s.type==='image'" :src="s.url"/>
+
+    <div v-if="s.type==='gallery'">
+      <img v-for="(img,i) in s.images" :key="i" :src="img"/>
+    </div>
+
+    <footer v-if="s.type==='footer'">{{ s.text }}</footer>
 
   </div>
 

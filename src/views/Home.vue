@@ -5,252 +5,266 @@ import { doc, getDoc, updateDoc } from "firebase/firestore"
 
 const props = defineProps({ uid: String })
 
-/* ================= STATE ================= */
+/* STATE */
 const site = ref({
   plan: "free",
   theme: {
     background: "#ffffff",
-    text: "#111"
+    text: "#111111"
   },
-  pages: [
-    {
-      name: "Accueil",
-      sections: []
-    }
-  ],
-  menu: ["Accueil"]
+  sections: []
 })
 
 const mode = ref("edit")
-const currentPageIndex = ref(0)
+const loading = ref(false)
+const error = ref("")
 const activeSectionIndex = ref(null)
 
-/* ================= LOAD ================= */
+/* LOAD */
 const loadSite = async (uid) => {
-  const snap = await getDoc(doc(db, "users", uid))
+  if (!uid) return
 
-  if (snap.exists()) {
-    const data = snap.data()
+  loading.value = true
 
-    site.value = {
-      plan: data.plan || "free",
-      theme: data.theme || {
-        background: "#ffffff",
-        text: "#111"
-      },
-      pages: (data.pages && data.pages.length)
-        ? data.pages
-        : [{ name: "Accueil", sections: [] }],
-      menu: data.menu || ["Accueil"]
+  try {
+    const snap = await getDoc(doc(db, "users", uid))
+
+    if (snap.exists()) {
+      const data = snap.data()
+
+      site.value = {
+        plan: data.plan || "free",
+        theme: data.theme || site.value.theme,
+        sections: data.sections || []
+      }
+    } else {
+      error.value = "Site introuvable"
     }
+
+  } catch (e) {
+    error.value = "Erreur Firestore"
   }
+
+  loading.value = false
 }
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= PAGE ================= */
-const addPage = () => {
-  site.value.pages.push({
-    name: "Nouvelle page",
-    sections: []
-  })
-}
-
-const deletePage = (i) => {
-  site.value.pages.splice(i, 1)
-  currentPageIndex.value = 0
-}
-
-/* ================= MENU ================= */
-const addMenuItem = () => {
-  site.value.menu.push("Nouvelle page")
-}
-
-const deleteMenuItem = (i) => {
-  site.value.menu.splice(i, 1)
-}
-
-/* ================= SECTION ================= */
+/* ADD SECTION */
 const addSection = (type) => {
   const map = {
-    text: { type: "text", content: "Texte..." },
-    main: { type: "main", content: "Main..." },
-    image: { type: "image", url: "" }
+    hero: { type: "hero", title: "Hero", style: {} },
+    text: { type: "text", content: "Texte...", style: {} },
+    main: { type: "main", content: "Main section...", style: {} },
+    menu: { type: "menu", items: ["Home", "About"] },
+    image: { type: "image", url: "" },
+    gallery: { type: "gallery", images: [] },
+    footer: { type: "footer", text: "Footer", style: {} }
   }
 
-  site.value.pages[currentPageIndex.value]?.sections.push({
+  site.value.sections.push({
     id: Date.now(),
     ...map[type]
   })
 }
 
+/* DELETE */
 const deleteSection = (i) => {
-  site.value.pages[currentPageIndex.value]?.sections.splice(i, 1)
+  site.value.sections.splice(i, 1)
+  activeSectionIndex.value = null
 }
 
-/* ================= DRAG DROP ================= */
-const dragIndex = ref(null)
-
-const dragStart = (i) => {
-  dragIndex.value = i
-}
-
-const drop = (i) => {
-  const list = site.value.pages[currentPageIndex.value]?.sections
-  if (!list || dragIndex.value === null) return
-
-  const item = list.splice(dragIndex.value, 1)[0]
-  list.splice(i, 0, item)
-}
-
-/* ================= SAVE ================= */
+/* SAVE */
 const saveSite = async () => {
+  if (!props.uid) return
+
   await updateDoc(doc(db, "users", props.uid), {
-    pages: site.value.pages,
-    menu: site.value.menu
+    theme: site.value.theme,
+    sections: site.value.sections
   })
 
   alert("Saved ✔")
 }
 
-/* ================= VIEW CODE ================= */
-const viewCode = () => {
-  const page = site.value.pages[currentPageIndex.value]
-  const s = page?.sections?.[activeSectionIndex.value]
+/* UPLOAD (FileReader) */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  const reader = new FileReader()
 
-  if (!s) {
-    alert("Aucune section sélectionnée")
-    return
-  }
-
-  const code = `<div>${s.content || ""}</div>`
-
-  const url = `/section-code.html?code=${encodeURIComponent(code)}`
-  window.open(url, "_blank")
+  reader.onload = () => section.url = reader.result
+  reader.readAsDataURL(file)
 }
 
-/* ================= MENU NAV ================= */
-const goToPage = (name) => {
-  const index = site.value.pages.findIndex(p => p.name === name)
-  if (index !== -1) currentPageIndex.value = index
+const uploadGallery = (e, section) => {
+  Array.from(e.target.files).forEach(file => {
+    const reader = new FileReader()
+    reader.onload = () => section.images.push(reader.result)
+    reader.readAsDataURL(file)
+  })
+}
+
+/* STYLE */
+const setStyle = (section, type) => {
+  section.style = section.style || {}
+
+  if (type === "bold") {
+    section.style.fontWeight =
+      section.style.fontWeight === "bold" ? "normal" : "bold"
+  }
+
+  if (type === "italic") {
+    section.style.fontStyle =
+      section.style.fontStyle === "italic" ? "normal" : "italic"
+  }
+
+  if (type === "underline") {
+    section.style.textDecoration =
+      section.style.textDecoration === "underline" ? "none" : "underline"
+  }
+}
+
+const setAlign = (section, value) => {
+  section.style = section.style || {}
+  section.style.textAlign = value
+}
+
+const setColor = (section, e) => {
+  section.style = section.style || {}
+  section.style.color = e.target.value
+}
+
+const setBg = (section, e) => {
+  section.style = section.style || {}
+  section.style.backgroundColor = e.target.value
 }
 </script>
 
 <template>
-<div class="min-h-screen" :style="{background:site.theme.background,color:site.theme.text}">
-
-<!-- 🔥 TOP BAR -->
-<div class="fixed top-0 w-full bg-white p-2 flex justify-between">
-
-  <div class="flex gap-2">
-    <button @click="addSection('text')" class="border px-2">Text</button>
-    <button @click="addSection('image')" class="border px-2">Image</button>
-    <button @click="addSection('main')" class="border px-2">Main</button>
-  </div>
-
-  <div class="flex gap-2">
-    <button @click="saveSite" class="bg-green-500 text-white px-3">Save</button>
-    <button @click="mode='preview'" class="bg-blue-500 text-white px-3">Preview</button>
-    <button @click="mode='edit'" class="border px-3">Edit</button>
-  </div>
-
-</div>
-
-<div class="pt-16 p-4">
-
-<!-- 🔥 MENU -->
-<div class="flex gap-4 mb-6 border-b pb-2">
-
   <div
-    v-for="(m,i) in site.menu"
-    :key="i"
-    @click="goToPage(m)"
-    class="cursor-pointer"
-  >
-    {{ m }}
-  </div>
-
-</div>
-
-<!-- 🔥 EDIT MENU -->
-<div v-if="mode==='edit'" class="mb-4">
-  <button @click="addMenuItem">+ Menu</button>
-
-  <div v-for="(m,i) in site.menu" :key="i">
-    <input v-model="site.menu[i]" class="border"/>
-    <button @click="deleteMenuItem(i)">✕</button>
-  </div>
-</div>
-
-<!-- 🔥 PAGES -->
-<div class="mb-4">
-  <button @click="addPage">+ Page</button>
-
-  <div v-for="(p,i) in site.pages" :key="i">
-    <input v-model="p.name" class="border"/>
-    <button @click="deletePage(i)">✕</button>
-  </div>
-</div>
-
-<!-- 🔥 SECTIONS (EDIT) -->
-<div v-if="mode==='edit'">
-
-  <div
-    v-for="(s,i) in site.pages[currentPageIndex]?.sections || []"
-    :key="s.id"
-    draggable="true"
-    @dragstart="dragStart(i)"
-    @drop="drop(i)"
-    @dragover.prevent
-    class="border p-3 mb-3"
-    @click="activeSectionIndex=i"
+    class="min-h-screen"
+    :style="{
+      backgroundColor: site.theme.background,
+      color: site.theme.text
+    }"
+    @click.self="activeSectionIndex=null"
   >
 
-    <button @click.stop="deleteSection(i)" class="text-red-500">✕</button>
+    <!-- 🔥 TOP BAR -->
+    <div
+      v-if="mode==='edit'"
+      class="fixed top-0 left-0 w-full bg-white border-b p-2 z-50 flex justify-between flex-wrap gap-2"
+    >
 
-    <textarea
-      v-if="s.type==='text' || s.type==='main'"
-      v-model="s.content"
-      class="w-full min-h-[120px]"
-      style="white-space: pre-wrap"
-    />
+      <!-- SECTIONS -->
+      <div class="flex gap-2 flex-wrap">
+        <button @click="addSection('hero')" class="border px-2">Hero</button>
+        <button @click="addSection('text')" class="border px-2">Text</button>
+        <button @click="addSection('main')" class="border px-2">Main</button>
+        <button @click="addSection('menu')" class="border px-2">Menu</button>
+        <button @click="addSection('image')" class="border px-2">Image</button>
+        <button @click="addSection('gallery')" class="border px-2">Gallery</button>
+        <button @click="addSection('footer')" class="border px-2">Footer</button>
+      </div>
 
-    <div v-if="s.type==='image'">
-      <input type="file" @change="e=>{
-        const r=new FileReader()
-        r.onload=()=>s.url=r.result
-        r.readAsDataURL(e.target.files[0])
-      }"/>
-      <img v-if="s.url" :src="s.url"/>
+      <!-- FORMAT -->
+      <div v-if="activeSectionIndex !== null" class="flex gap-2">
+        <button @click="setStyle(site.sections[activeSectionIndex],'bold')" class="border px-2">B</button>
+        <button @click="setStyle(site.sections[activeSectionIndex],'italic')" class="border px-2">I</button>
+        <button @click="setStyle(site.sections[activeSectionIndex],'underline')" class="border px-2">U</button>
+
+        <button @click="setAlign(site.sections[activeSectionIndex],'left')" class="border px-2">⬅</button>
+        <button @click="setAlign(site.sections[activeSectionIndex],'center')" class="border px-2">⬌</button>
+        <button @click="setAlign(site.sections[activeSectionIndex],'right')" class="border px-2">➡</button>
+
+        <input type="color" @input="e => setColor(site.sections[activeSectionIndex], e)" />
+        <input type="color" @input="e => setBg(site.sections[activeSectionIndex], e)" />
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="flex gap-2">
+        <button @click="saveSite" class="bg-green-600 text-white px-3">Save</button>
+        <button @click="mode='preview'" class="bg-blue-600 text-white px-3">Preview</button>
+        <button @click="mode='edit'" class="border px-3">Edit</button>
+      </div>
+
     </div>
 
-  </div>
+    <!-- CONTENT -->
+    <div class="pt-20 p-4">
 
-  <button @click="viewCode" class="bg-black text-white px-2">
-    Voir code
-  </button>
+      <p v-if="loading">Loading...</p>
+      <p v-if="error" class="text-red-500">{{ error }}</p>
 
-</div>
+      <!-- EDIT -->
+      <div v-if="mode==='edit'">
 
-<!-- 🔥 PREVIEW -->
-<div v-else>
+        <div
+          v-for="(s,i) in site.sections"
+          :key="s.id"
+          class="border p-3 mb-3 cursor-pointer"
+          :class="activeSectionIndex===i ? 'border-blue-500' : ''"
+          @click.stop="activeSectionIndex=i"
+          :style="s.style"
+        >
 
-  <div v-for="s in site.pages[currentPageIndex]?.sections || []">
+          <button class="text-red-500 float-right" @click.stop="deleteSection(i)">✕</button>
 
-    <p v-if="s.type==='text'" style="white-space: pre-wrap">
-      {{ s.content }}
-    </p>
+          <input v-if="s.type==='hero'" v-model="s.title" class="border w-full"/>
+          <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
 
-    <div v-if="s.type==='main'" style="white-space: pre-wrap">
-      {{ s.content }}
+          <textarea
+            v-if="s.type==='main'"
+            v-model="s.content"
+            class="w-full min-h-[500px] border"
+          />
+
+          <div v-if="s.type==='menu'">
+            <input v-for="(m,i) in s.items" :key="i" v-model="s.items[i]" class="border m-1"/>
+          </div>
+
+          <div v-if="s.type==='image'">
+            <input type="file" @change="uploadImage($event,s)" />
+            <img v-if="s.url" :src="s.url" class="w-full"/>
+          </div>
+
+          <div v-if="s.type==='gallery'">
+            <input type="file" multiple @change="uploadGallery($event,s)" />
+          </div>
+
+          <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
+
+        </div>
+
+      </div>
+
+      <!-- PREVIEW -->
+      <div v-else>
+
+        <div v-for="s in site.sections" :key="s.id" :style="s.style" class="mb-6">
+
+          <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
+          <p v-if="s.type==='text'">{{ s.content }}</p>
+
+          <div v-if="s.type==='main'" class="min-h-[500px]">
+            {{ s.content }}
+          </div>
+
+          <div v-if="s.type==='menu'" class="flex gap-4">
+            <span v-for="(m,i) in s.items" :key="i">{{ m }}</span>
+          </div>
+
+          <img v-if="s.type==='image'" :src="s.url" class="w-full"/>
+
+          <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
+            <img v-for="(img,i) in s.images" :key="i" :src="img"/>
+          </div>
+
+          <footer v-if="s.type==='footer'">{{ s.text }}</footer>
+
+        </div>
+
+      </div>
+
     </div>
-
-    <img v-if="s.type==='image'" :src="s.url"/>
-
   </div>
-
-</div>
-
-</div>
-</div>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed } from "vue"
 
 /* ================= SITE ================= */
 const site = ref({
@@ -17,22 +17,17 @@ const site = ref({
 
 const mode = ref("edit")
 const currentPageIndex = ref(0)
-const activeSectionIndex = ref(null)
-
-/* ================= CODE VIEW ================= */
-const showCode = ref(false)
-
-/* ================= CURRENT PAGE ================= */
-const currentPage = computed(() => {
-  return site.value.pages[currentPageIndex.value] || site.value.pages[0]
-})
 
 /* ================= PAGE ================= */
+const currentPage = computed(() => {
+  return site.value.pages[currentPageIndex.value]
+})
+
 const goToPage = (i) => {
   currentPageIndex.value = i
-  activeSectionIndex.value = null
 }
 
+/* ================= PAGES ================= */
 const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
@@ -40,8 +35,6 @@ const addPage = () => {
     style: {},
     sections: []
   })
-
-  currentPageIndex.value = site.value.pages.length - 1
 }
 
 const deletePage = (i) => {
@@ -52,12 +45,25 @@ const deletePage = (i) => {
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
   const map = {
-    text: { type: "text", content: "Texte..." },
-    main: { type: "main", content: "Main..." },
-    image: { type: "image", url: "" },
-    form: { type: "form" },
+    text: {
+      type: "text",
+      content: "Texte..."
+    },
+    main: {
+      type: "main",
+      content: "Main section..."
+    },
+    image: {
+      type: "image",
+      url: ""
+    },
 
-    // 🆕 GALLERY
+    /* 🧾 FORMULAIRE */
+    form: {
+      type: "form"
+    },
+
+    /* 🖼️ GALLERY */
     gallery: {
       type: "gallery",
       images: []
@@ -74,7 +80,7 @@ const deleteSection = (i) => {
   currentPage.value.sections.splice(i, 1)
 }
 
-/* ================= IMAGE UPLOAD ================= */
+/* ================= IMAGE ================= */
 const uploadImage = (e, section) => {
   const file = e.target.files[0]
   if (!file) return
@@ -86,7 +92,7 @@ const uploadImage = (e, section) => {
   reader.readAsDataURL(file)
 }
 
-/* ================= GALLERY UPLOAD ================= */
+/* ================= GALLERY ================= */
 const uploadGallery = (e, section) => {
   const files = Array.from(e.target.files)
 
@@ -106,7 +112,6 @@ const uploadGallery = (e, section) => {
 <!-- ================= TOP BAR ================= -->
 <div class="fixed top-0 w-full bg-white shadow z-50">
 
-  <!-- MENU -->
   <div class="flex justify-between items-center px-4 py-3 border-b">
 
     <div class="font-bold">🌐 SaaS Builder</div>
@@ -144,33 +149,19 @@ const uploadGallery = (e, section) => {
     <button @click="addSection('text')">Text</button>
     <button @click="addSection('main')">Main</button>
     <button @click="addSection('image')">Image</button>
-    <button @click="addSection('form')">Form</button>
 
-    <!-- 🆕 GALLERY BUTTON -->
+    <!-- 🧾 FORMULAIRE -->
+    <button @click="addSection('form')">Formulaire</button>
+
+    <!-- 🖼️ GALLERY -->
     <button @click="addSection('gallery')">Gallery</button>
-
-    <!-- CODE BUTTONS -->
-    <button @click="showCode = true" class="ml-4 bg-gray-300 px-2 rounded">
-      Afficher code
-    </button>
-
-    <button v-if="showCode" @click="showCode = false" class="bg-red-400 text-white px-2 rounded">
-      Fermer code
-    </button>
 
   </div>
 
 </div>
 
-<!-- ================= CODE VIEW ================= -->
-<div v-if="showCode" class="p-4 mt-32 bg-black text-green-400 overflow-auto">
-
-  <pre>{{ currentPage }}</pre>
-
-</div>
-
 <!-- ================= CONTENT ================= -->
-<div v-else class="pt-32 p-4">
+<div class="pt-32 p-4">
 
   <!-- EDIT -->
   <div v-if="mode==='edit'">
@@ -178,7 +169,7 @@ const uploadGallery = (e, section) => {
     <div
       v-for="(s,i) in currentPage.sections"
       :key="s.id"
-      class="border p-3 mb-3"
+      class="border p-4 mb-3 rounded"
     >
 
       <button @click="deleteSection(i)" class="text-red-500 float-right">❌</button>
@@ -195,20 +186,37 @@ const uploadGallery = (e, section) => {
         <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
       </div>
 
-      <!-- FORM -->
-      <div v-if="s.type==='form'" class="space-y-2">
+      <!-- 🧾 FORMULAIRE -->
+      <div v-if="s.type==='form'" class="flex flex-col">
+
         <input placeholder="Nom" class="border w-full p-2"/>
+        <div class="h-2"></div>
+
         <input placeholder="Email" class="border w-full p-2"/>
-        <textarea placeholder="Message" class="border w-full p-2 min-h-[100px]"/>
+        <div class="h-2"></div>
+
+        <textarea placeholder="Message" class="border w-full p-2 min-h-[100px]"></textarea>
+        <div class="h-2"></div>
+
+        <div class="flex justify-end gap-2">
+          <button class="bg-green-500 text-white px-4 py-1 rounded">Ok</button>
+          <button class="bg-gray-300 px-4 py-1 rounded">Annuler</button>
+        </div>
+
       </div>
 
-      <!-- 🆕 GALLERY -->
+      <!-- 🖼️ GALLERY -->
       <div v-if="s.type==='gallery'">
 
         <input type="file" multiple @change="uploadGallery($event,s)" />
 
         <div class="grid grid-cols-3 gap-2 mt-2">
-          <img v-for="(img,idx) in s.images" :key="idx" :src="img" class="w-full h-20 object-cover"/>
+          <img
+            v-for="(img,idx) in s.images"
+            :key="idx"
+            :src="img"
+            class="w-full h-20 object-cover rounded"
+          />
         </div>
 
       </div>
@@ -223,20 +231,41 @@ const uploadGallery = (e, section) => {
     <div v-for="s in currentPage.sections" :key="s.id">
 
       <p v-if="s.type==='text'">{{ s.content }}</p>
+
       <div v-if="s.type==='main'">{{ s.content }}</div>
 
       <img v-if="s.type==='image'" :src="s.url"/>
 
-      <!-- FORM -->
-      <div v-if="s.type==='form'">
-        <input placeholder="Nom" class="border w-full"/>
-        <input placeholder="Email" class="border w-full"/>
-        <textarea class="border w-full"/>
+      <!-- FORM PREVIEW -->
+      <div v-if="s.type==='form'" class="flex flex-col">
+
+        <input placeholder="Nom" class="border w-full p-2"/>
+        <div class="h-2"></div>
+
+        <input placeholder="Email" class="border w-full p-2"/>
+        <div class="h-2"></div>
+
+        <textarea placeholder="Message" class="border w-full p-2 min-h-[100px]"/>
+
+        <div class="h-2"></div>
+
+        <div class="flex justify-end gap-2">
+          <button class="bg-green-500 text-white px-4 py-1 rounded">Ok</button>
+          <button class="bg-gray-300 px-4 py-1 rounded">Annuler</button>
+        </div>
+
       </div>
 
-      <!-- 🆕 GALLERY PREVIEW -->
+      <!-- GALLERY PREVIEW -->
       <div v-if="s.type==='gallery'" class="grid grid-cols-3 gap-2">
-        <img v-for="(img,i) in s.images" :key="i" :src="img" class="w-full h-20 object-cover"/>
+
+        <img
+          v-for="(img,i) in s.images"
+          :key="i"
+          :src="img"
+          class="w-full h-20 object-cover rounded"
+        />
+
       </div>
 
     </div>

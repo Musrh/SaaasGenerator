@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from "vue"
+import { ref, watch, computed } from "vue"
 import { db } from "../firebase"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
 
@@ -7,7 +7,6 @@ const props = defineProps({ uid: String })
 
 /* ================= STATE ================= */
 const site = ref({
-  plan: "free",
   theme: {
     background: "#ffffff",
     text: "#111111"
@@ -25,7 +24,15 @@ const mode = ref("edit")
 const loading = ref(false)
 const error = ref("")
 const activeSectionIndex = ref(null)
-const currentPageName = ref("Home")
+const currentPageIndex = ref(0)
+
+/* ================= SAFE PAGE ================= */
+const currentPage = computed(() => {
+  return site.value.pages?.[currentPageIndex.value] || {
+    name: "Home",
+    sections: []
+  }
+})
 
 /* ================= LOAD ================= */
 const loadSite = async (uid) => {
@@ -40,16 +47,11 @@ const loadSite = async (uid) => {
       const data = snap.data()
 
       site.value = {
-        plan: data.plan || "free",
         theme: data.theme || site.value.theme,
         pages: data.pages?.length
           ? data.pages
           : [{ id: Date.now(), name: "Home", sections: [] }]
       }
-
-      currentPageName.value = site.value.pages[0].name
-    } else {
-      error.value = "Site introuvable"
     }
 
   } catch (e) {
@@ -61,61 +63,51 @@ const loadSite = async (uid) => {
 
 watch(() => props.uid, (v) => v && loadSite(v), { immediate: true })
 
-/* ================= GET PAGE ================= */
-const currentPage = () => {
-  return site.value.pages.find(p => p.name === currentPageName.value)
-}
-
-/* ================= MENU ================= */
+/* ================= PAGES ================= */
 const addPage = () => {
-  const newName = "Page " + (site.value.pages.length + 1)
+  const name = "Page " + (site.value.pages.length + 1)
 
   site.value.pages.push({
     id: Date.now(),
-    name: newName,
+    name,
     sections: []
   })
 
-  currentPageName.value = newName
+  currentPageIndex.value = site.value.pages.length - 1
 }
 
 const deletePage = (i) => {
-  const removed = site.value.pages[i]
-
   site.value.pages.splice(i, 1)
 
-  if (currentPageName.value === removed.name) {
-    currentPageName.value = site.value.pages[0]?.name || ""
+  if (currentPageIndex.value >= site.value.pages.length) {
+    currentPageIndex.value = 0
   }
 }
 
-const goToPage = (name) => {
-  currentPageName.value = name
+const goToPage = (i) => {
+  currentPageIndex.value = i
   activeSectionIndex.value = null
 }
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
-  const page = currentPage()
-
   const map = {
     hero: { type: "hero", title: "Hero", style: {} },
     text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Main section...", style: {} },
+    main: { type: "main", content: "Main...", style: {} },
     image: { type: "image", url: "" },
     gallery: { type: "gallery", images: [] },
     footer: { type: "footer", text: "Footer", style: {} }
   }
 
-  page.sections.push({
+  currentPage.value.sections.push({
     id: Date.now(),
     ...map[type]
   })
 }
 
 const deleteSection = (i) => {
-  const page = currentPage()
-  page.sections.splice(i, 1)
+  currentPage.value.sections.splice(i, 1)
   activeSectionIndex.value = null
 }
 
@@ -131,7 +123,7 @@ const saveSite = async () => {
   alert("Saved ✔")
 }
 
-/* ================= STYLE (RÉTABLI) ================= */
+/* ================= STYLE (RESTORED SAFE) ================= */
 const setStyle = (section, type) => {
   section.style = section.style || {}
 
@@ -170,31 +162,16 @@ const setBg = (section, e) => {
 const uploadImage = (e, section) => {
   const file = e.target.files[0]
   const reader = new FileReader()
-
   reader.onload = () => section.url = reader.result
   reader.readAsDataURL(file)
-}
-
-const uploadGallery = (e, section) => {
-  Array.from(e.target.files).forEach(file => {
-    const reader = new FileReader()
-    reader.onload = () => section.images.push(reader.result)
-    reader.readAsDataURL(file)
-  })
 }
 </script>
 
 <template>
-<div
-  class="min-h-screen"
-  :style="{
-    backgroundColor: site.theme.background,
-    color: site.theme.text
-  }"
->
+<div class="min-h-screen" :style="{backgroundColor: site.theme.background, color: site.theme.text}">
 
-<!-- 🔥 TOP BAR -->
-<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white p-2 flex justify-between z-50">
+<!-- 🔥 MODE EDIT FIXED (toujours visible) -->
+<div class="fixed top-0 w-full bg-white border-b p-2 z-50 flex justify-between">
 
   <div class="flex gap-2">
     <button @click="addSection('hero')">Hero</button>
@@ -209,6 +186,7 @@ const uploadGallery = (e, section) => {
     <button @click="addPage" class="border px-2">+ Page</button>
     <button @click="saveSite" class="bg-green-600 text-white px-3">Save</button>
     <button @click="mode='preview'" class="bg-blue-600 text-white px-3">Preview</button>
+    <button @click="mode='edit'" class="border px-3">Edit</button>
   </div>
 
 </div>
@@ -218,37 +196,27 @@ const uploadGallery = (e, section) => {
 <p v-if="loading">Loading...</p>
 <p v-if="error" class="text-red-500">{{ error }}</p>
 
-<!-- 🔥 MENU (liens pages) -->
-<div class="flex gap-4 mb-6 border-b pb-2">
+<!-- 🔥 MENU STABLE -->
+<div class="flex gap-3 mb-6 border-b pb-2">
 
   <div
     v-for="(p,i) in site.pages"
     :key="p.id"
-    @click="goToPage(p.name)"
+    @click="goToPage(i)"
     class="cursor-pointer px-3 py-1 border rounded"
-    :class="currentPageName===p.name ? 'bg-black text-white' : ''"
+    :class="currentPageIndex===i ? 'bg-black text-white' : ''"
   >
     {{ p.name }}
   </div>
 
 </div>
 
-<!-- 🔥 EDIT MODE -->
+<!-- 🔥 EDIT -->
 <div v-if="mode==='edit'">
 
-  <!-- pages editor -->
-  <div class="mb-4">
-    <div v-for="(p,i) in site.pages" :key="p.id" class="flex gap-2 mb-2">
-
-      <input v-model="p.name" class="border px-2"/>
-
-      <button @click="deletePage(i)" class="text-red-500">✕</button>
-    </div>
-  </div>
-
-  <!-- SECTIONS -->
+  <!-- sections -->
   <div
-    v-for="(s,i) in currentPage().sections"
+    v-for="(s,i) in currentPage.sections"
     :key="s.id"
     class="border p-3 mb-3 cursor-pointer"
     @click="activeSectionIndex=i"
@@ -267,10 +235,6 @@ const uploadGallery = (e, section) => {
       <img v-if="s.url" :src="s.url"/>
     </div>
 
-    <div v-if="s.type==='gallery'">
-      <input type="file" multiple @change="uploadGallery($event,s)" />
-    </div>
-
     <input v-if="s.type==='footer'" v-model="s.text" class="border w-full"/>
 
   </div>
@@ -280,7 +244,7 @@ const uploadGallery = (e, section) => {
 <!-- 🔥 PREVIEW -->
 <div v-else>
 
-  <div v-for="s in currentPage().sections" :key="s.id" :style="s.style">
+  <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
 
     <h2 v-if="s.type==='hero'">{{ s.title }}</h2>
     <p v-if="s.type==='text'">{{ s.content }}</p>
@@ -288,10 +252,6 @@ const uploadGallery = (e, section) => {
     <div v-if="s.type==='main'">{{ s.content }}</div>
 
     <img v-if="s.type==='image'" :src="s.url"/>
-
-    <div v-if="s.type==='gallery'">
-      <img v-for="(img,i) in s.images" :key="i" :src="img"/>
-    </div>
 
     <footer v-if="s.type==='footer'">{{ s.text }}</footer>
 

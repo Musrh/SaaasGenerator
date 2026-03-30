@@ -1,4 +1,3 @@
-//home à améliorer 
 <script setup>
 import { ref, computed } from "vue"
 
@@ -18,39 +17,30 @@ const site = ref({
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
+const showCode = ref(false)
 
 /* ================= PAGE ACTIVE ================= */
 const currentPage = computed(() =>
   site.value.pages[currentPageIndex.value]
 )
 
-/* ================= MENU NAV ================= */
+/* ================= NAV ================= */
 const goToPage = (i) => {
   currentPageIndex.value = i
   activeSectionIndex.value = null
 }
 
-/* ================= MENU SYNC NAME EDIT ================= */
-const renamePage = (i, event) => {
-  site.value.pages[i].name = event.target.value
-}
-
-/* ================= ADD / DELETE PAGE ================= */
+/* ================= PAGE ================= */
 const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
     name: "Nouvelle page",
-    sections: [
-      { id: Date.now() + 1, type: "text", content: "Contenu", style: {} }
-    ]
+    sections: []
   })
-
-  currentPageIndex.value = site.value.pages.length - 1
 }
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-
   if (currentPageIndex.value >= site.value.pages.length) {
     currentPageIndex.value = 0
   }
@@ -60,7 +50,8 @@ const deletePage = (i) => {
 const addSection = (type) => {
   const map = {
     text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Zone principale...", style: {} }
+    main: { type: "main", content: "Zone principale...", style: {} },
+    image: { type: "image", url: "" }
   }
 
   currentPage.value.sections.push({
@@ -74,13 +65,13 @@ const deleteSection = (i) => {
   activeSectionIndex.value = null
 }
 
-/* ================= SAFE ACTIVE SECTION ================= */
+/* ================= ACTIVE ================= */
 const activeSection = computed(() =>
   currentPage.value.sections?.[activeSectionIndex.value]
 )
 
-/* ================= STYLE BAR (FIXED 100%) ================= */
-const setStyle = (section, type) => {
+/* ================= STYLE ================= */
+const setStyle = (section, type, value=null) => {
   if (!section) return
   section.style ||= {}
 
@@ -98,6 +89,35 @@ const setStyle = (section, type) => {
     section.style.textDecoration =
       section.style.textDecoration === "underline" ? "none" : "underline"
   }
+
+  if (type === "align") {
+    section.style.textAlign = value
+  }
+
+  if (type === "color") {
+    section.style.color = value
+  }
+
+  if (type === "bg") {
+    section.style.backgroundColor = value
+  }
+}
+
+/* ================= IMAGE UPLOAD ================= */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  if (!file) return
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    section.url = reader.result
+  }
+  reader.readAsDataURL(file)
+}
+
+/* ================= CODE ================= */
+const getPageCode = () => {
+  return JSON.stringify(currentPage.value, null, 2)
 }
 </script>
 
@@ -105,34 +125,65 @@ const setStyle = (section, type) => {
 <div class="min-h-screen">
 
 <!-- ================= TOOLBAR ================= -->
-<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white border-b p-2 flex justify-between z-50">
+<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white border-b p-2 flex justify-between z-50 flex-wrap">
 
+  <!-- LEFT -->
   <div class="flex gap-2">
     <button @click="addSection('text')">Text</button>
     <button @click="addSection('main')">Main</button>
-    <button @click="addPage" class="border px-2">+ Page</button>
+    <button @click="addSection('image')">Image</button>
+    <button @click="addPage">+ Page</button>
   </div>
 
-  <!-- 🔥 STYLE BAR FIXED (IMPORTANT: MUST NOT DEPEND ON NULL INDEX) -->
-  <div class="flex gap-2" v-if="activeSection">
+  <!-- STYLE BAR -->
+  <div class="flex gap-2 items-center" v-if="activeSection">
 
     <button @click="setStyle(activeSection,'bold')">B</button>
     <button @click="setStyle(activeSection,'italic')">I</button>
     <button @click="setStyle(activeSection,'underline')">U</button>
 
+    <button @click="setStyle(activeSection,'align','left')">⬅</button>
+    <button @click="setStyle(activeSection,'align','center')">⬛</button>
+    <button @click="setStyle(activeSection,'align','right')">➡</button>
+
+    <input type="color" @input="setStyle(activeSection,'color',$event.target.value)" />
+    <input type="color" @input="setStyle(activeSection,'bg',$event.target.value)" />
+
   </div>
 
-  <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
-    Aperçu
-  </button>
+  <!-- RIGHT -->
+  <div class="flex gap-2">
+    <button @click="showCode=true">Code</button>
+    <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
+      Aperçu
+    </button>
+  </div>
+
+</div>
+
+<!-- ================= CODE VIEW ================= -->
+<div v-if="showCode" class="fixed inset-0 bg-black/70 z-50 p-6">
+
+  <div class="bg-white h-full p-4 overflow-auto">
+
+    <div class="flex justify-between mb-3">
+      <h2>Code page</h2>
+      <button @click="showCode=false" class="bg-red-500 text-white px-3">
+        Fermer
+      </button>
+    </div>
+
+    <pre>{{ getPageCode() }}</pre>
+
+  </div>
 
 </div>
 
 <!-- ================= CONTENT ================= -->
 <div class="pt-20 p-4">
 
-<!-- 🔥 MENU + RENAMING + DELETE -->
-<div class="flex gap-3 border-b pb-2 mb-4">
+<!-- 🔥 MENU (HIDDEN IN PREVIEW) -->
+<div v-if="mode==='edit'" class="flex gap-3 border-b pb-2 mb-4 flex-wrap">
 
   <div
     v-for="(p,i) in site.pages"
@@ -140,7 +191,6 @@ const setStyle = (section, type) => {
     class="flex items-center gap-2"
   >
 
-    <!-- CLICK PAGE -->
     <div
       @click="goToPage(i)"
       class="cursor-pointer px-3 py-1 border rounded"
@@ -149,21 +199,15 @@ const setStyle = (section, type) => {
       {{ p.name }}
     </div>
 
-    <!-- 🔥 EDIT NAME (SYNC LIVE) -->
-    <input
-      v-model="p.name"
-      @input="renamePage(i, $event)"
-      class="border px-2 text-sm w-28"
-    />
+    <input v-model="p.name" class="border px-2 w-28" />
 
-    <!-- DELETE -->
     <button @click="deletePage(i)" class="text-red-500">✕</button>
 
   </div>
 
 </div>
 
-<!-- ================= EDIT MODE ================= -->
+<!-- ================= EDIT ================= -->
 <div v-if="mode==='edit'">
 
   <div
@@ -178,7 +222,17 @@ const setStyle = (section, type) => {
 
     <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
 
-    <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[150px] border"/>
+    <textarea
+      v-if="s.type==='main'"
+      v-model="s.content"
+      class="w-full min-h-[200px] border"
+    />
+
+    <!-- IMAGE -->
+    <div v-if="s.type==='image'">
+      <input type="file" @change="uploadImage($event,s)" />
+      <img v-if="s.url" :src="s.url" class="w-full mt-2"/>
+    </div>
 
   </div>
 
@@ -187,11 +241,9 @@ const setStyle = (section, type) => {
 <!-- ================= PREVIEW ================= -->
 <div v-else>
 
-  <div class="fixed top-0 w-full bg-black text-white p-2 flex justify-between z-50">
-    <span>Mode Aperçu</span>
-    <button @click="mode='edit'" class="bg-white text-black px-3">
-      Retour Edit
-    </button>
+  <!-- 🔥 HEADER PREVIEW CLEAN -->
+  <div class="fixed top-0 w-full bg-black text-white p-2 text-center z-50">
+    Mode Aperçu
   </div>
 
   <div class="pt-12">
@@ -200,7 +252,11 @@ const setStyle = (section, type) => {
 
       <p v-if="s.type==='text'">{{ s.content }}</p>
 
-      <div v-if="s.type==='main'">{{ s.content }}</div>
+      <div v-if="s.type==='main'" style="min-height:500px">
+        {{ s.content }}
+      </div>
+
+      <img v-if="s.type==='image'" :src="s.url" class="w-full"/>
 
     </div>
 

@@ -1,282 +1,250 @@
-<script setup>
-import { ref, watch } from "vue"
-import { db, storage } from "../firebase"
-import { doc, getDoc, updateDoc } from "firebase/firestore"
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
-
-const props = defineProps({
-  uid: String
-})
-
-// ======================
-// STATE SAFE
-// ======================
-const site = ref({
-  plan: "free",
-  sections: []
-})
-
-const mode = ref("edit")
-const loading = ref(false)
-const error = ref("")
-
-// ======================
-// LOAD SITE
-// ======================
-const loadSite = async (uid) => {
-  if (!uid) return
-
-  loading.value = true
-  error.value = ""
-
-  try {
-    const snap = await getDoc(doc(db, "users", uid))
-
-    if (snap.exists()) {
-      const data = snap.data()
-
-      site.value = {
-        plan: data.plan || "free",
-        sections: Array.isArray(data.sections) ? data.sections : []
-      }
-    } else {
-      site.value = { plan: "free", sections: [] }
-      error.value = "Site introuvable"
-    }
-
-  } catch (e) {
-    console.log(e)
-    error.value = "Erreur Firestore"
-  }
-
-  loading.value = false
-}
-
-// ======================
-// WATCH UID
-// ======================
-watch(
-  () => props.uid,
-  (v) => {
-    if (v) loadSite(v)
-  },
-  { immediate: true }
-)
-
-// ======================
-// ADD SECTION
-// ======================
-const addSection = (type) => {
-  const map = {
-    hero: { type: "hero", title: "Hero title" },
-    text: { type: "text", content: "Texte..." },
-    main: { type: "main", content: "Main section..." },
-    menu: { type: "menu", items: ["Home", "About", "Contact"] },
-    image: { type: "image", url: "", fit: "cover" },
-    footer: { type: "footer", text: "Footer text" }
-  }
-
-  site.value.sections.push(map[type])
-}
-
-// ======================
-// SAVE SITE
-// ======================
-const saveSite = async () => {
-  if (!props.uid) return
-
-  try {
-    await updateDoc(doc(db, "users", props.uid), {
-      plan: site.value.plan,
-      sections: site.value.sections
-    })
-
-    alert("Saved ✔")
-  } catch (e) {
-    console.log(e)
-    alert("Save error")
-  }
-}
-
-// ======================
-// IMAGE UPLOAD
-// ======================
-const uploadImage = async (event, section) => {
-  const file = event.target.files[0]
-  if (!file) return
-
-  try {
-    const path = `sites/${props.uid}/${Date.now()}-${file.name}`
-    const fileRef = storageRef(storage, path)
-
-    await uploadBytes(fileRef, file)
-    const url = await getDownloadURL(fileRef)
-
-    section.url = url
-  } catch (e) {
-    console.log(e)
-    alert("Upload error")
-  }
-}
-</script>
-
 <template>
-  <div class="p-4 overflow-x-hidden">
+  <div class="h-screen flex bg-gray-100">
 
-    <!-- HEADER -->
-    <div class="flex justify-between items-center mb-4">
-      <h1 class="text-xl font-bold">SaaS Builder</h1>
+    <!-- LEFT PANEL -->
+    <div v-if="mode === 'edit'" class="w-64 bg-white border-r p-4 overflow-y-auto">
 
-      <div class="flex gap-2">
-        <button @click="mode='edit'" class="border px-3" :class="mode==='edit'?'bg-black text-white':''">
-          Edit
-        </button>
+      <h2 class="font-bold mb-3">📄 Pages</h2>
 
-        <button @click="mode='preview'" class="border px-3" :class="mode==='preview'?'bg-black text-white':''">
-          Preview
-        </button>
+      <div
+        v-for="(p, i) in pages"
+        :key="p.id"
+        @click="currentPageIndex = i"
+        class="p-2 rounded cursor-pointer mb-1"
+        :class="currentPageIndex === i ? 'bg-blue-100 font-bold' : ''"
+      >
+        {{ p.name }}
       </div>
+
+      <button @click="addPage" class="w-full mt-2 bg-green-500 text-white p-2 rounded">
+        + Page
+      </button>
+
+      <hr class="my-4" />
+
+      <h2 class="font-bold mb-2">🧱 Ajouter section</h2>
+
+      <select v-model="selectedSectionType" class="w-full border p-2 mb-2 rounded">
+        <option disabled value="">Choisir une section</option>
+        <option v-for="name in filteredSections" :key="name" :value="name">
+          {{ name }}
+        </option>
+      </select>
+
+      <button @click="addSelectedSection" class="w-full bg-blue-500 text-white p-2 rounded">
+        Ajouter
+      </button>
+
     </div>
 
-    <!-- STATUS -->
-    <p v-if="loading">Loading...</p>
-    <p v-if="error" class="text-red-500">{{ error }}</p>
+    <!-- CENTER -->
+    <div class="flex-1 flex flex-col">
 
-    <!-- PLAN -->
-    <p class="mb-3 font-bold">
-      Plan: {{ site.plan }}
-    </p>
+      <!-- TOP BAR -->
+      <div v-if="mode === 'edit'" class="bg-white border-b p-3 flex gap-2">
 
-    <div v-if="site">
+        <button @click="saveData" class="bg-green-500 text-white px-3 py-1 rounded">
+          💾 Save
+        </button>
 
-      <!-- ================= EDIT MODE ================= -->
-      <div v-if="mode === 'edit'">
+        <button @click="mode='preview'" class="bg-blue-500 text-white px-3 py-1 rounded">
+          👁 Preview
+        </button>
 
-        <div
-          v-for="(s,i) in site.sections"
-          :key="i"
-          class="border p-3 mt-3"
-        >
+        <button @click="mode='edit'" class="bg-gray-500 text-white px-3 py-1 rounded">
+          ✏ Edit
+        </button>
 
-          <!-- HERO -->
-          <input v-if="s.type==='hero'"
-            v-model="s.title"
-            class="border p-2 w-full text-xl"
-          />
+      </div>
 
-          <!-- TEXT -->
-          <input v-if="s.type==='text'"
-            v-model="s.content"
-            class="border p-2 w-full"
-          />
+      <!-- CANVAS -->
+      <div class="flex-1 overflow-y-auto p-6">
 
-          <!-- MAIN SECTION (FULL WIDTH FIX) -->
-          <textarea v-if="s.type==='main'"
-            v-model="s.content"
-            class="w-screen h-[500px] border p-4 text-lg"
-          />
+        <div class="w-full bg-white shadow rounded p-6">
 
-          <!-- MENU -->
-          <div v-if="s.type==='menu'">
-            <input
-              v-for="(m,idx) in (s.items || [])"
-              :key="idx"
-              v-model="s.items[idx]"
-              class="border m-1 p-1"
-            />
-          </div>
+          <LogoSection />
+          <HeaderSection />
+          <MenuSection />
 
-          <!-- IMAGE UPLOAD -->
-          <div v-if="s.type==='image'">
-
-            <input type="file" @change="uploadImage($event, s)" />
-
-            <select v-model="s.fit" class="border mt-2">
-              <option value="cover">Cover</option>
-              <option value="contain">Contain</option>
-            </select>
-
-            <img
-              v-if="s.url"
-              :src="s.url"
-              class="w-screen h-[400px] mt-2"
-              :style="{ objectFit: s.fit || 'cover' }"
+          <!-- MAIN SECTION (FULL WIDTH + 500px) -->
+          <div class="w-full">
+            <textarea
+              v-if="mode==='edit'"
+              v-model="pages[currentPageIndex].content"
+              class="w-full h-[500px] border p-3 text-lg"
+              placeholder="Main section..."
             />
 
+            <div v-else v-html="pages[currentPageIndex].content"></div>
           </div>
 
-          <!-- FOOTER -->
-          <input v-if="s.type==='footer'"
-            v-model="s.text"
-            class="border p-2 w-full"
-          />
-
-          <!-- DELETE -->
-          <button class="text-red-500 mt-2" @click="site.sections.splice(i,1)">
-            Supprimer
-          </button>
-
-        </div>
-
-        <!-- ACTIONS -->
-        <div class="mt-4 flex flex-wrap gap-2">
-
-          <button @click="addSection('hero')" class="border px-2">Hero</button>
-          <button @click="addSection('text')" class="border px-2">Text</button>
-          <button @click="addSection('main')" class="border px-2">Main</button>
-          <button @click="addSection('menu')" class="border px-2">Menu</button>
-          <button @click="addSection('image')" class="border px-2">Image</button>
-          <button @click="addSection('footer')" class="border px-2">Footer</button>
-
-          <button
-            @click="saveSite"
-            class="bg-green-600 text-white px-3"
+          <!-- SECTIONS -->
+          <div
+            v-for="section in pages[currentPageIndex].sections"
+            :key="section.id"
+            class="border mb-3 p-3 relative rounded"
+            :style="section.props.style"
           >
-            Save
-          </button>
 
-        </div>
+            <!-- DELETE -->
+            <button
+              v-if="mode==='edit'"
+              @click.stop="deleteSection(section.id)"
+              class="absolute top-1 right-1 text-red-500"
+            >
+              ✕
+            </button>
 
-      </div>
+            <!-- TOOLBAR -->
+            <div v-if="mode==='edit'" class="flex gap-2 mb-2 text-xs flex-wrap">
 
-      <!-- ================= PREVIEW MODE ================= -->
-      <div v-else>
+              <button @click="setAlign(section,'left')" class="px-2 bg-gray-200">⬅</button>
+              <button @click="setAlign(section,'center')" class="px-2 bg-gray-200">⬌</button>
+              <button @click="setAlign(section,'right')" class="px-2 bg-gray-200">➡</button>
 
-        <div v-for="(s,i) in site.sections" :key="i" class="mb-6">
+              <button @click="toggleBold(section)" class="px-2 bg-gray-200">B</button>
+              <button @click="toggleItalic(section)" class="px-2 bg-gray-200">I</button>
+              <button @click="toggleUnderline(section)" class="px-2 bg-gray-200">U</button>
 
-          <h2 v-if="s.type==='hero'" class="text-3xl font-bold">
-            {{ s.title }}
-          </h2>
+              <input type="color" @input="e => setColor(section,e)" />
+              <input type="color" @input="e => setBg(section,e)" />
 
-          <p v-if="s.type==='text'">
-            {{ s.content }}
-          </p>
+            </div>
 
-          <div v-if="s.type==='main'" class="w-screen h-[500px] border p-4">
-            {{ s.content }}
+            <!-- IMAGE -->
+            <div v-if="section.type==='ImageSection'">
+
+              <input v-if="mode==='edit'" type="file" @change="uploadImage($event, section)" />
+
+              <img v-if="section.props.src" :src="section.props.src" class="w-full rounded" />
+
+            </div>
+
+            <!-- TEXT -->
+            <textarea
+              v-if="mode==='edit' && section.type!=='ImageSection'"
+              v-model="section.props.content"
+              class="w-full border p-2"
+              :style="section.props.style"
+            />
+
+            <div v-else-if="section.type!=='ImageSection'" v-html="section.props.content"></div>
+
           </div>
 
-          <div v-if="s.type==='menu'" class="flex gap-4">
-            <span v-for="(m,i) in (s.items || [])" :key="i">
-              {{ m }}
-            </span>
-          </div>
-
-          <img
-            v-if="s.type==='image' && s.url"
-            :src="s.url"
-            class="w-screen h-[400px] object-cover"
-          />
-
-          <footer v-if="s.type==='footer'" class="text-center">
-            {{ s.text }}
-          </footer>
+          <FooterSection />
 
         </div>
-
       </div>
 
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div v-if="mode==='edit'" class="w-72 bg-white border-l p-4">
+      <h2 class="font-bold mb-3">📁 Sections</h2>
+      <p class="text-xs text-gray-500">Builder actif</p>
     </div>
 
   </div>
 </template>
+
+<script setup>
+import { ref, computed, onMounted } from "vue"
+
+import LogoSection from "../components/sections/LogoSection.vue"
+import HeaderSection from "../components/sections/HeaderSection.vue"
+import MenuSection from "../components/sections/MenuSection.vue"
+import FooterSection from "../components/sections/FooterSection.vue"
+
+const mode = ref("edit")
+
+const pages = ref([])
+const currentPageIndex = ref(0)
+
+const selectedSectionType = ref("")
+
+onMounted(() => {
+  const saved = localStorage.getItem("builderData")
+
+  pages.value = saved ? JSON.parse(saved) : [{
+    id: 1,
+    name: "Accueil",
+    content: "",
+    sections: []
+  }]
+})
+
+const saveData = () => {
+  localStorage.setItem("builderData", JSON.stringify(pages.value))
+  alert("Saved")
+}
+
+const addPage = () => {
+  pages.value.push({
+    id: Date.now(),
+    name: "Page",
+    content: "",
+    sections: []
+  })
+}
+
+const filteredSections = computed(() => {
+  return ["TextSection", "ImageSection", "BannerSection"]
+})
+
+const addSelectedSection = () => {
+  pages.value[currentPageIndex.value].sections.push({
+    id: Date.now(),
+    type: selectedSectionType.value,
+    props: {
+      content: "",
+      style: {}
+    }
+  })
+}
+
+const deleteSection = (id) => {
+  const page = pages.value[currentPageIndex.value]
+  page.sections = page.sections.filter(s => s.id !== id)
+}
+
+/* IMAGE UPLOAD FIX */
+const uploadImage = (e, section) => {
+  const file = e.target.files[0]
+  const reader = new FileReader()
+
+  reader.onload = () => {
+    section.props.src = reader.result
+  }
+
+  reader.readAsDataURL(file)
+}
+
+/* TEXT STYLE */
+const setAlign = (section, value) => {
+  section.props.style.textAlign = value
+}
+
+const toggleBold = (section) => {
+  section.props.style.fontWeight =
+    section.props.style.fontWeight === "bold" ? "normal" : "bold"
+}
+
+const toggleItalic = (section) => {
+  section.props.style.fontStyle =
+    section.props.style.fontStyle === "italic" ? "normal" : "italic"
+}
+
+const toggleUnderline = (section) => {
+  section.props.style.textDecoration =
+    section.props.style.textDecoration === "underline" ? "none" : "underline"
+}
+
+const setColor = (section, e) => {
+  section.props.style.color = e.target.value
+}
+
+const setBg = (section, e) => {
+  section.props.style.backgroundColor = e.target.value
+}
+</script>

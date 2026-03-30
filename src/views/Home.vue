@@ -12,8 +12,13 @@ const site = ref({
     background: "#ffffff",
     text: "#111"
   },
-  pages: [],
-  menu: []
+  pages: [
+    {
+      name: "Accueil",
+      sections: []
+    }
+  ],
+  menu: ["Accueil"]
 })
 
 const mode = ref("edit")
@@ -28,11 +33,14 @@ const loadSite = async (uid) => {
     const data = snap.data()
 
     site.value = {
-      ...site.value,
-      pages: data.pages || [{
-        name: "Accueil",
-        sections: []
-      }],
+      plan: data.plan || "free",
+      theme: data.theme || {
+        background: "#ffffff",
+        text: "#111"
+      },
+      pages: (data.pages && data.pages.length)
+        ? data.pages
+        : [{ name: "Accueil", sections: [] }],
       menu: data.menu || ["Accueil"]
     }
   }
@@ -70,14 +78,14 @@ const addSection = (type) => {
     image: { type: "image", url: "" }
   }
 
-  site.value.pages[currentPageIndex.value].sections.push({
+  site.value.pages[currentPageIndex.value]?.sections.push({
     id: Date.now(),
     ...map[type]
   })
 }
 
 const deleteSection = (i) => {
-  site.value.pages[currentPageIndex.value].sections.splice(i, 1)
+  site.value.pages[currentPageIndex.value]?.sections.splice(i, 1)
 }
 
 /* ================= DRAG DROP ================= */
@@ -88,7 +96,9 @@ const dragStart = (i) => {
 }
 
 const drop = (i) => {
-  const list = site.value.pages[currentPageIndex.value].sections
+  const list = site.value.pages[currentPageIndex.value]?.sections
+  if (!list || dragIndex.value === null) return
+
   const item = list.splice(dragIndex.value, 1)[0]
   list.splice(i, 0, item)
 }
@@ -105,7 +115,13 @@ const saveSite = async () => {
 
 /* ================= VIEW CODE ================= */
 const viewCode = () => {
-  const s = site.value.pages[currentPageIndex.value].sections[activeSectionIndex.value]
+  const page = site.value.pages[currentPageIndex.value]
+  const s = page?.sections?.[activeSectionIndex.value]
+
+  if (!s) {
+    alert("Aucune section sélectionnée")
+    return
+  }
 
   const code = `<div>${s.content || ""}</div>`
 
@@ -176,11 +192,11 @@ const goToPage = (name) => {
   </div>
 </div>
 
-<!-- 🔥 SECTIONS -->
+<!-- 🔥 SECTIONS (EDIT) -->
 <div v-if="mode==='edit'">
 
   <div
-    v-for="(s,i) in site.pages[currentPageIndex].sections"
+    v-for="(s,i) in site.pages[currentPageIndex]?.sections || []"
     :key="s.id"
     draggable="true"
     @dragstart="dragStart(i)"
@@ -219,7 +235,7 @@ const goToPage = (name) => {
 <!-- 🔥 PREVIEW -->
 <div v-else>
 
-  <div v-for="s in site.pages[currentPageIndex].sections">
+  <div v-for="s in site.pages[currentPageIndex]?.sections || []">
 
     <p v-if="s.type==='text'" style="white-space: pre-wrap">
       {{ s.content }}

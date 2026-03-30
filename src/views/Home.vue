@@ -1,46 +1,70 @@
 <script setup>
 import { ref, computed } from "vue"
 
-/* ================= SITE ================= */
+/* ================= SITE DATA ================= */
 const site = ref({
   pages: [
     {
       id: 1,
       name: "Home",
       sections: [
-        { id: 1, type: "text", content: "Bienvenue", style: {} }
+        {
+          id: 1,
+          type: "text",
+          content: "Bienvenue sur le site",
+          style: {
+            color: "#000000",
+            backgroundColor: "transparent",
+            textAlign: "left",
+            fontWeight: "normal",
+            fontStyle: "normal",
+            textDecoration: "none"
+          }
+        }
       ]
     }
   ]
 })
 
+/* ================= STATE ================= */
 const mode = ref("edit")
 const currentPageIndex = ref(0)
 const activeSectionIndex = ref(null)
 
-/* ================= PAGE ACTIVE ================= */
+/* ================= CURRENT PAGE ================= */
 const currentPage = computed(() =>
   site.value.pages[currentPageIndex.value]
 )
 
-/* ================= MENU NAV ================= */
+const activeSection = computed(() =>
+  currentPage.value.sections?.[activeSectionIndex.value]
+)
+
+/* ================= NAVIGATION ================= */
 const goToPage = (i) => {
   currentPageIndex.value = i
   activeSectionIndex.value = null
 }
 
-/* ================= MENU SYNC NAME EDIT ================= */
-const renamePage = (i, event) => {
-  site.value.pages[i].name = event.target.value
-}
-
-/* ================= ADD / DELETE PAGE ================= */
+/* ================= PAGE ACTIONS ================= */
 const addPage = () => {
   site.value.pages.push({
     id: Date.now(),
     name: "Nouvelle page",
     sections: [
-      { id: Date.now() + 1, type: "text", content: "Contenu", style: {} }
+      {
+        id: Date.now() + 1,
+        type: "text",
+        content: "Contenu page",
+        style: {
+          color: "#000000",
+          backgroundColor: "transparent",
+          textAlign: "left",
+          fontWeight: "normal",
+          fontStyle: "normal",
+          textDecoration: "none"
+        }
+      }
     ]
   })
 
@@ -49,7 +73,6 @@ const addPage = () => {
 
 const deletePage = (i) => {
   site.value.pages.splice(i, 1)
-
   if (currentPageIndex.value >= site.value.pages.length) {
     currentPageIndex.value = 0
   }
@@ -57,9 +80,18 @@ const deletePage = (i) => {
 
 /* ================= SECTIONS ================= */
 const addSection = (type) => {
+  const baseStyle = {
+    color: "#000000",
+    backgroundColor: "transparent",
+    textAlign: "left",
+    fontWeight: "normal",
+    fontStyle: "normal",
+    textDecoration: "none"
+  }
+
   const map = {
-    text: { type: "text", content: "Texte...", style: {} },
-    main: { type: "main", content: "Zone principale...", style: {} }
+    text: { type: "text", content: "Texte...", style: baseStyle },
+    main: { type: "main", content: "Zone principale...", style: baseStyle }
   }
 
   currentPage.value.sections.push({
@@ -73,12 +105,7 @@ const deleteSection = (i) => {
   activeSectionIndex.value = null
 }
 
-/* ================= SAFE ACTIVE SECTION ================= */
-const activeSection = computed(() =>
-  currentPage.value.sections?.[activeSectionIndex.value]
-)
-
-/* ================= STYLE BAR (FIXED 100%) ================= */
+/* ================= STYLE TOOL ================= */
 const setStyle = (section, type) => {
   if (!section) return
   section.style ||= {}
@@ -95,7 +122,9 @@ const setStyle = (section, type) => {
 
   if (type === "underline") {
     section.style.textDecoration =
-      section.style.textDecoration === "underline" ? "none" : "underline"
+      section.style.textDecoration === "underline"
+        ? "none"
+        : "underline"
   }
 }
 </script>
@@ -104,24 +133,39 @@ const setStyle = (section, type) => {
 <div class="min-h-screen">
 
 <!-- ================= TOOLBAR ================= -->
-<div v-if="mode==='edit'" class="fixed top-0 w-full bg-white border-b p-2 flex justify-between z-50">
+<div
+  v-if="mode==='edit'"
+  class="fixed top-0 w-full bg-white border-b p-2 flex justify-between z-50"
+>
 
-  <div class="flex gap-2">
-    <button @click="addSection('text')">Text</button>
-    <button @click="addSection('main')">Main</button>
+  <!-- LEFT ACTIONS -->
+  <div class="flex gap-2 items-center">
+    <button @click="addSection('text')" class="border px-2">Text</button>
+    <button @click="addSection('main')" class="border px-2">Main</button>
     <button @click="addPage" class="border px-2">+ Page</button>
   </div>
 
-  <!-- 🔥 STYLE BAR FIXED (IMPORTANT: MUST NOT DEPEND ON NULL INDEX) -->
-  <div class="flex gap-2" v-if="activeSection">
+  <!-- STYLE BAR -->
+  <div class="flex gap-2 items-center" v-if="activeSection">
 
     <button @click="setStyle(activeSection,'bold')">B</button>
     <button @click="setStyle(activeSection,'italic')">I</button>
     <button @click="setStyle(activeSection,'underline')">U</button>
 
+    <button @click="activeSection.style.textAlign='left'">⬅</button>
+    <button @click="activeSection.style.textAlign='center'">⬛</button>
+    <button @click="activeSection.style.textAlign='right'">➡</button>
+
+    <input type="color" v-model="activeSection.style.color" />
+    <input type="color" v-model="activeSection.style.backgroundColor" />
+
   </div>
 
-  <button @click="mode='preview'" class="bg-blue-600 text-white px-3">
+  <!-- MODE SWITCH -->
+  <button
+    @click="mode='preview'"
+    class="bg-blue-600 text-white px-3"
+  >
     Aperçu
   </button>
 
@@ -130,8 +174,8 @@ const setStyle = (section, type) => {
 <!-- ================= CONTENT ================= -->
 <div class="pt-20 p-4">
 
-<!-- 🔥 MENU + RENAMING + DELETE -->
-<div class="flex gap-3 border-b pb-2 mb-4">
+<!-- ================= MENU ================= -->
+<div class="flex gap-3 border-b pb-2 mb-4 flex-wrap">
 
   <div
     v-for="(p,i) in site.pages"
@@ -139,7 +183,7 @@ const setStyle = (section, type) => {
     class="flex items-center gap-2"
   >
 
-    <!-- CLICK PAGE -->
+    <!-- PAGE LINK -->
     <div
       @click="goToPage(i)"
       class="cursor-pointer px-3 py-1 border rounded"
@@ -148,14 +192,13 @@ const setStyle = (section, type) => {
       {{ p.name }}
     </div>
 
-    <!-- 🔥 EDIT NAME (SYNC LIVE) -->
+    <!-- RENAME PAGE -->
     <input
       v-model="p.name"
-      @input="renamePage(i, $event)"
       class="border px-2 text-sm w-28"
     />
 
-    <!-- DELETE -->
+    <!-- DELETE PAGE -->
     <button @click="deletePage(i)" class="text-red-500">✕</button>
 
   </div>
@@ -173,11 +216,26 @@ const setStyle = (section, type) => {
     :style="s.style"
   >
 
-    <button @click.stop="deleteSection(i)" class="text-red-500 float-right">✕</button>
+    <button
+      @click.stop="deleteSection(i)"
+      class="text-red-500 float-right"
+    >
+      ✕
+    </button>
 
-    <input v-if="s.type==='text'" v-model="s.content" class="border w-full"/>
+    <input
+      v-if="s.type==='text'"
+      v-model="s.content"
+      class="border w-full p-2"
+      :style="s.style"
+    />
 
-    <textarea v-if="s.type==='main'" v-model="s.content" class="w-full min-h-[150px] border"/>
+    <textarea
+      v-if="s.type==='main'"
+      v-model="s.content"
+      class="w-full min-h-[150px] border p-2"
+      :style="s.style"
+    />
 
   </div>
 
@@ -186,6 +244,7 @@ const setStyle = (section, type) => {
 <!-- ================= PREVIEW ================= -->
 <div v-else>
 
+  <!-- TOP BAR -->
   <div class="fixed top-0 w-full bg-black text-white p-2 flex justify-between z-50">
     <span>Mode Aperçu</span>
     <button @click="mode='edit'" class="bg-white text-black px-3">
@@ -195,11 +254,21 @@ const setStyle = (section, type) => {
 
   <div class="pt-12">
 
-    <div v-for="s in currentPage.sections" :key="s.id" :style="s.style">
+    <div v-for="s in currentPage.sections" :key="s.id">
 
-      <p v-if="s.type==='text'">{{ s.content }}</p>
+      <div
+        v-if="s.type==='text'"
+        :style="s.style"
+      >
+        {{ s.content }}
+      </div>
 
-      <div v-if="s.type==='main'">{{ s.content }}</div>
+      <div
+        v-if="s.type==='main'"
+        :style="s.style"
+      >
+        {{ s.content }}
+      </div>
 
     </div>
 

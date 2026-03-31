@@ -1,0 +1,45 @@
+// ============================================================
+//  router.js — SaaasGenerator
+//  Vue Router avec la route /site/:uid (slug ou UID Firestore)
+// ============================================================
+
+import { createRouter, createWebHashHistory } from "vue-router"
+import Home        from "./views/Home.vue"
+import SiteViewer  from "./views/SiteViewer.vue"
+import NotFound    from "./views/NotFound.vue"
+
+const routes = [
+
+  // ── Page d'accueil de SaaasGenerator ──────────────────────
+  {
+    path: "/",
+    name: "home",
+    component: Home,
+  },
+
+  // ── Affichage d'un site publié ────────────────────────────
+  // :uid peut être :
+  //   • un UID Firestore réel   → ex: n8xPVQ87HfYECHlIkAqB0vssCIp2
+  //   • un slug convivial       → ex: ma-boutique
+  // SiteViewer résout les deux cas automatiquement.
+  {
+    path: "/site/:uid",
+    name: "site",
+    component: SiteViewer,
+    props: true,          // passe uid comme prop au composant
+  },
+
+  // ── 404 ───────────────────────────────────────────────────
+  {
+    path: "/:pathMatch(.*)*",
+    name: "not-found",
+    component: NotFound,
+  },
+]
+
+const router = createRouter({
+  history: createWebHashHistory(), // utilise le mode Hash (#/)
+  routes,
+})
+
+export default router

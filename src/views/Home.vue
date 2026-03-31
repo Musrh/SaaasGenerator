@@ -75,15 +75,57 @@ const translations = {
     domainLink: "Lier un nom de domaine (optionnel)", domainPlaceholder: "ex: www.mondomaine.com",
     publishBtn: "Publier le site", publishSuccess: "Site publié ✓",
     dnsTitle: "Configuration DNS", dnsDesc: "Ajoutez ces enregistrements chez votre registrar :",
+    dnsInputTitle: "Saisir vos DNS personnalisés", dnsInputDesc: "Entrez les serveurs DNS fournis par votre registrar (ex: Godaddy, Namecheap...)",
+    dnsNs1: "Serveur DNS 1 (NS1)", dnsNs2: "Serveur DNS 2 (NS2)",
+    dnsNs3: "Serveur DNS 3 (optionnel)", dnsNs4: "Serveur DNS 4 (optionnel)",
+    saveDns: "Enregistrer les DNS", dnsInstructions: "Instructions",
+    dnsStep1: "1. Connectez-vous à votre registrar (GoDaddy, Namecheap, OVH...)",
+    dnsStep2: "2. Allez dans la gestion des DNS de votre domaine",
+    dnsStep3: "3. Remplacez les NS existants par ceux ci-dessus",
+    dnsStep4: "4. La propagation prend 24-48h",
     copyDns: "Copier", dnsCopied: "Copié ✓",
     logoTitle: "Logo du site", logoUpload: "Changer le logo", logoRemove: "Supprimer",
     logoHint: "Cliquez pour ajouter un logo",
+    siteNameLabel: "Nom du site", siteNamePlaceholder: "Nom de votre site...",
     configureStripe: "Configurer Stripe", configurePaypal: "Configurer PayPal",
     newPage: "Nouvelle page", keepOnePage: "Gardez au moins une page.",
     connectedError: "Vous devez être connecté.", saveError: "Erreur de sauvegarde.",
     loadError: "Erreur de chargement. Données locales utilisées.",
     paySuccess: "Paiement réussi !", payDone: "Votre paiement a bien été traité.",
-    close: "Fermer", cancel: "Annuler",
+    close: "Fermer", cancel: "Annuler", modifyAddress: "Modifier l'adresse",
+    siteUrlLabel: "URL de votre site",
+    publishNoteFile: "Le fichier publier.txt a été téléchargé avec tous les détails.",
+    // Section labels
+    sHero: "Titre + CTA", sText: "Paragraphe libre", sImage: "Photo / illustration",
+    sGallery: "Grille d'images", sVideo: "YouTube / Vimeo", sProducts: "Catalogue",
+    sFeatures: "Grille avantages", sPayment: "Stripe & PayPal", sForm: "Formulaire", sDivider: "Ligne décorative",
+    // Section edit labels
+    heroTitlePh: "Titre principal...", heroSubPh: "Sous-titre...", heroCtaPh: "Bouton CTA...",
+    textPh: "Votre texte ici...",
+    imgUploadHint: "Cliquer pour charger une image", imgChange: "Changer", imgAltPh: "Texte alt...",
+    galleryLabel: "Galerie", galleryImages: "image(s)", galleryAdd: "+ Ajouter",
+    galleryEmpty: "Aucune image — cliquez sur \"+ Ajouter\"",
+    videoLabel: "Vidéo", videoTitlePh: "Titre de la vidéo...", videoUrlPh: "URL YouTube ou Vimeo...",
+    videoHint: "Collez une URL YouTube ou Vimeo",
+    productsLabel: "Catalogue produits", addProduct: "+ Produit",
+    badgePh: "Badge (Nouveau, Promo...)", productNamePh: "Nom du produit",
+    productDescPh: "Description courte", productPricePh: "Prix",
+    featureTitlePh: "Titre...", featureDescPh: "Description...",
+    paymentLabel: "Section Paiement", paymentTitlePh: "Titre du paiement...",
+    paymentDescPh: "Description...", paymentAmountPh: "Montant",
+    testStripe: "💳 Tester Stripe", testPaypal: "🅿 Tester PayPal",
+    contactLabel: "Formulaire de contact", namePh: "Nom complet", emailPh: "Adresse email",
+    msgPh: "Votre message...", sendBtn: "Envoyer →",
+    // Preview labels
+    prevContactTitle: "Contactez-nous", prevNamePh: "Nom complet", prevEmailPh: "Email",
+    prevMsgPh: "Message...", prevSendBtn: "Envoyer →",
+    prevPayStripe: "💳 Payer avec Stripe", prevPayPaypal: "🅿 Payer avec PayPal",
+    prevImgEmpty: "Image non définie", prevGalleryEmpty: "Galerie vide", prevVideoEmpty: "URL vidéo non définie",
+    prevBuyBtn: "Acheter",
+    // Default font options
+    fontDefault: "Par défaut", fontGeorgia: "Georgia", fontCourier: "Courier New",
+    fontTrebuchet: "Trebuchet", fontVerdana: "Verdana",
+    colOption2: "2 colonnes", colOption3: "3 colonnes", colOption4: "4 colonnes",
   },
   en: {
     save: "Save", saving: "Saving...", notConnected: "Not connected",
@@ -111,15 +153,53 @@ const translations = {
     domainLink: "Link a domain name (optional)", domainPlaceholder: "e.g. www.mydomain.com",
     publishBtn: "Publish site", publishSuccess: "Site published ✓",
     dnsTitle: "DNS Configuration", dnsDesc: "Add these records at your registrar:",
+    dnsInputTitle: "Enter your custom DNS", dnsInputDesc: "Enter the DNS servers provided by your registrar (e.g. GoDaddy, Namecheap...)",
+    dnsNs1: "DNS Server 1 (NS1)", dnsNs2: "DNS Server 2 (NS2)",
+    dnsNs3: "DNS Server 3 (optional)", dnsNs4: "DNS Server 4 (optional)",
+    saveDns: "Save DNS", dnsInstructions: "Instructions",
+    dnsStep1: "1. Log in to your registrar (GoDaddy, Namecheap, OVH...)",
+    dnsStep2: "2. Go to the DNS management of your domain",
+    dnsStep3: "3. Replace existing NS with the ones above",
+    dnsStep4: "4. Propagation takes 24-48h",
     copyDns: "Copy", dnsCopied: "Copied ✓",
     logoTitle: "Site logo", logoUpload: "Change logo", logoRemove: "Remove",
     logoHint: "Click to add a logo",
+    siteNameLabel: "Site name", siteNamePlaceholder: "Your site name...",
     configureStripe: "Configure Stripe", configurePaypal: "Configure PayPal",
     newPage: "New page", keepOnePage: "Keep at least one page.",
     connectedError: "You must be logged in.", saveError: "Save error.",
     loadError: "Load error. Local data used.",
     paySuccess: "Payment successful!", payDone: "Your payment has been processed.",
-    close: "Close", cancel: "Cancel",
+    close: "Close", cancel: "Cancel", modifyAddress: "Modify address",
+    siteUrlLabel: "Your site URL",
+    publishNoteFile: "The publier.txt file has been downloaded with all details.",
+    sHero: "Title + CTA", sText: "Free paragraph", sImage: "Photo / illustration",
+    sGallery: "Image grid", sVideo: "YouTube / Vimeo", sProducts: "Catalog",
+    sFeatures: "Features grid", sPayment: "Stripe & PayPal", sForm: "Form", sDivider: "Decorative line",
+    heroTitlePh: "Main title...", heroSubPh: "Subtitle...", heroCtaPh: "CTA Button...",
+    textPh: "Your text here...",
+    imgUploadHint: "Click to upload an image", imgChange: "Change", imgAltPh: "Alt text...",
+    galleryLabel: "Gallery", galleryImages: "image(s)", galleryAdd: "+ Add",
+    galleryEmpty: "No images — click \"+ Add\"",
+    videoLabel: "Video", videoTitlePh: "Video title...", videoUrlPh: "YouTube or Vimeo URL...",
+    videoHint: "Paste a YouTube or Vimeo URL",
+    productsLabel: "Product catalog", addProduct: "+ Product",
+    badgePh: "Badge (New, Sale...)", productNamePh: "Product name",
+    productDescPh: "Short description", productPricePh: "Price",
+    featureTitlePh: "Title...", featureDescPh: "Description...",
+    paymentLabel: "Payment Section", paymentTitlePh: "Payment title...",
+    paymentDescPh: "Description...", paymentAmountPh: "Amount",
+    testStripe: "💳 Test Stripe", testPaypal: "🅿 Test PayPal",
+    contactLabel: "Contact Form", namePh: "Full name", emailPh: "Email address",
+    msgPh: "Your message...", sendBtn: "Send →",
+    prevContactTitle: "Contact Us", prevNamePh: "Full name", prevEmailPh: "Email",
+    prevMsgPh: "Message...", prevSendBtn: "Send →",
+    prevPayStripe: "💳 Pay with Stripe", prevPayPaypal: "🅿 Pay with PayPal",
+    prevImgEmpty: "Image not defined", prevGalleryEmpty: "Empty gallery", prevVideoEmpty: "Video URL not defined",
+    prevBuyBtn: "Buy",
+    fontDefault: "Default", fontGeorgia: "Georgia", fontCourier: "Courier New",
+    fontTrebuchet: "Trebuchet", fontVerdana: "Verdana",
+    colOption2: "2 columns", colOption3: "3 columns", colOption4: "4 columns",
   },
   es: {
     save: "Guardar", saving: "Guardando...", notConnected: "No conectado",
@@ -147,15 +227,53 @@ const translations = {
     domainLink: "Vincular un dominio (opcional)", domainPlaceholder: "ej: www.midominio.com",
     publishBtn: "Publicar sitio", publishSuccess: "Sitio publicado ✓",
     dnsTitle: "Configuración DNS", dnsDesc: "Añade estos registros en tu registrador:",
+    dnsInputTitle: "Introducir DNS personalizados", dnsInputDesc: "Introduce los servidores DNS de tu registrador (ej. GoDaddy, Namecheap...)",
+    dnsNs1: "Servidor DNS 1 (NS1)", dnsNs2: "Servidor DNS 2 (NS2)",
+    dnsNs3: "Servidor DNS 3 (opcional)", dnsNs4: "Servidor DNS 4 (opcional)",
+    saveDns: "Guardar DNS", dnsInstructions: "Instrucciones",
+    dnsStep1: "1. Inicia sesión en tu registrador (GoDaddy, Namecheap, OVH...)",
+    dnsStep2: "2. Ve a la gestión DNS de tu dominio",
+    dnsStep3: "3. Reemplaza los NS existentes por los de arriba",
+    dnsStep4: "4. La propagación tarda 24-48h",
     copyDns: "Copiar", dnsCopied: "Copiado ✓",
     logoTitle: "Logo del sitio", logoUpload: "Cambiar logo", logoRemove: "Eliminar",
     logoHint: "Haz clic para añadir un logo",
+    siteNameLabel: "Nombre del sitio", siteNamePlaceholder: "Nombre de tu sitio...",
     configureStripe: "Configurar Stripe", configurePaypal: "Configurar PayPal",
     newPage: "Nueva página", keepOnePage: "Mantén al menos una página.",
     connectedError: "Debes estar conectado.", saveError: "Error al guardar.",
     loadError: "Error de carga. Datos locales usados.",
     paySuccess: "¡Pago exitoso!", payDone: "Tu pago ha sido procesado.",
-    close: "Cerrar", cancel: "Cancelar",
+    close: "Cerrar", cancel: "Cancelar", modifyAddress: "Modificar dirección",
+    siteUrlLabel: "URL de tu sitio",
+    publishNoteFile: "El archivo publier.txt fue descargado con todos los detalles.",
+    sHero: "Título + CTA", sText: "Párrafo libre", sImage: "Foto / ilustración",
+    sGallery: "Cuadrícula de imágenes", sVideo: "YouTube / Vimeo", sProducts: "Catálogo",
+    sFeatures: "Cuadrícula de ventajas", sPayment: "Stripe & PayPal", sForm: "Formulario", sDivider: "Línea decorativa",
+    heroTitlePh: "Título principal...", heroSubPh: "Subtítulo...", heroCtaPh: "Botón CTA...",
+    textPh: "Tu texto aquí...",
+    imgUploadHint: "Haz clic para cargar una imagen", imgChange: "Cambiar", imgAltPh: "Texto alt...",
+    galleryLabel: "Galería", galleryImages: "imagen(es)", galleryAdd: "+ Añadir",
+    galleryEmpty: "Sin imágenes — haz clic en \"+ Añadir\"",
+    videoLabel: "Vídeo", videoTitlePh: "Título del vídeo...", videoUrlPh: "URL de YouTube o Vimeo...",
+    videoHint: "Pega una URL de YouTube o Vimeo",
+    productsLabel: "Catálogo de productos", addProduct: "+ Producto",
+    badgePh: "Etiqueta (Nuevo, Oferta...)", productNamePh: "Nombre del producto",
+    productDescPh: "Descripción corta", productPricePh: "Precio",
+    featureTitlePh: "Título...", featureDescPh: "Descripción...",
+    paymentLabel: "Sección de Pago", paymentTitlePh: "Título del pago...",
+    paymentDescPh: "Descripción...", paymentAmountPh: "Importe",
+    testStripe: "💳 Probar Stripe", testPaypal: "🅿 Probar PayPal",
+    contactLabel: "Formulario de contacto", namePh: "Nombre completo", emailPh: "Correo electrónico",
+    msgPh: "Tu mensaje...", sendBtn: "Enviar →",
+    prevContactTitle: "Contáctenos", prevNamePh: "Nombre completo", prevEmailPh: "Email",
+    prevMsgPh: "Mensaje...", prevSendBtn: "Enviar →",
+    prevPayStripe: "💳 Pagar con Stripe", prevPayPaypal: "🅿 Pagar con PayPal",
+    prevImgEmpty: "Imagen no definida", prevGalleryEmpty: "Galería vacía", prevVideoEmpty: "URL de vídeo no definida",
+    prevBuyBtn: "Comprar",
+    fontDefault: "Por defecto", fontGeorgia: "Georgia", fontCourier: "Courier New",
+    fontTrebuchet: "Trebuchet", fontVerdana: "Verdana",
+    colOption2: "2 columnas", colOption3: "3 columnas", colOption4: "4 columnas",
   },
   ar: {
     save: "حفظ", saving: "جارٍ الحفظ...", notConnected: "غير متصل",
@@ -183,19 +301,60 @@ const translations = {
     domainLink: "ربط اسم نطاق (اختياري)", domainPlaceholder: "مثال: www.نطاقي.com",
     publishBtn: "نشر الموقع", publishSuccess: "تم نشر الموقع ✓",
     dnsTitle: "إعداد DNS", dnsDesc: "أضف هذه السجلات لدى المسجّل:",
+    dnsInputTitle: "إدخال DNS المخصص", dnsInputDesc: "أدخل خوادم DNS من مزود النطاق الخاص بك (GoDaddy, Namecheap...)",
+    dnsNs1: "خادم DNS 1 (NS1)", dnsNs2: "خادم DNS 2 (NS2)",
+    dnsNs3: "خادم DNS 3 (اختياري)", dnsNs4: "خادم DNS 4 (اختياري)",
+    saveDns: "حفظ DNS", dnsInstructions: "تعليمات",
+    dnsStep1: "1. سجّل الدخول إلى مزود النطاق (GoDaddy, Namecheap, OVH...)",
+    dnsStep2: "2. انتقل إلى إدارة DNS للنطاق",
+    dnsStep3: "3. استبدل NS الحالية بالخوادم أعلاه",
+    dnsStep4: "4. قد يستغرق الانتشار 24-48 ساعة",
     copyDns: "نسخ", dnsCopied: "تم النسخ ✓",
     logoTitle: "شعار الموقع", logoUpload: "تغيير الشعار", logoRemove: "حذف",
     logoHint: "انقر لإضافة شعار",
+    siteNameLabel: "اسم الموقع", siteNamePlaceholder: "اسم موقعك...",
     configureStripe: "إعداد Stripe", configurePaypal: "إعداد PayPal",
     newPage: "صفحة جديدة", keepOnePage: "احتفظ بصفحة واحدة على الأقل.",
     connectedError: "يجب أن تكون متصلاً.", saveError: "خطأ في الحفظ.",
     loadError: "خطأ في التحميل. تم استخدام البيانات المحلية.",
     paySuccess: "تم الدفع بنجاح!", payDone: "تمت معالجة دفعتك.",
-    close: "إغلاق", cancel: "إلغاء",
+    close: "إغلاق", cancel: "إلغاء", modifyAddress: "تعديل العنوان",
+    siteUrlLabel: "رابط موقعك",
+    publishNoteFile: "تم تحميل ملف publier.txt مع جميع التفاصيل.",
+    sHero: "عنوان + CTA", sText: "فقرة حرة", sImage: "صورة / رسم",
+    sGallery: "شبكة صور", sVideo: "يوتيوب / فيميو", sProducts: "كتالوج",
+    sFeatures: "شبكة مميزات", sPayment: "Stripe & PayPal", sForm: "نموذج", sDivider: "فاصل زخرفي",
+    heroTitlePh: "العنوان الرئيسي...", heroSubPh: "العنوان الفرعي...", heroCtaPh: "زر CTA...",
+    textPh: "نصك هنا...",
+    imgUploadHint: "انقر لتحميل صورة", imgChange: "تغيير", imgAltPh: "نص بديل...",
+    galleryLabel: "معرض", galleryImages: "صورة/صور", galleryAdd: "+ إضافة",
+    galleryEmpty: "لا توجد صور — انقر على \"+ إضافة\"",
+    videoLabel: "فيديو", videoTitlePh: "عنوان الفيديو...", videoUrlPh: "رابط يوتيوب أو فيميو...",
+    videoHint: "الصق رابط يوتيوب أو فيميو",
+    productsLabel: "كتالوج المنتجات", addProduct: "+ منتج",
+    badgePh: "شارة (جديد، عرض...)", productNamePh: "اسم المنتج",
+    productDescPh: "وصف قصير", productPricePh: "السعر",
+    featureTitlePh: "العنوان...", featureDescPh: "الوصف...",
+    paymentLabel: "قسم الدفع", paymentTitlePh: "عنوان الدفع...",
+    paymentDescPh: "الوصف...", paymentAmountPh: "المبلغ",
+    testStripe: "💳 اختبار Stripe", testPaypal: "🅿 اختبار PayPal",
+    contactLabel: "نموذج الاتصال", namePh: "الاسم الكامل", emailPh: "البريد الإلكتروني",
+    msgPh: "رسالتك...", sendBtn: "إرسال →",
+    prevContactTitle: "اتصل بنا", prevNamePh: "الاسم الكامل", prevEmailPh: "البريد الإلكتروني",
+    prevMsgPh: "الرسالة...", prevSendBtn: "إرسال →",
+    prevPayStripe: "💳 الدفع عبر Stripe", prevPayPaypal: "🅿 الدفع عبر PayPal",
+    prevImgEmpty: "الصورة غير محددة", prevGalleryEmpty: "المعرض فارغ", prevVideoEmpty: "رابط الفيديو غير محدد",
+    prevBuyBtn: "شراء",
+    fontDefault: "افتراضي", fontGeorgia: "Georgia", fontCourier: "Courier New",
+    fontTrebuchet: "Trebuchet", fontVerdana: "Verdana",
+    colOption2: "عمودان", colOption3: "3 أعمدة", colOption4: "4 أعمدة",
   }
 }
 
 const isRtl = computed(() => currentLang.value === "ar")
+
+// ===== SITE NAME =====
+const siteName = ref("WellShoppings")
 
 // ===== LOGO =====
 const siteLogo = ref("")
@@ -212,12 +371,33 @@ const publishAddress = ref("")
 const publishDomain = ref("")
 const publishStatus = ref("") // '' | 'published'
 const dnsCopied = ref(false)
+const showDnsInput = ref(false)
+const customDns = ref({ ns1: "", ns2: "", ns3: "", ns4: "" })
+const dnsSaved = ref(false)
+
+const saveDnsRecords = () => {
+  if (!customDns.value.ns1 || !customDns.value.ns2) {
+    notify("Entrez au moins NS1 et NS2.", "error"); return
+  }
+  dnsSaved.value = true
+  let txt = `=== DNS personnalisés pour ${publishDomain.value} ===\n`
+  txt += `NS1: ${customDns.value.ns1}\n`
+  txt += `NS2: ${customDns.value.ns2}\n`
+  if (customDns.value.ns3) txt += `NS3: ${customDns.value.ns3}\n`
+  if (customDns.value.ns4) txt += `NS4: ${customDns.value.ns4}\n`
+  txt += `\nURL du site: ${publishInfo.value?.url}\n`
+  const blob = new Blob([txt], { type: "text/plain" })
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob)
+  a.download = "dns-config.txt"; a.click()
+  notify("Configuration DNS sauvegardée ✓")
+  showDnsInput.value = false
+}
 const publishInfo = ref(null)
 
 const publishSite = () => {
   if (!publishAddress.value.trim()) { notify("Entrez une adresse pour le site.", "error"); return }
   const slug = publishAddress.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")
-  const url = `https://wellshoppings.app/${slug}`
+  const url = `https://musrh.github.io/SaasBuilder/${slug}`
   const domain = publishDomain.value.trim()
   publishInfo.value = { slug, url, domain }
   publishStatus.value = "published"
@@ -339,18 +519,18 @@ const deletePage = (i) => {
   activeSectionIndex.value = null
 }
 
-const sectionTypes = [
-  { key: "hero",     label: "Hero",       icon: "⚡",  desc: "Titre + CTA" },
-  { key: "text",     label: "Texte",      icon: "📝",  desc: "Paragraphe libre" },
-  { key: "image",    label: "Image",      icon: "🖼️",  desc: "Photo / illustration" },
-  { key: "gallery",  label: "Galerie",    icon: "🎨",  desc: "Grille d'images" },
-  { key: "video",    label: "Vidéo",      icon: "▶️",  desc: "YouTube / Vimeo" },
-  { key: "products", label: "Produits",   icon: "🛍️",  desc: "Catalogue" },
-  { key: "features", label: "Features",   icon: "✦",   desc: "Grille avantages" },
-  { key: "payment",  label: "Paiement",   icon: "💳",  desc: "Stripe & PayPal" },
-  { key: "form",     label: "Contact",    icon: "✉️",  desc: "Formulaire" },
-  { key: "divider",  label: "Séparateur", icon: "—",   desc: "Ligne décorative" },
-]
+const sectionTypes = computed(() => [
+  { key: "hero",     label: "Hero",        icon: "⚡",  desc: t.value.sHero },
+  { key: "text",     label: t.value.sections==="الأقسام"?"نص":"Texte", icon: "📝", desc: t.value.sText },
+  { key: "image",    label: "Image",       icon: "🖼️",  desc: t.value.sImage },
+  { key: "gallery",  label: t.value.galleryLabel, icon: "🎨", desc: t.value.sGallery },
+  { key: "video",    label: t.value.videoLabel,   icon: "▶️", desc: t.value.sVideo },
+  { key: "products", label: t.value.productsLabel.split(" ")[0], icon: "🛍️", desc: t.value.sProducts },
+  { key: "features", label: "Features",    icon: "✦",   desc: t.value.sFeatures },
+  { key: "payment",  label: t.value.publish==="نشر"?"دفع":"Paiement", icon: "💳", desc: t.value.sPayment },
+  { key: "form",     label: t.value.contactLabel.split(" ")[0], icon: "✉️", desc: t.value.sForm },
+  { key: "divider",  label: t.value.publish==="نشر"?"فاصل":"Séparateur", icon: "—", desc: t.value.sDivider },
+])
 
 const sectionDefaults = {
   hero:     { type: "hero", content: "Votre titre principal.", subtitle: "Sous-titre accrocheur.", cta: "Commencer", style: {} },
@@ -471,10 +651,10 @@ const renderSectionHTML = (s) => {
   if (s.type==="image") return s.url?`<div class="sec-image" style="${st}"><img src="${s.url}" alt="${s.alt||''}"/></div>`:''
   if (s.type==="gallery") return `<div class="gallery" style="${st}"><div class="gallery-grid" style="grid-template-columns:repeat(${s.columns||3},1fr)">${(s.images||[]).map(i=>`<img src="${i.url}" alt="${i.alt||''}"/>`).join('')}</div></div>`
   if (s.type==="video") return s.url?`<div class="video-wrap" style="${st}"><iframe src="${getEmbedUrl(s.url)}" allowfullscreen></iframe></div>`:''
-  if (s.type==="products") return `<div class="products" style="${st}"><div class="products-grid">${(s.items||[]).map(p=>`<div class="product-card">${p.image?`<img src="${p.image}"/>`:`<div class="product-img-ph">🛍️</div>`}<div class="product-body">${p.badge?`<span class="badge">${p.badge}</span>`:''}<div class="product-name">${p.name}</div><div class="product-desc">${p.description||''}</div><div class="product-footer"><span class="product-price">${p.price}${p.currency}</span><button class="product-btn">Acheter</button></div></div></div>`).join('')}</div></div>`
+  if (s.type==="products") return `<div class="products" style="${st}"><div class="products-grid">${(s.items||[]).map(p=>`<div class="product-card">${p.image?`<img src="${p.image}"/>`:`<div class="product-img-ph">🛍️</div>`}<div class="product-body">${p.badge?`<span class="badge">${p.badge}</span>`:''}<div class="product-name">${p.name}</div><div class="product-desc">${p.description||''}</div><div class="product-footer"><span class="product-price">${p.price}${p.currency}</span><button class="product-btn">{{ t.prevBuyBtn }}</button></div></div></div>`).join('')}</div></div>`
   if (s.type==="features") return `<div class="features" style="${st}"><div class="features-grid">${(s.items||[]).map(it=>`<div class="feature-card"><span class="icon">${it.icon}</span><strong>${it.title}</strong><p>${it.desc}</p></div>`).join('')}</div></div>`
-  if (s.type==="payment") return `<div class="payment-sec" style="${st}"><h2>${s.title||''}</h2><p>${s.description||''}</p><div class="payment-amount">${s.amount||'0'}${s.currency||'€'}</div><div class="pay-btns"><button class="pay-btn stripe">💳 Payer avec Stripe</button><button class="pay-btn paypal">🅿 Payer avec PayPal</button></div></div>`
-  if (s.type==="form") return `<div class="form-sec" style="${st}"><h3>Contactez-nous</h3><input placeholder="Nom complet"/><input placeholder="Email"/><textarea rows="4" placeholder="Message..."></textarea><button>Envoyer →</button></div>`
+  if (s.type==="payment") return `<div class="payment-sec" style="${st}"><h2>${s.title||''}</h2><p>${s.description||''}</p><div class="payment-amount">${s.amount||'0'}${s.currency||'€'}</div><div class="pay-btns"><button class="pay-btn stripe">{{ t.prevPayStripe }}</button><button class="pay-btn paypal">{{ t.prevPayPaypal }}</button></div></div>`
+  if (s.type==="form") return `<div class="form-sec" style="${st}"><h3>{{ t.prevContactTitle }}</h3><input placeholder="Nom complet"/><input placeholder="Email"/><textarea rows="4" placeholder="Message..."></textarea><button>Envoyer →</button></div>`
   if (s.type==="divider") return `<hr class="divider" style="${st}"/>`
   return ''
 }
@@ -524,7 +704,7 @@ hr.divider{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
 </head>
 <body>
 <nav>
-<span class="brand">◈ WellShoppings</span>
+<span class="brand">◈ ${siteName.value}</span>
 ${site.value.pages.map((p,i)=>`<a onclick="showPage(${i})" id="tab-${i}"${i===0?' class="active"':''}>${p.name}</a>`).join("")}
 </nav>
 ${site.value.pages.map((page,pi)=>`<div class="page${pi===0?' active':''}" id="page-${pi}" style="${Object.entries(page.style||{}).map(([k,v])=>`${k.replace(/([A-Z])/g,'-$1').toLowerCase()}:${v}`).join(';')}">${page.sections.map(s=>renderSectionHTML(s)).join("")}</div>`).join("")}
@@ -654,11 +834,11 @@ const setPageStyle = (type, value) => {
           <div class="pub-field">
             <label>{{ t.siteAddress }}</label>
             <div class="pub-url-wrap">
-              <span class="pub-url-prefix">wellshoppings.app/</span>
+              <span class="pub-url-prefix">musrh.github.io/SaasBuilder/</span>
               <input v-model="publishAddress" class="pub-input" :placeholder="t.siteAddressPlaceholder"/>
             </div>
             <div v-if="publishAddress" class="pub-preview-url">
-              🔗 wellshoppings.app/{{ publishAddress.toLowerCase().replace(/[^a-z0-9-]/g,'-') }}
+              🔗 musrh.github.io/SaasBuilder/{{ publishAddress.toLowerCase().replace(/[^a-z0-9-]/g,'-') }}
             </div>
           </div>
 
@@ -676,7 +856,7 @@ const setPageStyle = (type, value) => {
           <div class="pub-success-badge">✓ {{ t.publishSuccess }}</div>
 
           <div class="pub-url-card">
-            <label>URL de votre site</label>
+            <label>{{ t.siteUrlLabel }}</label>
             <a :href="publishInfo.url" target="_blank" class="pub-live-url">{{ publishInfo.url }}</a>
           </div>
 
@@ -700,13 +880,71 @@ const setPageStyle = (type, value) => {
             <button class="btn-action small" @click="copyDnsRecords" style="margin-top:10px">
               {{ dnsCopied ? t.dnsCopied : t.copyDns }}
             </button>
+            <button class="btn-action small" @click="showDnsInput=true" style="margin-top:8px;margin-left:8px">
+              🖊 {{ t.dnsInputTitle }}
+            </button>
           </div>
 
-          <p class="pub-note">📄 Le fichier <strong>publier.txt</strong> a été téléchargé avec tous les détails.</p>
+          <div v-if="!publishInfo.domain" class="dns-section">
+            <h3 class="dns-title">{{ t.dnsTitle }}</h3>
+            <div class="dns-table">
+              <div class="dns-row dns-head"><span>Type</span><span>Nom</span><span>Valeur</span></div>
+              <div class="dns-row"><span class="dns-type">A</span><span>@</span><span class="dns-val">185.199.108.153</span></div>
+              <div class="dns-row"><span class="dns-type">CNAME</span><span>www</span><span class="dns-val">musrh.github.io</span></div>
+            </div>
+            <button class="btn-action small" @click="showDnsInput=true" style="margin-top:10px">
+              🖊 {{ t.dnsInputTitle }}
+            </button>
+          </div>
 
-          <button class="btn-action" @click="publishStatus=''; publishAddress=''; publishDomain=''" style="margin-top:12px;width:100%;justify-content:center">
-            Modifier l'adresse
+          <p class="pub-note">📄 {{ t.publishNoteFile }}</p>
+
+          <button class="btn-action" @click="publishStatus=''; publishAddress=''; publishDomain=''; dnsSaved=false" style="margin-top:12px;width:100%;justify-content:center">
+            {{ t.modifyAddress }}
           </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- DNS INPUT MODAL -->
+  <Transition name="modal">
+    <div v-if="showDnsInput" class="modal-overlay" @click.self="showDnsInput=false" :dir="isRtl?'rtl':'ltr'">
+      <div class="modal-box dns-input-modal">
+        <button class="modal-close" @click="showDnsInput=false">✕</button>
+        <div class="modal-header">
+          <span class="modal-icon">🔧</span>
+          <h2>{{ t.dnsInputTitle }}</h2>
+          <p class="modal-desc">{{ t.dnsInputDesc }}</p>
+        </div>
+        <div class="dns-input-form">
+          <div class="dns-input-row">
+            <label>{{ t.dnsNs1 }} *</label>
+            <input v-model="customDns.ns1" class="dns-input-field" placeholder="ns1.votreregistrar.com"/>
+          </div>
+          <div class="dns-input-row">
+            <label>{{ t.dnsNs2 }} *</label>
+            <input v-model="customDns.ns2" class="dns-input-field" placeholder="ns2.votreregistrar.com"/>
+          </div>
+          <div class="dns-input-row">
+            <label>{{ t.dnsNs3 }}</label>
+            <input v-model="customDns.ns3" class="dns-input-field" placeholder="ns3.votreregistrar.com"/>
+          </div>
+          <div class="dns-input-row">
+            <label>{{ t.dnsNs4 }}</label>
+            <input v-model="customDns.ns4" class="dns-input-field" placeholder="ns4.votreregistrar.com"/>
+          </div>
+        </div>
+        <div class="dns-instructions">
+          <div class="dns-inst-title">{{ t.dnsInstructions }}</div>
+          <div class="dns-inst-step">{{ t.dnsStep1 }}</div>
+          <div class="dns-inst-step">{{ t.dnsStep2 }}</div>
+          <div class="dns-inst-step">{{ t.dnsStep3 }}</div>
+          <div class="dns-inst-step">{{ t.dnsStep4 }}</div>
+        </div>
+        <div class="config-modal-actions" style="margin-top:16px">
+          <button class="btn-action" @click="showDnsInput=false">{{ t.cancel }}</button>
+          <button class="btn-action primary" @click="saveDnsRecords">💾 {{ t.saveDns }}</button>
         </div>
       </div>
     </div>
@@ -745,12 +983,17 @@ const setPageStyle = (type, value) => {
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-brand">
-      <label class="logo-area" title="Changer le logo">
+      <label class="logo-area" :title="t.logoUpload">
         <input type="file" accept="image/*" @change="uploadLogo" hidden/>
         <img v-if="siteLogo" :src="siteLogo" class="site-logo-img"/>
         <span v-else class="brand-icon">◈</span>
       </label>
-      <span class="brand-name">WellShoppings</span>
+      <input
+        v-model="siteName"
+        class="brand-name-input"
+        :placeholder="t.siteNamePlaceholder"
+        :title="t.siteNameLabel"
+      />
       <span class="brand-badge">Pro</span>
     </div>
     <nav class="page-tabs">
@@ -802,15 +1045,15 @@ const setPageStyle = (type, value) => {
         <div v-if="activeSection" class="prop-panel">
           <p class="sidebar-label" style="margin-top:20px">{{ t.properties }}</p>
           <div v-if="activeSection.type==='gallery'" class="prop-row">
-            <label>Colonnes</label>
+            <label>{{ t.columns }}</label>
             <select v-model="activeSection.columns" class="prop-select">
-              <option :value="2">2 colonnes</option>
-              <option :value="3">3 colonnes</option>
-              <option :value="4">4 colonnes</option>
+              <option :value="2">{{ t.colOption2 }}</option>
+              <option :value="3">{{ t.colOption3 }}</option>
+              <option :value="4">{{ t.colOption4 }}</option>
             </select>
           </div>
           <div v-if="['text','hero'].includes(activeSection.type)" class="prop-row">
-            <label>Typographie</label>
+            <label>{{ t.typography }}</label>
             <div class="style-btns">
               <button :class="{on:activeSection.style?.fontWeight==='bold'}" @click="setStyle('bold')"><b>B</b></button>
               <button :class="{on:activeSection.style?.fontStyle==='italic'}" @click="setStyle('italic')"><i>I</i></button>
@@ -820,18 +1063,18 @@ const setPageStyle = (type, value) => {
             </div>
           </div>
           <div class="prop-row">
-            <label>Couleur texte</label>
+            <label>{{ t.textColor }}</label>
             <input type="color" :value="activeSection.style?.color||'#111111'" @input="setStyle('color',$event.target.value)" class="color-input"/>
           </div>
           <div class="prop-row">
-            <label>Fond de section</label>
+            <label>{{ t.sectionBg }}</label>
             <input type="color" :value="activeSection.style?.backgroundColor||'#ffffff'" @input="setStyle('bg',$event.target.value)" class="color-input"/>
           </div>
           <div v-if="['text','hero'].includes(activeSection.type)" class="prop-row">
-            <label>Taille de police</label>
+            <label>{{ t.fontSize }}</label>
             <select @change="setStyle('fontSize',$event.target.value)" class="prop-select">
-              <option value="">Auto</option><option value="14px">Petite</option>
-              <option value="18px">Normale</option><option value="24px">Grande</option><option value="36px">Très grande</option>
+              <option value="">{{ t.auto }}</option><option value="14px">{{ t.small }}</option>
+              <option value="18px">{{ t.normal }}</option><option value="24px">{{ t.large }}</option><option value="36px">{{ t.xlarge }}</option>
             </select>
           </div>
         </div>
@@ -840,21 +1083,21 @@ const setPageStyle = (type, value) => {
       <div v-if="sidebarTab==='style'" class="sidebar-content">
         <p class="sidebar-label">{{ t.pageStyle }}</p>
         <div class="prop-row">
-          <label>Couleur de fond</label>
+          <label>{{ t.bgColor }}</label>
           <input type="color" :value="currentPage.style?.backgroundColor||'#ffffff'" @input="setPageStyle('bg',$event.target.value)" class="color-input"/>
         </div>
         <div class="prop-row">
-          <label>Couleur du texte</label>
+          <label>{{ t.textColorPage }}</label>
           <input type="color" :value="currentPage.style?.color||'#111111'" @input="setPageStyle('color',$event.target.value)" class="color-input"/>
         </div>
         <div class="prop-row">
-          <label>Police</label>
+          <label>{{ t.font }}</label>
           <select @change="setPageStyle('fontFamily',$event.target.value)" class="prop-select">
-            <option value="">Par défaut</option>
-            <option value="Georgia, serif">Georgia</option>
-            <option value="'Courier New', monospace">Courier New</option>
-            <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
-            <option value="Verdana, sans-serif">Verdana</option>
+            <option value="">{{ t.fontDefault }}</option>
+            <option value="Georgia, serif">{{ t.fontGeorgia }}</option>
+            <option value="'Courier New', monospace">{{ t.fontCourier }}</option>
+            <option value="'Trebuchet MS', sans-serif">{{ t.fontTrebuchet }}</option>
+            <option value="Verdana, sans-serif">{{ t.fontVerdana }}</option>
           </select>
         </div>
       </div>
@@ -866,7 +1109,7 @@ const setPageStyle = (type, value) => {
 
         <template v-if="mode==='edit'">
           <div v-if="!currentPage.sections.length" class="empty-page">
-            <span>✦</span><p>Cette page est vide.</p><p>Ajoutez une section depuis le panneau gauche.</p>
+            <span>✦</span><p>{{ t.emptyPage }}</p><p>{{ t.addSectionHint }}</p>
           </div>
           <div v-for="(s,i) in currentPage.sections" :key="s.id" class="section-block" :class="{'is-active':activeSectionIndex===i}" @click="activeSectionIndex=i">
             <div class="section-actions">
@@ -877,29 +1120,29 @@ const setPageStyle = (type, value) => {
 
             <!-- HERO -->
             <div v-if="s.type==='hero'" class="sec-hero" :style="s.style">
-              <textarea v-model="s.content" class="hero-title-input" placeholder="Titre principal..."/>
-              <input v-model="s.subtitle" class="hero-sub-input" placeholder="Sous-titre..."/>
-              <input v-model="s.cta" class="hero-cta-input" placeholder="Bouton CTA..."/>
+              <textarea v-model="s.content" class="hero-title-input" :placeholder="t.heroTitlePh"/>
+              <input v-model="s.subtitle" class="hero-sub-input" :placeholder="t.heroSubPh"/>
+              <input v-model="s.cta" class="hero-cta-input" :placeholder="t.heroCtaPh"/>
             </div>
 
             <!-- TEXT -->
             <div v-else-if="s.type==='text'" class="sec-text" :style="s.style">
-              <textarea v-model="s.content" class="text-input" placeholder="Votre texte ici..."/>
+              <textarea v-model="s.content" class="text-input" :placeholder="t.textPh"/>
             </div>
 
             <!-- IMAGE -->
             <div v-else-if="s.type==='image'" class="sec-image" :style="s.style">
               <label class="img-drop" v-if="!s.url">
                 <input type="file" accept="image/*" @change="uploadImage($event,s)" hidden/>
-                <span>🖼</span><span>Cliquer pour charger une image</span>
+                <span>🖼</span><span>{{ t.imgUploadHint }}</span>
               </label>
               <div v-else class="img-preview-wrap">
                 <img :src="s.url" class="img-preview" :alt="s.alt"/>
                 <div class="img-overlay">
                   <label class="btn-action" style="cursor:pointer">
-                    <input type="file" accept="image/*" @change="uploadImage($event,s)" hidden/>Changer
+                    <input type="file" accept="image/*" @change="uploadImage($event,s)" hidden/>{{ t.imgChange }}
                   </label>
-                  <input v-model="s.alt" placeholder="Texte alt..." class="alt-input"/>
+                  <input v-model="s.alt" :placeholder="t.imgAltPh" class="alt-input"/>
                 </div>
               </div>
             </div>
@@ -907,9 +1150,9 @@ const setPageStyle = (type, value) => {
             <!-- GALLERY -->
             <div v-else-if="s.type==='gallery'" class="sec-gallery" :style="s.style">
               <div class="gallery-toolbar">
-                <span class="sec-type-label">🎨 Galerie — {{ s.images.length }} image(s)</span>
+                <span class="sec-type-label">🎨 {{ t.galleryLabel }} — {{ s.images.length }} {{ t.galleryImages }}</span>
                 <label class="btn-action small" style="cursor:pointer">
-                  <input type="file" accept="image/*" multiple @change="uploadGalleryImage($event,s)" hidden/>+ Ajouter
+                  <input type="file" accept="image/*" multiple @change="uploadGalleryImage($event,s)" hidden/>{{ t.galleryAdd }}
                 </label>
               </div>
               <div v-if="s.images.length" class="gallery-grid-edit" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
@@ -918,25 +1161,25 @@ const setPageStyle = (type, value) => {
                   <button class="gallery-del" @click.stop="removeGalleryImage(s,gi)">✕</button>
                 </div>
               </div>
-              <div v-else class="gallery-empty">🖼️ Aucune image — cliquez sur "+ Ajouter"</div>
+              <div v-else class="gallery-empty">{{ t.galleryEmpty }}</div>
             </div>
 
             <!-- VIDEO -->
             <div v-else-if="s.type==='video'" class="sec-video" :style="s.style">
-              <div class="video-toolbar"><span class="sec-type-label">▶️ Vidéo</span></div>
-              <input v-model="s.title" class="video-title-input" placeholder="Titre de la vidéo..."/>
-              <input v-model="s.url" class="video-url-input" placeholder="URL YouTube ou Vimeo..."/>
+              <div class="video-toolbar"><span class="sec-type-label">▶️ {{ t.videoLabel }}</span></div>
+              <input v-model="s.title" class="video-title-input" :placeholder="t.videoTitlePh"/>
+              <input v-model="s.url" class="video-url-input" :placeholder="t.videoUrlPh"/>
               <div v-if="s.url" class="video-preview">
                 <iframe :src="getEmbedUrl(s.url)" allowfullscreen class="video-iframe"/>
               </div>
-              <div v-else class="video-placeholder"><span>▶</span><span>Collez une URL YouTube ou Vimeo</span></div>
+              <div v-else class="video-placeholder"><span>▶</span><span>{{ t.videoHint }}</span></div>
             </div>
 
             <!-- PRODUCTS -->
             <div v-else-if="s.type==='products'" class="sec-products" :style="s.style">
               <div class="products-toolbar">
-                <span class="sec-type-label">🛍️ Catalogue produits</span>
-                <button class="btn-action small" @click.stop="addProduct(s)">+ Produit</button>
+                <span class="sec-type-label">🛍️ {{ t.productsLabel }}</span>
+                <button class="btn-action small" @click.stop="addProduct(s)">{{ t.addProduct }}</button>
               </div>
               <div class="products-grid-edit">
                 <div v-for="(p,pi) in s.items" :key="p.id" class="product-card-edit">
@@ -947,11 +1190,11 @@ const setPageStyle = (type, value) => {
                     <div v-else class="product-img-ph">🛍️<span>Photo</span></div>
                   </label>
                   <div class="product-fields">
-                    <input v-model="p.badge" class="product-badge-input" placeholder="Badge (Nouveau, Promo...)"/>
-                    <input v-model="p.name" class="product-name-input" placeholder="Nom du produit"/>
-                    <input v-model="p.description" class="product-desc-input" placeholder="Description courte"/>
+                    <input v-model="p.badge" class="product-badge-input" :placeholder="t.badgePh"/>
+                    <input v-model="p.name" class="product-name-input" :placeholder="t.productNamePh"/>
+                    <input v-model="p.description" class="product-desc-input" :placeholder="t.productDescPh"/>
                     <div class="product-price-row">
-                      <input v-model="p.price" class="product-price-input" placeholder="Prix"/>
+                      <input v-model="p.price" class="product-price-input" :placeholder="t.productPricePh"/>
                       <select v-model="p.currency" class="product-currency-select">
                         <option>€</option><option>$</option><option>£</option><option>MAD</option>
                       </select>
@@ -966,8 +1209,8 @@ const setPageStyle = (type, value) => {
               <div class="features-grid">
                 <div v-for="(item,fi) in s.items" :key="fi" class="feature-item">
                   <input v-model="item.icon" class="feat-icon-input"/>
-                  <input v-model="item.title" class="feat-title-input" placeholder="Titre..."/>
-                  <input v-model="item.desc" class="feat-desc-input" placeholder="Description..."/>
+                  <input v-model="item.title" class="feat-title-input" :placeholder="t.featureTitlePh"/>
+                  <input v-model="item.desc" class="feat-desc-input" :placeholder="t.featureDescPh"/>
                 </div>
               </div>
             </div>
@@ -975,25 +1218,25 @@ const setPageStyle = (type, value) => {
             <!-- PAYMENT -->
             <div v-else-if="s.type==='payment'" class="sec-payment" :style="s.style">
               <div class="payment-edit-header">
-                <span class="sec-type-label">💳 Section Paiement</span>
+                <span class="sec-type-label">💳 {{ t.paymentLabel }}</span>
                 <div class="pay-providers-badge">
                   <span class="badge-stripe">Stripe</span>
                   <span class="badge-paypal">PayPal</span>
                 </div>
               </div>
               <div class="payment-edit-fields">
-                <input v-model="s.title" class="payment-title-input" placeholder="Titre du paiement..."/>
-                <input v-model="s.description" class="payment-desc-input" placeholder="Description..."/>
+                <input v-model="s.title" class="payment-title-input" :placeholder="t.paymentTitlePh"/>
+                <input v-model="s.description" class="payment-desc-input" :placeholder="t.featureDescPh"/>
                 <div class="payment-price-row">
-                  <input v-model="s.amount" class="payment-amount-input" placeholder="Montant"/>
+                  <input v-model="s.amount" class="payment-amount-input" :placeholder="t.paymentAmountPh"/>
                   <select v-model="s.currency" class="payment-currency-select">
                     <option>€</option><option>$</option><option>£</option><option>MAD</option>
                   </select>
                 </div>
               </div>
               <div class="payment-preview-btns">
-                <button class="preview-pay-btn stripe-preview" @click.stop="paymentProvider='stripe';openPaymentModal(s)">💳 Tester Stripe</button>
-                <button class="preview-pay-btn paypal-preview" @click.stop="paymentProvider='paypal';openPaymentModal(s)">🅿 Tester PayPal</button>
+                <button class="preview-pay-btn stripe-preview" @click.stop="paymentProvider='stripe';openPaymentModal(s)">{{ t.testStripe }}</button>
+                <button class="preview-pay-btn paypal-preview" @click.stop="paymentProvider='paypal';openPaymentModal(s)">{{ t.testPaypal }}</button>
               </div>
               <div class="payment-config-hint">
                 <span>⚙</span>
@@ -1005,12 +1248,12 @@ const setPageStyle = (type, value) => {
 
             <!-- FORM -->
             <div v-else-if="s.type==='form'" class="sec-form" :style="s.style">
-              <p class="form-label-heading">Formulaire de contact</p>
+              <p class="form-label-heading">{{ t.contactLabel }}</p>
               <div class="form-fields">
-                <input placeholder="Nom complet" disabled class="form-field"/>
-                <input placeholder="Adresse email" disabled class="form-field"/>
-                <textarea placeholder="Votre message..." disabled class="form-field form-textarea"/>
-                <button disabled class="form-submit">Envoyer →</button>
+                <input :placeholder="t.namePh" disabled class="form-field"/>
+                <input :placeholder="t.emailPh" disabled class="form-field"/>
+                <textarea :placeholder="t.msgPh" disabled class="form-field form-textarea"/>
+                <button disabled class="form-submit">{{ t.sendBtn }}</button>
               </div>
             </div>
 
@@ -1036,20 +1279,20 @@ const setPageStyle = (type, value) => {
 
               <div v-else-if="s.type==='image'" class="prev-image" :style="s.style">
                 <img v-if="s.url" :src="s.url" :alt="s.alt" class="prev-img"/>
-                <div v-else class="prev-img-placeholder">Image non définie</div>
+                <div v-else class="prev-img-placeholder">{{ t.prevImgEmpty }}</div>
               </div>
 
               <div v-else-if="s.type==='gallery'" class="prev-gallery" :style="s.style">
                 <div v-if="s.images.length" class="prev-gallery-grid" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
                   <div v-for="img in s.images" :key="img.id" class="prev-gallery-item"><img :src="img.url" :alt="img.alt"/></div>
                 </div>
-                <div v-else class="prev-img-placeholder">Galerie vide</div>
+                <div v-else class="prev-img-placeholder">{{ t.prevGalleryEmpty }}</div>
               </div>
 
               <div v-else-if="s.type==='video'" class="prev-video" :style="s.style">
                 <h3 v-if="s.title" class="prev-video-title">{{ s.title }}</h3>
                 <div v-if="s.url" class="prev-video-wrap"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="prev-video-iframe"/></div>
-                <div v-else class="prev-img-placeholder">URL vidéo non définie</div>
+                <div v-else class="prev-img-placeholder">{{ t.prevVideoEmpty }}</div>
               </div>
 
               <div v-else-if="s.type==='products'" class="prev-products" :style="s.style">
@@ -1065,7 +1308,7 @@ const setPageStyle = (type, value) => {
                       <div class="prev-product-desc">{{ p.description }}</div>
                       <div class="prev-product-footer">
                         <span class="prev-product-price">{{ p.price }}{{ p.currency }}</span>
-                        <button class="prev-product-btn">Acheter</button>
+                        <button class="prev-product-btn">{{ t.prevBuyBtn }}</button>
                       </div>
                     </div>
                   </div>
@@ -1086,20 +1329,20 @@ const setPageStyle = (type, value) => {
                 <p class="prev-payment-desc">{{ s.description }}</p>
                 <div class="prev-payment-amount">{{ s.amount }}{{ s.currency }}</div>
                 <div class="prev-payment-btns">
-                  <button class="prev-pay-btn stripe-btn" @click="paymentProvider='stripe';openPaymentModal(s)">💳 Payer avec Stripe</button>
-                  <button class="prev-pay-btn paypal-btn" @click="paymentProvider='paypal';openPaymentModal(s)">🅿 Payer avec PayPal</button>
+                  <button class="prev-pay-btn stripe-btn" @click="paymentProvider='stripe';openPaymentModal(s)">{{ t.prevPayStripe }}</button>
+                  <button class="prev-pay-btn paypal-btn" @click="paymentProvider='paypal';openPaymentModal(s)">{{ t.prevPayPaypal }}</button>
                 </div>
               </div>
 
               <div v-else-if="s.type==='form'" class="prev-form" :style="s.style">
-                <h3>Contactez-nous</h3>
-                <input placeholder="Nom complet" class="prev-form-field"/>
-                <input placeholder="Email" class="prev-form-field"/>
-                <textarea placeholder="Message..." class="prev-form-field prev-form-ta"></textarea>
-                <button class="prev-form-btn">Envoyer →</button>
+                <h3>{{ t.prevContactTitle }}</h3>
+                <input :placeholder="t.prevNamePh" class="prev-form-field"/>
+                <input :placeholder="t.prevEmailPh" class="prev-form-field"/>
+                <textarea :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
+                <button class="prev-form-btn">{{ t.prevSendBtn }}</button>
               </div>
 
-              <div v-else-if="s.type==='divider'" class="prev-divider" :style="s.style"><hr class="prev-divider-line"/></div>
+              <div v-else-if="s.type==='divider'"" class="prev-divider" :style="s.style"><hr class="prev-divider-line"/></div>
             </div>
           </div>
         </template>
@@ -1447,4 +1690,20 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .dns-val{font-family:monospace;font-size:11px;color:var(--text2);word-break:break-all}
 .pub-note{font-size:12px;color:var(--text3);text-align:center;line-height:1.6}
 .pub-note strong{color:var(--text2)}
+
+/* BRAND NAME INPUT */
+.brand-name-input{background:transparent;border:none;color:var(--text);font-family:'Playfair Display',serif;font-size:17px;font-weight:600;letter-spacing:-.3px;outline:none;width:140px;min-width:80px;max-width:180px;border-bottom:1px solid transparent;transition:border-color .2s;padding:0}
+.brand-name-input:hover,.brand-name-input:focus{border-bottom-color:var(--border2)}
+.brand-name-input::placeholder{color:var(--text3)}
+
+/* DNS INPUT MODAL */
+.dns-input-modal{max-width:520px}
+.dns-input-form{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
+.dns-input-row label{display:block;font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.dns-input-field{width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:13px;padding:10px 14px;border-radius:var(--radius);outline:none;font-family:'DM Sans',sans-serif;transition:border-color .15s}
+.dns-input-field:focus{border-color:var(--accent)}
+.dns-input-field::placeholder{color:var(--text3)}
+.dns-instructions{background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.dns-inst-title{font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.dns-inst-step{font-size:12px;color:var(--text2);line-height:1.5}
 </style>

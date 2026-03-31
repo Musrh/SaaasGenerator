@@ -287,7 +287,7 @@ hr.divider{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
 </head>
 <body>
 <nav>
-<span class="brand">◈ Webcraft</span>
+<span class="brand">◈ WellShoppings</span>
 ${site.value.pages.map((p,i)=>`<a onclick="showPage(${i})" id="tab-${i}"${i===0?' class="active"':''}>${p.name}</a>`).join("")}
 </nav>
 ${site.value.pages.map((page,pi)=>`<div class="page${pi===0?' active':''}" id="page-${pi}" style="${Object.entries(page.style||{}).map(([k,v])=>`${k.replace(/([A-Z])/g,'-$1').toLowerCase()}:${v}`).join(';')}">${page.sections.map(s=>renderSectionHTML(s)).join("")}</div>`).join("")}
@@ -436,7 +436,7 @@ const setPageStyle = (type, value) => {
   <header class="topbar">
     <div class="topbar-brand">
       <span class="brand-icon">◈</span>
-      <span class="brand-name">Webcraft</span>
+      <span class="brand-name">WellShoppings</span>
       <span class="brand-badge">Pro</span>
     </div>
     <nav class="page-tabs">

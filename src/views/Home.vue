@@ -38,6 +38,243 @@ const configEditorTarget = ref("stripe")
 const configEditorContent = ref("")
 const showExportModal = ref(false)
 
+// ===== I18N =====
+const currentLang = ref("fr")
+const langs = [
+  { code: "fr", label: "🇫🇷 Français" },
+  { code: "en", label: "🇬🇧 English" },
+  { code: "es", label: "🇪🇸 Español" },
+  { code: "ar", label: "🇲🇦 العربية" },
+]
+const t = computed(() => translations[currentLang.value])
+
+const translations = {
+  fr: {
+    save: "Sauvegarder", saving: "Sauvegarde...", notConnected: "Non connecté",
+    saved: "✓ Sauvegardé", unsaved: "● Non sauvegardé",
+    edit: "✏ Éditer", preview: "▶ Aperçu",
+    sections: "Sections", style: "Style",
+    addSection: "Ajouter une section",
+    properties: "Propriétés", typography: "Typographie",
+    textColor: "Couleur texte", sectionBg: "Fond de section",
+    fontSize: "Taille de police", auto: "Auto",
+    small: "Petite", normal: "Normale", large: "Grande", xlarge: "Très grande",
+    pageStyle: "Style de la page", bgColor: "Couleur de fond",
+    textColorPage: "Couleur du texte", font: "Police",
+    columns: "Colonnes", emptyPage: "Cette page est vide.",
+    addSectionHint: "Ajoutez une section depuis le panneau gauche.",
+    export: "Exporter", exportTitle: "Exporter le site",
+    exportDesc: "Choisissez votre format d'export",
+    htmlStatic: "HTML statique", htmlDesc: "Un fichier .html tout-en-un, prêt à héberger.",
+    download: "Télécharger", dlDesc: "Téléchargez votre site complet.",
+    exportNote: "Les images sont intégrées en base64. Les paiements Stripe/PayPal nécessitent un backend.",
+    recommended: "Recommandé", exportSuccess: "Site exporté en HTML ✓",
+    publish: "Publier", publishTitle: "Publier votre site",
+    publishDesc: "Choisissez une adresse pour votre site",
+    siteAddress: "Adresse du site", siteAddressPlaceholder: "mon-site (ex: mon-boutique)",
+    domainLink: "Lier un nom de domaine (optionnel)", domainPlaceholder: "ex: www.mondomaine.com",
+    publishBtn: "Publier le site", publishSuccess: "Site publié ✓",
+    dnsTitle: "Configuration DNS", dnsDesc: "Ajoutez ces enregistrements chez votre registrar :",
+    copyDns: "Copier", dnsCopied: "Copié ✓",
+    logoTitle: "Logo du site", logoUpload: "Changer le logo", logoRemove: "Supprimer",
+    logoHint: "Cliquez pour ajouter un logo",
+    configureStripe: "Configurer Stripe", configurePaypal: "Configurer PayPal",
+    newPage: "Nouvelle page", keepOnePage: "Gardez au moins une page.",
+    connectedError: "Vous devez être connecté.", saveError: "Erreur de sauvegarde.",
+    loadError: "Erreur de chargement. Données locales utilisées.",
+    paySuccess: "Paiement réussi !", payDone: "Votre paiement a bien été traité.",
+    close: "Fermer", cancel: "Annuler",
+  },
+  en: {
+    save: "Save", saving: "Saving...", notConnected: "Not connected",
+    saved: "✓ Saved", unsaved: "● Unsaved",
+    edit: "✏ Edit", preview: "▶ Preview",
+    sections: "Sections", style: "Style",
+    addSection: "Add a section",
+    properties: "Properties", typography: "Typography",
+    textColor: "Text color", sectionBg: "Section background",
+    fontSize: "Font size", auto: "Auto",
+    small: "Small", normal: "Normal", large: "Large", xlarge: "Extra large",
+    pageStyle: "Page style", bgColor: "Background color",
+    textColorPage: "Text color", font: "Font",
+    columns: "Columns", emptyPage: "This page is empty.",
+    addSectionHint: "Add a section from the left panel.",
+    export: "Export", exportTitle: "Export site",
+    exportDesc: "Choose your export format",
+    htmlStatic: "Static HTML", htmlDesc: "A single all-in-one .html file, ready to host.",
+    download: "Download", dlDesc: "Download your complete site.",
+    exportNote: "Images are embedded in base64. Stripe/PayPal payments require a backend.",
+    recommended: "Recommended", exportSuccess: "Site exported as HTML ✓",
+    publish: "Publish", publishTitle: "Publish your site",
+    publishDesc: "Choose an address for your site",
+    siteAddress: "Site address", siteAddressPlaceholder: "my-site (e.g. my-shop)",
+    domainLink: "Link a domain name (optional)", domainPlaceholder: "e.g. www.mydomain.com",
+    publishBtn: "Publish site", publishSuccess: "Site published ✓",
+    dnsTitle: "DNS Configuration", dnsDesc: "Add these records at your registrar:",
+    copyDns: "Copy", dnsCopied: "Copied ✓",
+    logoTitle: "Site logo", logoUpload: "Change logo", logoRemove: "Remove",
+    logoHint: "Click to add a logo",
+    configureStripe: "Configure Stripe", configurePaypal: "Configure PayPal",
+    newPage: "New page", keepOnePage: "Keep at least one page.",
+    connectedError: "You must be logged in.", saveError: "Save error.",
+    loadError: "Load error. Local data used.",
+    paySuccess: "Payment successful!", payDone: "Your payment has been processed.",
+    close: "Close", cancel: "Cancel",
+  },
+  es: {
+    save: "Guardar", saving: "Guardando...", notConnected: "No conectado",
+    saved: "✓ Guardado", unsaved: "● No guardado",
+    edit: "✏ Editar", preview: "▶ Vista previa",
+    sections: "Secciones", style: "Estilo",
+    addSection: "Añadir una sección",
+    properties: "Propiedades", typography: "Tipografía",
+    textColor: "Color de texto", sectionBg: "Fondo de sección",
+    fontSize: "Tamaño de fuente", auto: "Auto",
+    small: "Pequeño", normal: "Normal", large: "Grande", xlarge: "Muy grande",
+    pageStyle: "Estilo de página", bgColor: "Color de fondo",
+    textColorPage: "Color de texto", font: "Fuente",
+    columns: "Columnas", emptyPage: "Esta página está vacía.",
+    addSectionHint: "Añade una sección desde el panel izquierdo.",
+    export: "Exportar", exportTitle: "Exportar sitio",
+    exportDesc: "Elige tu formato de exportación",
+    htmlStatic: "HTML estático", htmlDesc: "Un archivo .html todo-en-uno, listo para alojar.",
+    download: "Descargar", dlDesc: "Descarga tu sitio completo.",
+    exportNote: "Las imágenes están integradas en base64. Los pagos Stripe/PayPal requieren un backend.",
+    recommended: "Recomendado", exportSuccess: "Sitio exportado en HTML ✓",
+    publish: "Publicar", publishTitle: "Publicar su sitio",
+    publishDesc: "Elija una dirección para su sitio",
+    siteAddress: "Dirección del sitio", siteAddressPlaceholder: "mi-sitio (ej: mi-tienda)",
+    domainLink: "Vincular un dominio (opcional)", domainPlaceholder: "ej: www.midominio.com",
+    publishBtn: "Publicar sitio", publishSuccess: "Sitio publicado ✓",
+    dnsTitle: "Configuración DNS", dnsDesc: "Añade estos registros en tu registrador:",
+    copyDns: "Copiar", dnsCopied: "Copiado ✓",
+    logoTitle: "Logo del sitio", logoUpload: "Cambiar logo", logoRemove: "Eliminar",
+    logoHint: "Haz clic para añadir un logo",
+    configureStripe: "Configurar Stripe", configurePaypal: "Configurar PayPal",
+    newPage: "Nueva página", keepOnePage: "Mantén al menos una página.",
+    connectedError: "Debes estar conectado.", saveError: "Error al guardar.",
+    loadError: "Error de carga. Datos locales usados.",
+    paySuccess: "¡Pago exitoso!", payDone: "Tu pago ha sido procesado.",
+    close: "Cerrar", cancel: "Cancelar",
+  },
+  ar: {
+    save: "حفظ", saving: "جارٍ الحفظ...", notConnected: "غير متصل",
+    saved: "✓ تم الحفظ", unsaved: "● غير محفوظ",
+    edit: "✏ تحرير", preview: "▶ معاينة",
+    sections: "الأقسام", style: "النمط",
+    addSection: "إضافة قسم",
+    properties: "الخصائص", typography: "الخط",
+    textColor: "لون النص", sectionBg: "خلفية القسم",
+    fontSize: "حجم الخط", auto: "تلقائي",
+    small: "صغير", normal: "عادي", large: "كبير", xlarge: "كبير جداً",
+    pageStyle: "نمط الصفحة", bgColor: "لون الخلفية",
+    textColorPage: "لون النص", font: "الخط",
+    columns: "الأعمدة", emptyPage: "هذه الصفحة فارغة.",
+    addSectionHint: "أضف قسماً من اللوحة اليسرى.",
+    export: "تصدير", exportTitle: "تصدير الموقع",
+    exportDesc: "اختر تنسيق التصدير",
+    htmlStatic: "HTML ثابت", htmlDesc: "ملف .html واحد جاهز للاستضافة.",
+    download: "تحميل", dlDesc: "حمّل موقعك الكامل.",
+    exportNote: "الصور مدمجة بصيغة base64. مدفوعات Stripe/PayPal تتطلب خادماً خلفياً.",
+    recommended: "موصى به", exportSuccess: "تم تصدير الموقع ✓",
+    publish: "نشر", publishTitle: "نشر موقعك",
+    publishDesc: "اختر عنواناً لموقعك",
+    siteAddress: "عنوان الموقع", siteAddressPlaceholder: "موقعي (مثال: متجري)",
+    domainLink: "ربط اسم نطاق (اختياري)", domainPlaceholder: "مثال: www.نطاقي.com",
+    publishBtn: "نشر الموقع", publishSuccess: "تم نشر الموقع ✓",
+    dnsTitle: "إعداد DNS", dnsDesc: "أضف هذه السجلات لدى المسجّل:",
+    copyDns: "نسخ", dnsCopied: "تم النسخ ✓",
+    logoTitle: "شعار الموقع", logoUpload: "تغيير الشعار", logoRemove: "حذف",
+    logoHint: "انقر لإضافة شعار",
+    configureStripe: "إعداد Stripe", configurePaypal: "إعداد PayPal",
+    newPage: "صفحة جديدة", keepOnePage: "احتفظ بصفحة واحدة على الأقل.",
+    connectedError: "يجب أن تكون متصلاً.", saveError: "خطأ في الحفظ.",
+    loadError: "خطأ في التحميل. تم استخدام البيانات المحلية.",
+    paySuccess: "تم الدفع بنجاح!", payDone: "تمت معالجة دفعتك.",
+    close: "إغلاق", cancel: "إلغاء",
+  }
+}
+
+const isRtl = computed(() => currentLang.value === "ar")
+
+// ===== LOGO =====
+const siteLogo = ref("")
+const uploadLogo = (e) => {
+  const file = e.target.files[0]; if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => { siteLogo.value = ev.target.result }
+  reader.readAsDataURL(file)
+}
+
+// ===== PUBLISH =====
+const showPublishModal = ref(false)
+const publishAddress = ref("")
+const publishDomain = ref("")
+const publishStatus = ref("") // '' | 'published'
+const dnsCopied = ref(false)
+const publishInfo = ref(null)
+
+const publishSite = () => {
+  if (!publishAddress.value.trim()) { notify("Entrez une adresse pour le site.", "error"); return }
+  const slug = publishAddress.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")
+  const url = `https://wellshoppings.app/${slug}`
+  const domain = publishDomain.value.trim()
+  publishInfo.value = { slug, url, domain }
+  publishStatus.value = "published"
+
+  // Generate publish.txt content
+  let txt = `=== WellShoppings — Publication du site ===
+`
+  txt += `Date : ${new Date().toLocaleString()}
+`
+  txt += `Adresse : ${url}
+`
+  if (domain) {
+    txt += `
+Nom de domaine lié : ${domain}
+`
+    txt += `
+=== Configuration DNS ===
+`
+    txt += `Ajoutez ces enregistrements chez votre registrar :
+
+`
+    txt += `Type    Nom              Valeur
+`
+    txt += `------  ---------------  -------------------------------
+`
+    txt += `A       @                76.76.21.21
+`
+    txt += `CNAME   www              cname.wellshoppings.app
+`
+    txt += `TXT     @                wellshoppings-verify=${slug}
+`
+  }
+  txt += `
+=== Informations ===
+`
+  txt += `- Votre site sera disponible sous 24-48h après configuration DNS
+`
+  txt += `- SSL/HTTPS activé automatiquement
+`
+
+  const blob = new Blob([txt], { type: "text/plain" })
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(blob)
+  a.download = "publier.txt"
+  a.click()
+  notify(t.value.publishSuccess)
+}
+
+const copyDnsRecords = () => {
+  const text = `A       @      76.76.21.21
+CNAME   www    cname.wellshoppings.app
+TXT     @      wellshoppings-verify=${publishInfo.value?.slug}`
+  navigator.clipboard.writeText(text)
+  dnsCopied.value = true
+  setTimeout(() => dnsCopied.value = false, 2000)
+}
+
 const currentPage = computed(() => site.value.pages[currentPageIndex.value] || site.value.pages[0])
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
@@ -56,7 +293,7 @@ onMounted(() => {
       }
     } catch (e) {
       console.error("Erreur chargement Firestore :", e)
-      notify("Erreur de chargement. Données locales utilisées.", "error")
+      notify(t.value.loadError, "error")
       const saved = localStorage.getItem("siteDataPro")
       if (saved) site.value = JSON.parse(saved)
     }
@@ -72,7 +309,7 @@ const notify = (msg, type = "success") => {
 }
 
 const saveSite = async () => {
-  if (!currentUser.value) { notify("Vous devez être connecté.", "error"); return }
+  if (!currentUser.value) { notify(t.value.connectedError, "error"); return }
   if (isSaving.value) return
   isSaving.value = true
   try {
@@ -80,10 +317,10 @@ const saveSite = async () => {
     await setDoc(docRef, { siteData: site.value }, { merge: true })
     localStorage.setItem("siteDataPro", JSON.stringify(site.value))
     isSaved.value = true
-    notify("Projet sauvegardé ✓")
+    notify(t.value.saved)
   } catch (e) {
     console.error("Erreur sauvegarde :", e)
-    notify("Erreur de sauvegarde.", "error")
+    notify(t.value.saveError, "error")
   } finally { isSaving.value = false }
 }
 
@@ -96,7 +333,7 @@ const addPage = () => {
 }
 
 const deletePage = (i) => {
-  if (site.value.pages.length === 1) { notify("Gardez au moins une page.", "error"); return }
+  if (site.value.pages.length === 1) { notify(t.value.keepOnePage, "error"); return }
   site.value.pages.splice(i, 1)
   currentPageIndex.value = Math.max(0, Math.min(i, site.value.pages.length - 1))
   activeSectionIndex.value = null
@@ -295,7 +532,7 @@ ${site.value.pages.map((page,pi)=>`<div class="page${pi===0?' active':''}" id="p
 </body></html>`
   const blob = new Blob([html], { type: "text/html" })
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "mon-site.html"; a.click()
-  notify("Site exporté en HTML ✓"); showExportModal.value = false
+  notify(t.value.exportSuccess); showExportModal.value = false
 }
 
 const setStyle = (type, value) => {
@@ -319,7 +556,7 @@ const setPageStyle = (type, value) => {
 </script>
 
 <template>
-<div class="saas-root">
+<div class="saas-root" :dir="isRtl?'rtl':'ltr'">
 
   <!-- NOTIFICATION -->
   <Transition name="notif">
@@ -402,6 +639,79 @@ const setPageStyle = (type, value) => {
     </div>
   </Transition>
 
+  <!-- PUBLISH MODAL -->
+  <Transition name="modal">
+    <div v-if="showPublishModal" class="modal-overlay" @click.self="showPublishModal=false" :dir="isRtl?'rtl':'ltr'">
+      <div class="modal-box publish-modal">
+        <button class="modal-close" @click="showPublishModal=false">✕</button>
+        <div class="modal-header">
+          <span class="modal-icon">🌐</span>
+          <h2>{{ t.publishTitle }}</h2>
+          <p class="modal-desc">{{ t.publishDesc }}</p>
+        </div>
+
+        <div v-if="publishStatus !== 'published'" class="publish-form">
+          <div class="pub-field">
+            <label>{{ t.siteAddress }}</label>
+            <div class="pub-url-wrap">
+              <span class="pub-url-prefix">wellshoppings.app/</span>
+              <input v-model="publishAddress" class="pub-input" :placeholder="t.siteAddressPlaceholder"/>
+            </div>
+            <div v-if="publishAddress" class="pub-preview-url">
+              🔗 wellshoppings.app/{{ publishAddress.toLowerCase().replace(/[^a-z0-9-]/g,'-') }}
+            </div>
+          </div>
+
+          <div class="pub-field">
+            <label>{{ t.domainLink }}</label>
+            <input v-model="publishDomain" class="pub-input" :placeholder="t.domainPlaceholder"/>
+          </div>
+
+          <button class="pay-submit stripe-submit" @click="publishSite" style="margin-top:8px">
+            🚀 {{ t.publishBtn }}
+          </button>
+        </div>
+
+        <div v-else class="publish-result">
+          <div class="pub-success-badge">✓ {{ t.publishSuccess }}</div>
+
+          <div class="pub-url-card">
+            <label>URL de votre site</label>
+            <a :href="publishInfo.url" target="_blank" class="pub-live-url">{{ publishInfo.url }}</a>
+          </div>
+
+          <div v-if="publishInfo.domain" class="dns-section">
+            <h3 class="dns-title">{{ t.dnsTitle }}</h3>
+            <p class="dns-desc">{{ t.dnsDesc }}</p>
+            <div class="dns-table">
+              <div class="dns-row dns-head">
+                <span>Type</span><span>Nom</span><span>Valeur</span>
+              </div>
+              <div class="dns-row">
+                <span class="dns-type">A</span><span>@</span><span class="dns-val">76.76.21.21</span>
+              </div>
+              <div class="dns-row">
+                <span class="dns-type">CNAME</span><span>www</span><span class="dns-val">cname.wellshoppings.app</span>
+              </div>
+              <div class="dns-row">
+                <span class="dns-type">TXT</span><span>@</span><span class="dns-val">wellshoppings-verify={{ publishInfo.slug }}</span>
+              </div>
+            </div>
+            <button class="btn-action small" @click="copyDnsRecords" style="margin-top:10px">
+              {{ dnsCopied ? t.dnsCopied : t.copyDns }}
+            </button>
+          </div>
+
+          <p class="pub-note">📄 Le fichier <strong>publier.txt</strong> a été téléchargé avec tous les détails.</p>
+
+          <button class="btn-action" @click="publishStatus=''; publishAddress=''; publishDomain=''" style="margin-top:12px;width:100%;justify-content:center">
+            Modifier l'adresse
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
   <!-- EXPORT MODAL -->
   <Transition name="modal">
     <div v-if="showExportModal" class="modal-overlay" @click.self="showExportModal=false">
@@ -435,7 +745,11 @@ const setPageStyle = (type, value) => {
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-brand">
-      <span class="brand-icon">◈</span>
+      <label class="logo-area" title="Changer le logo">
+        <input type="file" accept="image/*" @change="uploadLogo" hidden/>
+        <img v-if="siteLogo" :src="siteLogo" class="site-logo-img"/>
+        <span v-else class="brand-icon">◈</span>
+      </label>
       <span class="brand-name">WellShoppings</span>
       <span class="brand-badge">Pro</span>
     </div>
@@ -447,17 +761,21 @@ const setPageStyle = (type, value) => {
       </button>
       <button class="page-tab add-tab" @click="addPage">+</button>
     </nav>
-    <div class="topbar-actions">
-      <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" title="Configurer Stripe">💳</button>
-      <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" title="Configurer PayPal">🅿</button>
-      <button class="btn-action icon-btn" @click="showExportModal=true" title="Exporter">⬇</button>
-      <span class="save-status" :class="{saved:isSaved}">{{ isSaved?'✓ Sauvegardé':'● Non sauvegardé' }}</span>
+    <div class="topbar-actions" :dir="isRtl?'rtl':'ltr'">
+      <select class="lang-select" v-model="currentLang">
+        <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
+      </select>
+      <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
+      <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
+      <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
+      <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
+      <span class="save-status" :class="{saved:isSaved}">{{ isSaved ? t.saved : t.unsaved }}</span>
       <button class="btn-action" @click="saveSite" :disabled="isSaving||!currentUser" :class="{saving:isSaving}">
         <span v-if="isSaving" class="spinner"/>
-        <span>{{ isSaving?'Sauvegarde...':!currentUser?'Non connecté':'Sauvegarder' }}</span>
+        <span>{{ isSaving ? t.saving : !currentUser ? t.notConnected : t.save }}</span>
       </button>
       <button class="btn-action primary" @click="mode=mode==='preview'?'edit':'preview'">
-        {{ mode==='preview'?'✏ Éditer':'▶ Aperçu' }}
+        {{ mode==='preview' ? t.edit : t.preview }}
       </button>
     </div>
   </header>
@@ -466,14 +784,14 @@ const setPageStyle = (type, value) => {
   <div class="workspace">
 
     <!-- SIDEBAR -->
-    <aside v-if="mode==='edit'" class="sidebar">
+    <aside v-if="mode==='edit'" class="sidebar" :dir="isRtl?'rtl':'ltr'">
       <div class="sidebar-tabs">
-        <button :class="{active:sidebarTab==='sections'}" @click="sidebarTab='sections'">Sections</button>
-        <button :class="{active:sidebarTab==='style'}" @click="sidebarTab='style'">Style</button>
+        <button :class="{active:sidebarTab==='sections'}" @click="sidebarTab='sections'">{{ t.sections }}</button>
+        <button :class="{active:sidebarTab==='style'}" @click="sidebarTab='style'">{{ t.style }}</button>
       </div>
 
       <div v-if="sidebarTab==='sections'" class="sidebar-content">
-        <p class="sidebar-label">Ajouter une section</p>
+        <p class="sidebar-label">{{ t.addSection }}</p>
         <div class="section-grid">
           <button v-for="st in sectionTypes" :key="st.key" class="section-card" @click="addSection(st.key)">
             <span class="sc-icon">{{ st.icon }}</span>
@@ -482,7 +800,7 @@ const setPageStyle = (type, value) => {
           </button>
         </div>
         <div v-if="activeSection" class="prop-panel">
-          <p class="sidebar-label" style="margin-top:20px">Propriétés</p>
+          <p class="sidebar-label" style="margin-top:20px">{{ t.properties }}</p>
           <div v-if="activeSection.type==='gallery'" class="prop-row">
             <label>Colonnes</label>
             <select v-model="activeSection.columns" class="prop-select">
@@ -520,7 +838,7 @@ const setPageStyle = (type, value) => {
       </div>
 
       <div v-if="sidebarTab==='style'" class="sidebar-content">
-        <p class="sidebar-label">Style de la page</p>
+        <p class="sidebar-label">{{ t.pageStyle }}</p>
         <div class="prop-row">
           <label>Couleur de fond</label>
           <input type="color" :value="currentPage.style?.backgroundColor||'#ffffff'" @input="setPageStyle('bg',$event.target.value)" class="color-input"/>
@@ -1093,4 +1411,40 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .prev-form-btn{background:#6c63ff;color:white;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif}
 .prev-divider{padding:8px 60px}
 .prev-divider-line{border:none;border-top:1px solid #e5e7eb}
+
+/* LOGO */
+.logo-area{display:flex;align-items:center;cursor:pointer;border-radius:6px;overflow:hidden;width:32px;height:32px;flex-shrink:0}
+.site-logo-img{width:32px;height:32px;object-fit:contain;border-radius:6px}
+
+/* LANG SELECT */
+.lang-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:5px 8px;border-radius:var(--radius);cursor:pointer;font-family:'DM Sans',sans-serif;outline:none}
+
+/* PUBLISH BUTTON */
+.publish-btn{background:linear-gradient(135deg,#10b981,#059669);border-color:#059669;color:white;font-weight:600}
+.publish-btn:hover{background:linear-gradient(135deg,#059669,#047857);border-color:#047857}
+
+/* PUBLISH MODAL */
+.publish-modal{max-width:540px}
+.publish-form{display:flex;flex-direction:column;gap:16px}
+.pub-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.pub-url-wrap{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden}
+.pub-url-prefix{font-size:13px;color:var(--text3);padding:10px 10px;white-space:nowrap;border-right:1px solid var(--border2)}
+.pub-input{flex:1;background:transparent;border:none;color:var(--text);font-size:13px;padding:10px 12px;outline:none;font-family:'DM Sans',sans-serif}
+.pub-preview-url{font-size:12px;color:#10b981;margin-top:6px;font-weight:500}
+.pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:20px}
+.pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:16px;margin-bottom:16px}
+.pub-url-card label{display:block;font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.pub-live-url{color:var(--accent);font-size:14px;font-weight:600;text-decoration:none;word-break:break-all}
+.pub-live-url:hover{text-decoration:underline}
+.dns-section{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:16px}
+.dns-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--text);margin-bottom:6px}
+.dns-desc{font-size:12px;color:var(--text2);margin-bottom:12px}
+.dns-table{display:flex;flex-direction:column;gap:4px}
+.dns-row{display:grid;grid-template-columns:80px 60px 1fr;gap:8px;font-size:12px;padding:6px 8px;border-radius:4px}
+.dns-head{font-weight:700;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:var(--surface);border-radius:4px}
+.dns-row:not(.dns-head){background:rgba(108,99,255,.06);color:var(--text)}
+.dns-type{color:var(--accent2);font-weight:700;font-family:monospace}
+.dns-val{font-family:monospace;font-size:11px;color:var(--text2);word-break:break-all}
+.pub-note{font-size:12px;color:var(--text3);text-align:center;line-height:1.6}
+.pub-note strong{color:var(--text2)}
 </style>

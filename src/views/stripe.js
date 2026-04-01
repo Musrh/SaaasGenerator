@@ -5,49 +5,16 @@
 
 export const stripeConfig = {
 
-  // ----------------------------------------------------------
-  //  Clés API Stripe
-  //  Trouvez-les sur : https://dashboard.stripe.com/apikeys
-  // ----------------------------------------------------------
-  publishableKey: "pk_test_VOTRE_CLE_PUBLIQUE_ICI",
-
-  // ⚠️  Ne jamais exposer la clé secrète côté client !
-  //     Utilisez-la uniquement dans votre backend (Node.js, etc.)
-  // secretKey: "sk_test_...",
-
-  // ----------------------------------------------------------
-  //  URL de votre backend qui crée le PaymentIntent
-  //  Exemple : "https://api.votresite.com/create-payment-intent"
-  // ----------------------------------------------------------
-  backendUrl: "https://votre-backend.com/create-payment-intent",
-
-  // ----------------------------------------------------------
-  //  Devise utilisée pour les paiements (ISO 4217)
-  //  Exemples : "eur", "usd", "mad", "gbp"
-  // ----------------------------------------------------------
+// stripe.js — Paramètres Stripe
+export const stripeConfig = {
+  publishableKey: "pk_test_51T20K6AwgHqDmd0F8LcnioXKpuzSyQv7aPkDhhmtPEH9BA98KOzf6F43K2O4A5WjhHHVlguyp48W0bmqMbwSvcDm00YINXIME3",
+  backendUrl: "https://stripe-backend-production-2ac4.up.railway.app",
   currency: "eur",
-
-  // ----------------------------------------------------------
-  //  Nom affiché sur la page de paiement
-  // ----------------------------------------------------------
-  storeName: "Mon Boutique",
-
-  // ----------------------------------------------------------
-  //  URL de redirection après paiement réussi
-  // ----------------------------------------------------------
-  successUrl: "https://votresite.com/merci",
-
-  // ----------------------------------------------------------
-  //  URL de redirection en cas d'annulation
-  // ----------------------------------------------------------
-  cancelUrl: "https://votresite.com/panier",
-
-  // ----------------------------------------------------------
-  //  Mode : "test" ou "live"
-  // ----------------------------------------------------------
+  storeName: "RmStore",
+  successUrl: "https://musrh.github.io/SaaasGenerator/#/site/rmstore/merci",
+  cancelUrl: "https://musrh.github.io/SaaasGenerator/#/site/rmstore/panier",
   mode: "test",
-
-}
+};
 
 // ============================================================
 //  Fonction utilitaire : charger le SDK Stripe dynamiquement

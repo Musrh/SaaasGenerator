@@ -423,6 +423,7 @@ const uploadLogo = (e) => {
 
 // ===== PUBLISH =====
 const showPublishModal = ref(false)
+const showPublicPreview = ref(false)
 const publishAddress = ref("")
 const publishDomain = ref("")
 const publishStatus = ref("") // '' | 'published'
@@ -525,6 +526,11 @@ const publishSite = async () => {
     a.click()
 
     notify(t.value.publishSuccess)
+    // Ouvrir l'aperçu public après publication
+    setTimeout(() => {
+      showPublishModal.value = false
+      showPublicPreview.value = true
+    }, 800)
   } catch (e) {
     console.error("Erreur publication:", e)
     notify("Erreur de publication : " + e.message, "error")
@@ -549,6 +555,7 @@ const currentPage = computed(() => site.value.pages[currentPageIndex.value] || s
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
 onMounted(() => {
+  loadSavedConfigs()
   onAuthStateChanged(auth, async (user) => {
     if (!user) return
     currentUser.value = user
@@ -572,6 +579,14 @@ onMounted(() => {
 
 watch(site, () => { isSaved.value = false }, { deep: true })
 watch(currentPageIndex, () => { activeSectionIndex.value = null })
+
+// Init Stripe Elements when payment modal opens on Stripe tab
+watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, provider]) => {
+  if (modalOpen && provider === 'stripe') {
+    stripeCardMounted.value = false
+    setTimeout(() => initStripeElements(), 150)
+  }
+})
 
 const notify = (msg, type = "success") => {
   notifMsg.value = msg; notifType.value = type; showNotif.value = true
@@ -696,33 +711,205 @@ const openPaymentModal = (section) => {
   paymentProcessing.value = false; showPaymentModal.value = true
 }
 
+const stripeInstance = ref(null)
+const stripeElements = ref(null)
+const stripeCardElement = ref(null)
+const stripeCardMounted = ref(false)
+
+const initStripeElements = async () => {
+  try {
+    const stripe = await loadStripeSDK(liveStripeConfig.value.publishableKey)
+    stripeInstance.value = stripe
+    const elements = stripe.elements()
+    stripeElements.value = elements
+    // Mount card element after DOM is ready
+    await new Promise(r => setTimeout(r, 100))
+    const cardEl = document.getElementById("stripe-card-element")
+    if (cardEl && !stripeCardMounted.value) {
+      const card = elements.create("card", {
+        style: {
+          base: {
+            fontSize: "16px",
+            color: "#f0f0f0",
+            fontFamily: "'DM Sans', sans-serif",
+            "::placeholder": { color: "#5a5a6a" },
+          },
+          invalid: { color: "#ef4444" },
+        },
+        hidePostalCode: true,
+      })
+      card.mount(cardEl)
+      stripeCardElement.value = card
+      stripeCardMounted.value = true
+    }
+  } catch(e) {
+    console.error("Stripe init error:", e)
+    notify("Erreur initialisation Stripe", "error")
+  }
+}
+
 const processStripePayment = async () => {
   paymentProcessing.value = true
   try {
-    await loadStripeSDK()
-    await new Promise(r => setTimeout(r, 1800))
-    paymentSuccess.value = true; notify("Paiement Stripe simulé avec succès")
-  } catch (e) { notify("Erreur Stripe : " + e.message, "error") }
-  finally { paymentProcessing.value = false }
+    const cfg = liveStripeConfig.value
+    // If no real key configured, show error
+    if (!cfg.publishableKey || cfg.publishableKey.includes("VOTRE_CLE")) {
+      notify("⚠️ Configurez votre clé Stripe (stripe.js)", "error")
+      paymentProcessing.value = false; return
+    }
+    if (!cfg.backendUrl || cfg.backendUrl.includes("votre-backend")) {
+      notify("⚠️ Configurez votre backendUrl dans stripe.js", "error")
+      paymentProcessing.value = false; return
+    }
+    const stripe = stripeInstance.value
+    const card = stripeCardElement.value
+    if (!stripe || !card) {
+      notify("Stripe non initialisé", "error")
+      paymentProcessing.value = false; return
+    }
+    // 1. Create PaymentIntent on backend
+    const amount = Math.round(parseFloat(paymentModalSection.value?.amount || "0") * 100)
+    const res = await fetch(cfg.backendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount,
+        currency: cfg.currency || "eur",
+        description: paymentModalSection.value?.description || "Commande",
+      }),
+    })
+    if (!res.ok) throw new Error(`Backend error: ${res.status}`)
+    const { clientSecret } = await res.json()
+    // 2. Confirm payment with Stripe
+    const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: { card },
+    })
+    if (error) throw new Error(error.message)
+    if (paymentIntent.status === "succeeded") {
+      paymentSuccess.value = true
+      notify("✓ Paiement réussi !")
+    }
+  } catch (e) {
+    notify("Erreur Stripe : " + e.message, "error")
+    console.error(e)
+  } finally { paymentProcessing.value = false }
 }
 
 const processPaypalPayment = async () => {
   paymentProcessing.value = true
   try {
-    await new Promise(r => setTimeout(r, 1800))
-    paymentSuccess.value = true; notify("Paiement PayPal simulé avec succès")
-  } catch (e) { notify("Erreur PayPal : " + e.message, "error") }
-  finally { paymentProcessing.value = false }
+    const cfg = livePaypalConfig.value
+    if (!cfg.clientId || cfg.clientId.includes("VOTRE_CLIENT_ID")) {
+      notify("⚠️ Configurez votre Client ID PayPal (paypal.js)", "error")
+      paymentProcessing.value = false; return
+    }
+    // Load PayPal SDK dynamically with the live clientId
+    if (!window.paypal) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script")
+        script.src = `https://www.paypal.com/sdk/js?client-id=${cfg.clientId}&currency=${cfg.currency || "EUR"}`
+        script.onload = resolve; script.onerror = reject
+        document.head.appendChild(script)
+      })
+    }
+    // Render PayPal buttons in #paypal-button-container
+    await new Promise(r => setTimeout(r, 100))
+    const container = document.getElementById("paypal-button-container")
+    if (container && container.innerHTML === "") {
+      window.paypal.Buttons({
+        createOrder: async () => {
+          if (cfg.createOrderUrl && !cfg.createOrderUrl.includes("votre-backend")) {
+            const res = await fetch(cfg.createOrderUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                amount: paymentModalSection.value?.amount,
+                currency: cfg.currency || "EUR",
+              }),
+            })
+            const data = await res.json()
+            return data.orderID
+          }
+          return null
+        },
+        onApprove: async (data) => {
+          if (cfg.captureOrderUrl && !cfg.captureOrderUrl.includes("votre-backend")) {
+            await fetch(cfg.captureOrderUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ orderID: data.orderID }),
+            })
+          }
+          paymentSuccess.value = true
+          notify("✓ Paiement PayPal réussi !")
+          paymentProcessing.value = false
+        },
+        onError: (err) => {
+          notify("Erreur PayPal : " + err, "error")
+          paymentProcessing.value = false
+        }
+      }).render("#paypal-button-container")
+    }
+    paymentProcessing.value = false
+  } catch (e) {
+    notify("Erreur PayPal : " + e.message, "error")
+    paymentProcessing.value = false
+  }
+}
+
+// Live config objects (overridable from the editor)
+const liveStripeConfig = ref({ ...stripeConfig })
+const livePaypalConfig = ref({ ...paypalConfig })
+
+// Load any saved configs from localStorage
+const loadSavedConfigs = () => {
+  try {
+    const sc = localStorage.getItem("stripeConfigCustom")
+    if (sc) liveStripeConfig.value = { ...stripeConfig, ...JSON.parse(sc) }
+    const pc = localStorage.getItem("paypalConfigCustom")
+    if (pc) livePaypalConfig.value = { ...paypalConfig, ...JSON.parse(pc) }
+  } catch(e) { console.warn("Config load error:", e) }
 }
 
 const openConfigEditor = (target) => {
   configEditorTarget.value = target
-  if (target === "stripe") {
-    configEditorContent.value = `// stripe.js — Paramètres Stripe\nexport const stripeConfig = {\n  publishableKey: "${stripeConfig.publishableKey}",\n  backendUrl: "${stripeConfig.backendUrl}",\n  currency: "${stripeConfig.currency}",\n  storeName: "${stripeConfig.storeName}",\n  successUrl: "${stripeConfig.successUrl}",\n  cancelUrl: "${stripeConfig.cancelUrl}",\n  mode: "${stripeConfig.mode}",\n}`
-  } else {
-    configEditorContent.value = `// paypal.js — Paramètres PayPal\nexport const paypalConfig = {\n  clientId: "${paypalConfig.clientId}",\n  mode: "${paypalConfig.mode}",\n  currency: "${paypalConfig.currency}",\n  locale: "${paypalConfig.locale}",\n  createOrderUrl: "${paypalConfig.createOrderUrl}",\n  captureOrderUrl: "${paypalConfig.captureOrderUrl}",\n  successUrl: "${paypalConfig.successUrl}",\n  brandName: "${paypalConfig.brandName}",\n}`
-  }
+  const cfg = target === "stripe" ? liveStripeConfig.value : livePaypalConfig.value
+  const fields = target === "stripe"
+    ? ["publishableKey","backendUrl","currency","storeName","successUrl","cancelUrl","mode"]
+    : ["clientId","mode","currency","locale","createOrderUrl","captureOrderUrl","successUrl","brandName"]
+  const prefix = target === "stripe"
+    ? "// stripe.js — Paramètres Stripe\nexport const stripeConfig = {"
+    : "// paypal.js — Paramètres PayPal\nexport const paypalConfig = {"
+  configEditorContent.value = prefix + "\n" +
+    fields.map(k => `  ${k}: "${cfg[k] || ""}",`).join("\n") +
+    "\n}"
   showConfigEditor.value = true
+}
+
+const saveConfigFile = () => {
+  try {
+    // Parse the JS object from the textarea content
+    const txt = configEditorContent.value
+    const jsonStr = txt
+      .replace(/\/\/.*$/gm, '')           // remove comments
+      .replace(/export const \w+ = /, '') // remove export
+      .replace(/(\w+):/g, '"$1":')        // quote keys
+      .replace(/,(\s*[}\]])/g, '$1')      // remove trailing commas
+      .trim()
+    const parsed = JSON.parse(jsonStr)
+    if (configEditorTarget.value === "stripe") {
+      liveStripeConfig.value = { ...stripeConfig, ...parsed }
+      localStorage.setItem("stripeConfigCustom", JSON.stringify(parsed))
+    } else {
+      livePaypalConfig.value = { ...paypalConfig, ...parsed }
+      localStorage.setItem("paypalConfigCustom", JSON.stringify(parsed))
+    }
+    notify(`✓ ${configEditorTarget.value}.js sauvegardé et activé`)
+    showConfigEditor.value = false
+  } catch(e) {
+    notify("Erreur de parsing — vérifiez la syntaxe", "error")
+    console.error(e)
+  }
 }
 
 const downloadConfigFile = () => {
@@ -893,14 +1080,12 @@ const setPageStyle = (type, value) => {
           </div>
           <div v-if="paymentProvider==='stripe'" class="pay-form">
             <div class="pay-form-row">
-              <label>Numéro de carte</label>
-              <div class="card-input-mock">4242 4242 4242 4242</div>
+              <label>Informations de carte</label>
+              <!-- Stripe Elements s'injecte ici -->
+              <div id="stripe-card-element" class="stripe-card-el"></div>
+              <div id="stripe-card-errors" class="stripe-card-errors"></div>
             </div>
-            <div class="pay-form-two">
-              <div><label>Expiration</label><div class="card-input-mock">12 / 27</div></div>
-              <div><label>CVC</label><div class="card-input-mock">123</div></div>
-            </div>
-            <p class="pay-note">🔒 Paiement sécurisé via Stripe — <code>{{ stripeConfig.mode==='test'?'MODE TEST':'MODE LIVE' }}</code></p>
+            <p class="pay-note">🔒 Paiement sécurisé via Stripe — <code>{{ liveStripeConfig.mode==='test'?'MODE TEST':'MODE LIVE' }}</code></p>
             <button class="pay-submit stripe-submit" @click="processStripePayment" :disabled="paymentProcessing">
               <span v-if="paymentProcessing" class="spinner"/>
               {{ paymentProcessing?'Traitement...':`Payer ${paymentModalSection?.amount}${paymentModalSection?.currency}` }}
@@ -909,13 +1094,15 @@ const setPageStyle = (type, value) => {
           <div v-if="paymentProvider==='paypal'" class="pay-form">
             <div class="paypal-info">
               <div class="paypal-logo">PayPal</div>
-              <p>Vous serez redirigé vers PayPal pour finaliser votre paiement en toute sécurité.</p>
-              <p class="pay-note">Mode : <code>{{ paypalConfig.mode==='sandbox'?'SANDBOX (test)':'LIVE' }}</code></p>
+              <p>Paiement sécurisé via votre compte PayPal.</p>
+              <p class="pay-note">Mode : <code>{{ livePaypalConfig.mode==='sandbox'?'SANDBOX (test)':'LIVE' }}</code></p>
             </div>
-            <button class="pay-submit paypal-submit" @click="processPaypalPayment" :disabled="paymentProcessing">
-              <span v-if="paymentProcessing" class="spinner paypal-spinner"/>
-              {{ paymentProcessing?'Redirection...':'Payer avec PayPal' }}
+            <!-- PayPal SDK injecte ses boutons ici -->
+            <div id="paypal-button-container" class="paypal-buttons-wrap"></div>
+            <button v-if="!paymentProcessing" class="pay-submit paypal-submit" @click="processPaypalPayment">
+              🅿 Initialiser PayPal
             </button>
+            <span v-if="paymentProcessing" class="spinner paypal-spinner" style="margin:0 auto"/>
           </div>
           <div class="pay-config-links">
             <button @click="openConfigEditor('stripe');showPaymentModal=false">⚙ stripe.js</button>
@@ -945,7 +1132,8 @@ const setPageStyle = (type, value) => {
         <textarea v-model="configEditorContent" class="config-editor-textarea" spellcheck="false"/>
         <div class="config-modal-actions">
           <button class="btn-action" @click="showConfigEditor=false">Annuler</button>
-          <button class="btn-action primary" @click="downloadConfigFile">⬇ Télécharger {{ configEditorTarget }}.js</button>
+          <button class="btn-action" @click="downloadConfigFile">⬇ Télécharger</button>
+          <button class="btn-action primary" @click="saveConfigFile">💾 Sauvegarder & Activer</button>
         </div>
       </div>
     </div>
@@ -1128,6 +1316,95 @@ const setPageStyle = (type, value) => {
     </div>
   </Transition>
 
+  <!-- PUBLIC PREVIEW (plein écran, sans barre d'outils) -->
+  <Transition name="modal">
+    <div v-if="showPublicPreview" class="public-preview-overlay">
+      <button class="pub-preview-close" @click="showPublicPreview=false">✕ Fermer l'aperçu</button>
+      <!-- Navigation du site -->
+      <nav class="pub-preview-nav">
+        <span class="pub-preview-brand">{{ siteLogo ? '' : '◈' }} {{ siteName }}</span>
+        <div class="pub-preview-tabs">
+          <button
+            v-for="(p,i) in site.pages" :key="p.id"
+            class="pub-preview-tab"
+            :class="{active: currentPageIndex===i}"
+            @click="currentPageIndex=i"
+          >{{ p.name }}</button>
+        </div>
+        <button v-if="cartCount>0" class="pub-preview-cart" @click="showCart=true">
+          🛒 <span class="cart-badge">{{ cartCount }}</span>
+        </button>
+      </nav>
+      <!-- Contenu du site -->
+      <div class="pub-preview-content" :style="currentPage?.style">
+        <div v-for="s in currentPage?.sections" :key="s.id">
+          <div v-if="s.type==='hero'" class="prev-hero" :style="s.style">
+            <h1 class="prev-hero-title">{{ s.content }}</h1>
+            <p class="prev-hero-sub">{{ s.subtitle }}</p>
+            <button v-if="s.cta" class="prev-hero-cta">{{ s.cta }}</button>
+          </div>
+          <div v-else-if="s.type==='text'" class="prev-text" :style="s.style"><p>{{ s.content }}</p></div>
+          <div v-else-if="s.type==='image'" class="prev-image" :style="s.style">
+            <img v-if="s.url" :src="s.url" :alt="s.alt" class="prev-img"/>
+          </div>
+          <div v-else-if="s.type==='gallery'" class="prev-gallery" :style="s.style">
+            <div v-if="s.images.length" class="prev-gallery-grid" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
+              <div v-for="img in s.images" :key="img.id" class="prev-gallery-item"><img :src="img.url" :alt="img.alt"/></div>
+            </div>
+          </div>
+          <div v-else-if="s.type==='video'" class="prev-video" :style="s.style">
+            <h3 v-if="s.title" class="prev-video-title">{{ s.title }}</h3>
+            <div v-if="s.url" class="prev-video-wrap"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="prev-video-iframe"/></div>
+          </div>
+          <div v-else-if="s.type==='products'" class="prev-products" :style="s.style">
+            <div class="prev-products-grid">
+              <div v-for="p in s.items" :key="p.id" class="prev-product-card">
+                <div class="prev-product-img-wrap">
+                  <img v-if="p.image" :src="p.image" class="prev-product-img"/>
+                  <div v-else class="prev-product-img-ph">🛍️</div>
+                  <span v-if="p.badge" class="prev-product-badge">{{ p.badge }}</span>
+                </div>
+                <div class="prev-product-body">
+                  <div class="prev-product-name">{{ p.name }}</div>
+                  <div class="prev-product-desc">{{ p.description }}</div>
+                  <div class="prev-product-footer">
+                    <span class="prev-product-price">{{ p.price }}{{ p.currency }}</span>
+                    <button class="prev-product-btn" @click="addToCart(p)">🛒 {{ t.prevBuyBtn }}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="s.type==='features'" class="prev-features" :style="s.style">
+            <div class="prev-features-grid">
+              <div v-for="(item,fi) in s.items" :key="fi" class="prev-feature-card">
+                <span class="prev-feat-icon">{{ item.icon }}</span>
+                <strong>{{ item.title }}</strong><p>{{ item.desc }}</p>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="s.type==='payment'" class="prev-payment" :style="s.style">
+            <h2 class="prev-payment-title">{{ s.title }}</h2>
+            <p class="prev-payment-desc">{{ s.description }}</p>
+            <div class="prev-payment-amount">{{ s.amount }}{{ s.currency }}</div>
+            <div class="prev-payment-btns">
+              <button class="prev-pay-btn stripe-btn" @click="paymentProvider='stripe';openPaymentModal(s)">{{ t.prevPayStripe }}</button>
+              <button class="prev-pay-btn paypal-btn" @click="paymentProvider='paypal';openPaymentModal(s)">{{ t.prevPayPaypal }}</button>
+            </div>
+          </div>
+          <div v-else-if="s.type==='form'" class="prev-form" :style="s.style">
+            <h3>{{ t.prevContactTitle }}</h3>
+            <input :placeholder="t.prevNamePh" class="prev-form-field"/>
+            <input :placeholder="t.prevEmailPh" class="prev-form-field"/>
+            <textarea :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
+            <button class="prev-form-btn">{{ t.prevSendBtn }}</button>
+          </div>
+          <div v-else-if="s.type==='divider'" class="prev-divider" :style="s.style"><hr class="prev-divider-line"/></div>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-brand">
@@ -1157,7 +1434,10 @@ const setPageStyle = (type, value) => {
       <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
       <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
       <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
-      <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
+      <div class="pub-btn-group">
+        <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
+        <button class="btn-action preview-pub-btn" @click="showPublicPreview=true" title="Aperçu public">👁</button>
+      </div>
       <span class="save-status" :class="{saved:isSaved}">{{ isSaved ? t.saved : t.unsaved }}</span>
       <button class="btn-action" @click="saveSite" :disabled="isSaving||!currentUser" :class="{saving:isSaving}">
         <span v-if="isSaving" class="spinner"/>

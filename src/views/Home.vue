@@ -93,6 +93,7 @@ const translations = {
     loadError: "Erreur de chargement. Données locales utilisées.",
     paySuccess: "Paiement réussi !", payDone: "Votre paiement a bien été traité.",
     close: "Fermer", cancel: "Annuler", modifyAddress: "Modifier l'adresse",
+    cartTitle: "Mon panier", cartEmpty: "Votre panier est vide", cartTotal: "Total", cartCheckout: "Finaliser la commande", cartRemove: "Supprimer", cartContinue: "Continuer les achats", cartAdd: "Ajouter au panier",
     siteUrlLabel: "URL de votre site",
     publishNoteFile: "Le fichier publier.txt a été téléchargé avec tous les détails.",
     // Section labels
@@ -171,6 +172,7 @@ const translations = {
     loadError: "Load error. Local data used.",
     paySuccess: "Payment successful!", payDone: "Your payment has been processed.",
     close: "Close", cancel: "Cancel", modifyAddress: "Modify address",
+    cartTitle: "My cart", cartEmpty: "Your cart is empty", cartTotal: "Total", cartCheckout: "Checkout", cartRemove: "Remove", cartContinue: "Continue shopping", cartAdd: "Add to cart",
     siteUrlLabel: "Your site URL",
     publishNoteFile: "The publier.txt file has been downloaded with all details.",
     sHero: "Title + CTA", sText: "Free paragraph", sImage: "Photo / illustration",
@@ -245,6 +247,7 @@ const translations = {
     loadError: "Error de carga. Datos locales usados.",
     paySuccess: "¡Pago exitoso!", payDone: "Tu pago ha sido procesado.",
     close: "Cerrar", cancel: "Cancelar", modifyAddress: "Modificar dirección",
+    cartTitle: "Mi carrito", cartEmpty: "Tu carrito está vacío", cartTotal: "Total", cartCheckout: "Finalizar pedido", cartRemove: "Eliminar", cartContinue: "Seguir comprando", cartAdd: "Añadir al carrito",
     siteUrlLabel: "URL de tu sitio",
     publishNoteFile: "El archivo publier.txt fue descargado con todos los detalles.",
     sHero: "Título + CTA", sText: "Párrafo libre", sImage: "Foto / ilustración",
@@ -319,6 +322,7 @@ const translations = {
     loadError: "خطأ في التحميل. تم استخدام البيانات المحلية.",
     paySuccess: "تم الدفع بنجاح!", payDone: "تمت معالجة دفعتك.",
     close: "إغلاق", cancel: "إلغاء", modifyAddress: "تعديل العنوان",
+    cartTitle: "سلة التسوق", cartEmpty: "سلتك فارغة", cartTotal: "المجموع", cartCheckout: "إتمام الطلب", cartRemove: "حذف", cartContinue: "مواصلة التسوق", cartAdd: "أضف إلى السلة",
     siteUrlLabel: "رابط موقعك",
     publishNoteFile: "تم تحميل ملف publier.txt مع جميع التفاصيل.",
     sHero: "عنوان + CTA", sText: "فقرة حرة", sImage: "صورة / رسم",
@@ -353,6 +357,58 @@ const translations = {
 
 const isRtl = computed(() => currentLang.value === "ar")
 
+// ===== CART =====
+const cart = ref([])
+const showCart = ref(false)
+
+const addToCart = (product) => {
+  const existing = cart.value.find(i => i.id === product.id)
+  if (existing) {
+    existing.qty++
+  } else {
+    cart.value.push({ ...product, qty: 1 })
+  }
+  showCart.value = true
+  notify(`🛒 ${product.name} ajouté au panier`)
+}
+
+const removeFromCart = (id) => {
+  cart.value = cart.value.filter(i => i.id !== id)
+}
+
+const updateQty = (id, delta) => {
+  const item = cart.value.find(i => i.id === id)
+  if (!item) return
+  item.qty = Math.max(1, item.qty + delta)
+}
+
+const cartTotal = computed(() => {
+  return cart.value.reduce((sum, i) => sum + parseFloat(i.price||0) * i.qty, 0).toFixed(2)
+})
+
+const cartCount = computed(() => {
+  return cart.value.reduce((sum, i) => sum + i.qty, 0)
+})
+
+const cartCurrency = computed(() => cart.value[0]?.currency || '€')
+
+const checkoutCart = () => {
+  showCart.value = false
+  // Ouvrir la modale de paiement avec les totaux du panier
+  paymentModalSection.value = {
+    title: t.value.cartCheckout || 'Finaliser la commande',
+    description: `${cartCount.value} article(s)`,
+    amount: cartTotal.value,
+    currency: cartCurrency.value,
+  }
+  paymentProvider.value = 'stripe'
+  paymentSuccess.value = false
+  paymentProcessing.value = false
+  showPaymentModal.value = true
+}
+
+const emptyCart = () => { cart.value = [] }
+
 // ===== SITE NAME =====
 const siteName = ref("WellShoppings")
 
@@ -385,7 +441,7 @@ const saveDnsRecords = () => {
   txt += `NS2: ${customDns.value.ns2}\n`
   if (customDns.value.ns3) txt += `NS3: ${customDns.value.ns3}\n`
   if (customDns.value.ns4) txt += `NS4: ${customDns.value.ns4}\n`
-  txt += `\nURL du site: ${publishInfo.value?.url}\n`
+  txt += `\nURL du site: ${publishInfo.value?.urlSlug}\n`
   const blob = new Blob([txt], { type: "text/plain" })
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob)
   a.download = "dns-config.txt"; a.click()
@@ -394,62 +450,96 @@ const saveDnsRecords = () => {
 }
 const publishInfo = ref(null)
 
-const publishSite = () => {
+const publishSite = async () => {
   if (!publishAddress.value.trim()) { notify("Entrez une adresse pour le site.", "error"); return }
-  const slug = publishAddress.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")
-  const url = `https://musrh.github.io/SaasBuilder/${slug}`
+  if (!currentUser.value) { notify(t.value.connectedError, "error"); return }
+
+  const uid    = currentUser.value.uid
+  const slug   = publishAddress.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-")
   const domain = publishDomain.value.trim()
-  publishInfo.value = { slug, url, domain }
-  publishStatus.value = "published"
 
-  // Generate publish.txt content
-  let txt = `=== WellShoppings — Publication du site ===
-`
-  txt += `Date : ${new Date().toLocaleString()}
-`
-  txt += `Adresse : ${url}
-`
-  if (domain) {
-    txt += `
-Nom de domaine lié : ${domain}
-`
-    txt += `
-=== Configuration DNS ===
-`
-    txt += `Ajoutez ces enregistrements chez votre registrar :
+  // URL principale : /site/{uid} — route Vue Router dans SaaasGenerator
+  // URL slug (alias convivial) : /site/{slug} → résolu via collection slugs
+  const urlUid  = `https://musrh.github.io/SaaasGenerator/#/site/${uid}`
+  const urlSlug = `https://musrh.github.io/SaaasGenerator/#/site/${slug}`
 
-`
-    txt += `Type    Nom              Valeur
-`
-    txt += `------  ---------------  -------------------------------
-`
-    txt += `A       @                76.76.21.21
-`
-    txt += `CNAME   www              cname.wellshoppings.app
-`
-    txt += `TXT     @                wellshoppings-verify=${slug}
-`
+  try {
+    // 1. Sauvegarder siteData + slug dans le document de l'utilisateur
+    const userRef = doc(db, "users", uid)
+    await setDoc(userRef, {
+      siteData: site.value,
+      publishedSlug: slug,
+      publishedAt: new Date().toISOString(),
+      customDomain: domain || null,
+    }, { merge: true })
+
+    // 2. Créer l'entrée dans la collection publique slugs/{slug} → uid
+    //    Cela permet à SaaasGenerator de résoudre /#/nomchoisi → uid → siteData
+    const slugRef = doc(db, "slugs", slug)
+    await setDoc(slugRef, {
+      uid,
+      slug,
+      siteName: siteName.value,
+      customDomain: domain || null,
+      createdAt: new Date().toISOString(),
+    })
+
+    // 3. Mettre à jour isSaved
+    localStorage.setItem("siteDataPro", JSON.stringify(site.value))
+    isSaved.value = true
+
+    publishInfo.value = { slug, urlUid, urlSlug, domain, uid }
+    publishStatus.value = "published"
+
+    // 4. Générer publier.txt
+    let txt = `=== WellShoppings — Publication du site ===\n`
+    txt += `Date       : ${new Date().toLocaleString()}\n`
+    txt += `Nom du site: ${siteName.value}\n`
+    txt += `Slug       : ${slug}\n`
+    txt += `UID        : ${uid}\n\n`
+    txt += `=== URLs d'accès (équivalentes) ===\n`
+    txt += `URL slug   : ${urlSlug}\n`
+    txt += `URL uid    : ${urlUid}\n`
+    if (domain) {
+      txt += `\n=== Domaine personnalisé ===\n`
+      txt += `Domaine    : ${domain}\n\n`
+      txt += `=== Configuration DNS ===\n`
+      txt += `Type    Nom    Valeur\n`
+      txt += `A       @      185.199.108.153\n`
+      txt += `A       @      185.199.109.153\n`
+      txt += `CNAME   www    musrh.github.io\n`
+      txt += `TXT     @      saas-verify=${slug}\n`
+    }
+    txt += `\n=== Comment ça fonctionne ===\n`
+    txt += `- Firestore: users/${uid}/siteData contient votre site\n`
+    txt += `- Firestore: slugs/${slug} → pointe vers uid "${uid}"\n`
+    txt += `- SaaasGenerator résout /#/${slug} en chargeant slugs/${slug} → siteData\n`
+    txt += `- Les deux URLs ci-dessus donnent accès au même site\n`
+    txt += `\n=== Règles Firestore requises ===\n`
+    txt += `match /slugs/{slug} { allow read: if true; allow write: if request.auth != null; }\n`
+
+    const blob = new Blob([txt], { type: "text/plain" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = "publier.txt"
+    a.click()
+
+    notify(t.value.publishSuccess)
+  } catch (e) {
+    console.error("Erreur publication:", e)
+    notify("Erreur de publication : " + e.message, "error")
   }
-  txt += `
-=== Informations ===
-`
-  txt += `- Votre site sera disponible sous 24-48h après configuration DNS
-`
-  txt += `- SSL/HTTPS activé automatiquement
-`
-
-  const blob = new Blob([txt], { type: "text/plain" })
-  const a = document.createElement("a")
-  a.href = URL.createObjectURL(blob)
-  a.download = "publier.txt"
-  a.click()
-  notify(t.value.publishSuccess)
 }
 
+
 const copyDnsRecords = () => {
-  const text = `A       @      76.76.21.21
-CNAME   www    cname.wellshoppings.app
-TXT     @      wellshoppings-verify=${publishInfo.value?.slug}`
+  const text = [
+    `A       @    185.199.108.153`,
+    `A       @    185.199.109.153`,
+    `A       @    185.199.110.153`,
+    `A       @    185.199.111.153`,
+    `CNAME   www  musrh.github.io`,
+  ].join("\n")
   navigator.clipboard.writeText(text)
   dnsCopied.value = true
   setTimeout(() => dnsCopied.value = false, 2000)
@@ -651,10 +741,10 @@ const renderSectionHTML = (s) => {
   if (s.type==="image") return s.url?`<div class="sec-image" style="${st}"><img src="${s.url}" alt="${s.alt||''}"/></div>`:''
   if (s.type==="gallery") return `<div class="gallery" style="${st}"><div class="gallery-grid" style="grid-template-columns:repeat(${s.columns||3},1fr)">${(s.images||[]).map(i=>`<img src="${i.url}" alt="${i.alt||''}"/>`).join('')}</div></div>`
   if (s.type==="video") return s.url?`<div class="video-wrap" style="${st}"><iframe src="${getEmbedUrl(s.url)}" allowfullscreen></iframe></div>`:''
-  if (s.type==="products") return `<div class="products" style="${st}"><div class="products-grid">${(s.items||[]).map(p=>`<div class="product-card">${p.image?`<img src="${p.image}"/>`:`<div class="product-img-ph">🛍️</div>`}<div class="product-body">${p.badge?`<span class="badge">${p.badge}</span>`:''}<div class="product-name">${p.name}</div><div class="product-desc">${p.description||''}</div><div class="product-footer"><span class="product-price">${p.price}${p.currency}</span><button class="product-btn">{{ t.prevBuyBtn }}</button></div></div></div>`).join('')}</div></div>`
+  if (s.type==="products") return `<div class="products" style="${st}"><div class="products-grid">${(s.items||[]).map(p=>`<div class="product-card">${p.image?`<img src="${p.image}"/>`:`<div class="product-img-ph">🛍️</div>`}<div class="product-body">${p.badge?`<span class="badge">${p.badge}</span>`:''}<div class="product-name">${p.name}</div><div class="product-desc">${p.description||''}</div><div class="product-footer"><span class="product-price">${p.price}${p.currency}</span><button class="product-btn">Acheter</button></div></div></div>`).join('')}</div></div>`
   if (s.type==="features") return `<div class="features" style="${st}"><div class="features-grid">${(s.items||[]).map(it=>`<div class="feature-card"><span class="icon">${it.icon}</span><strong>${it.title}</strong><p>${it.desc}</p></div>`).join('')}</div></div>`
-  if (s.type==="payment") return `<div class="payment-sec" style="${st}"><h2>${s.title||''}</h2><p>${s.description||''}</p><div class="payment-amount">${s.amount||'0'}${s.currency||'€'}</div><div class="pay-btns"><button class="pay-btn stripe">{{ t.prevPayStripe }}</button><button class="pay-btn paypal">{{ t.prevPayPaypal }}</button></div></div>`
-  if (s.type==="form") return `<div class="form-sec" style="${st}"><h3>{{ t.prevContactTitle }}</h3><input placeholder="Nom complet"/><input placeholder="Email"/><textarea rows="4" placeholder="Message..."></textarea><button>Envoyer →</button></div>`
+  if (s.type==="payment") return `<div class="payment-sec" style="${st}"><h2>${s.title||''}</h2><p>${s.description||''}</p><div class="payment-amount">${s.amount||'0'}${s.currency||'€'}</div><div class="pay-btns"><button class="pay-btn stripe">💳 Payer avec Stripe</button><button class="pay-btn paypal">🅿 Payer avec PayPal</button></div></div>`
+  if (s.type==="form") return `<div class="form-sec" style="${st}"><h3>Contactez-nous</h3><input placeholder="Nom complet"/><input placeholder="Email"/><textarea rows="4" placeholder="Message..."></textarea><button>Envoyer →</button></div>`
   if (s.type==="divider") return `<hr class="divider" style="${st}"/>`
   return ''
 }
@@ -700,15 +790,6 @@ nav a:hover,nav a.active{background:#f3f4f6;color:#111}.brand{font-family:'Playf
 .form-sec input,.form-sec textarea{width:100%;max-width:500px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px;margin-bottom:12px;font-family:'DM Sans',sans-serif;background:#fff}
 .form-sec button{background:#6c63ff;color:#fff;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer}
 hr.divider{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
-</style>
-</head>
-<body>
-<nav>
-<span class="brand">◈ ${siteName.value}</span>
-${site.value.pages.map((p,i)=>`<a onclick="showPage(${i})" id="tab-${i}"${i===0?' class="active"':''}>${p.name}</a>`).join("")}
-</nav>
-${site.value.pages.map((page,pi)=>`<div class="page${pi===0?' active':''}" id="page-${pi}" style="${Object.entries(page.style||{}).map(([k,v])=>`${k.replace(/([A-Z])/g,'-$1').toLowerCase()}:${v}`).join(';')}">${page.sections.map(s=>renderSectionHTML(s)).join("")}</div>`).join("")}
-<script>function showPage(i){document.querySelectorAll('.page').forEach((p,j)=>{p.classList.toggle('active',i===j)});document.querySelectorAll('nav a').forEach((a,j)=>{a.classList.toggle('active',i===j)})}<\/script>
 </body></html>`
   const blob = new Blob([html], { type: "text/html" })
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "mon-site.html"; a.click()
@@ -741,6 +822,57 @@ const setPageStyle = (type, value) => {
   <!-- NOTIFICATION -->
   <Transition name="notif">
     <div v-if="showNotif" class="notif" :class="notifType">{{ notifMsg }}</div>
+  </Transition>
+
+  <!-- CART MODAL -->
+  <Transition name="modal">
+    <div v-if="showCart" class="modal-overlay" @click.self="showCart=false" :dir="isRtl?'rtl':'ltr'">
+      <div class="modal-box cart-modal">
+        <button class="modal-close" @click="showCart=false">✕</button>
+        <div class="modal-header">
+          <span class="modal-icon">🛒</span>
+          <h2>{{ t.cartTitle }}</h2>
+        </div>
+
+        <div v-if="cart.length === 0" class="cart-empty">
+          <span>🛍️</span>
+          <p>{{ t.cartEmpty }}</p>
+        </div>
+
+        <div v-else class="cart-items">
+          <div v-for="item in cart" :key="item.id" class="cart-item">
+            <div class="cart-item-img">
+              <img v-if="item.image" :src="item.image" :alt="item.name"/>
+              <span v-else>🛍️</span>
+            </div>
+            <div class="cart-item-info">
+              <div class="cart-item-name">{{ item.name }}</div>
+              <div class="cart-item-price">{{ item.price }}{{ item.currency }}</div>
+            </div>
+            <div class="cart-item-qty">
+              <button class="qty-btn" @click="updateQty(item.id, -1)">−</button>
+              <span class="qty-val">{{ item.qty }}</span>
+              <button class="qty-btn" @click="updateQty(item.id, 1)">+</button>
+            </div>
+            <div class="cart-item-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
+            <button class="cart-item-del" @click="removeFromCart(item.id)">✕</button>
+          </div>
+        </div>
+
+        <div v-if="cart.length > 0" class="cart-footer">
+          <div class="cart-total-row">
+            <span class="cart-total-label">{{ t.cartTotal }}</span>
+            <span class="cart-total-amount">{{ cartTotal }}{{ cartCurrency }}</span>
+          </div>
+          <div class="cart-actions">
+            <button class="btn-action" @click="showCart=false">{{ t.cartContinue }}</button>
+            <button class="pay-submit stripe-submit cart-checkout-btn" @click="checkoutCart">
+              💳 {{ t.cartCheckout }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </Transition>
 
   <!-- PAYMENT MODAL -->
@@ -834,11 +966,14 @@ const setPageStyle = (type, value) => {
           <div class="pub-field">
             <label>{{ t.siteAddress }}</label>
             <div class="pub-url-wrap">
-              <span class="pub-url-prefix">musrh.github.io/SaasBuilder/</span>
+              <span class="pub-url-prefix">SaaasGenerator/#/site/</span>
               <input v-model="publishAddress" class="pub-input" :placeholder="t.siteAddressPlaceholder"/>
             </div>
             <div v-if="publishAddress" class="pub-preview-url">
-              🔗 musrh.github.io/SaasBuilder/{{ publishAddress.toLowerCase().replace(/[^a-z0-9-]/g,'-') }}
+              🔗 musrh.github.io/SaaasGenerator/#/site/{{ publishAddress.toLowerCase().replace(/[^a-z0-9-]/g,'-') }}
+            </div>
+            <div v-if="currentUser && publishAddress" class="pub-preview-url" style="color:var(--text3);font-size:11px;margin-top:4px">
+              🆔 uid: musrh.github.io/SaaasGenerator/#/site/{{ currentUser.uid }}
             </div>
           </div>
 
@@ -855,12 +990,21 @@ const setPageStyle = (type, value) => {
         <div v-else class="publish-result">
           <div class="pub-success-badge">✓ {{ t.publishSuccess }}</div>
 
+          <!-- URL slug (conviviale) -->
           <div class="pub-url-card">
-            <label>{{ t.siteUrlLabel }}</label>
-            <a :href="publishInfo.url" target="_blank" class="pub-live-url">{{ publishInfo.url }}</a>
+            <label>🔗 URL personnalisée (nom choisi)</label>
+            <a :href="publishInfo.urlSlug" target="_blank" class="pub-live-url">{{ publishInfo.urlSlug }}</a>
           </div>
 
-          <div v-if="publishInfo.domain" class="dns-section">
+          <!-- URL uid (technique) -->
+          <div class="pub-url-card" style="margin-top:10px">
+            <label>🆔 URL technique (UID)</label>
+            <a :href="publishInfo.urlUid" target="_blank" class="pub-live-url pub-live-url--uid">{{ publishInfo.urlUid }}</a>
+            <p class="pub-equiv-note">Ces deux URLs pointent vers le même site ✓</p>
+          </div>
+
+          <!-- DNS si domaine personnalisé -->
+          <div v-if="publishInfo.domain" class="dns-section" style="margin-top:14px">
             <h3 class="dns-title">{{ t.dnsTitle }}</h3>
             <p class="dns-desc">{{ t.dnsDesc }}</p>
             <div class="dns-table">
@@ -868,28 +1012,36 @@ const setPageStyle = (type, value) => {
                 <span>Type</span><span>Nom</span><span>Valeur</span>
               </div>
               <div class="dns-row">
-                <span class="dns-type">A</span><span>@</span><span class="dns-val">76.76.21.21</span>
+                <span class="dns-type">A</span><span>@</span><span class="dns-val">185.199.108.153</span>
               </div>
               <div class="dns-row">
-                <span class="dns-type">CNAME</span><span>www</span><span class="dns-val">cname.wellshoppings.app</span>
+                <span class="dns-type">A</span><span>@</span><span class="dns-val">185.199.109.153</span>
               </div>
               <div class="dns-row">
-                <span class="dns-type">TXT</span><span>@</span><span class="dns-val">wellshoppings-verify={{ publishInfo.slug }}</span>
+                <span class="dns-type">CNAME</span><span>www</span><span class="dns-val">musrh.github.io</span>
+              </div>
+              <div class="dns-row">
+                <span class="dns-type">TXT</span><span>@</span><span class="dns-val">saas-verify={{ publishInfo.slug }}</span>
               </div>
             </div>
-            <button class="btn-action small" @click="copyDnsRecords" style="margin-top:10px">
-              {{ dnsCopied ? t.dnsCopied : t.copyDns }}
-            </button>
-            <button class="btn-action small" @click="showDnsInput=true" style="margin-top:8px;margin-left:8px">
-              🖊 {{ t.dnsInputTitle }}
-            </button>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+              <button class="btn-action small" @click="copyDnsRecords">
+                {{ dnsCopied ? t.dnsCopied : t.copyDns }}
+              </button>
+              <button class="btn-action small" @click="showDnsInput=true">
+                🖊 {{ t.dnsInputTitle }}
+              </button>
+            </div>
           </div>
 
-          <div v-if="!publishInfo.domain" class="dns-section">
+          <!-- Sans domaine : DNS GitHub Pages -->
+          <div v-else class="dns-section" style="margin-top:14px">
             <h3 class="dns-title">{{ t.dnsTitle }}</h3>
+            <p class="dns-desc">Pour lier un domaine à cette adresse :</p>
             <div class="dns-table">
               <div class="dns-row dns-head"><span>Type</span><span>Nom</span><span>Valeur</span></div>
               <div class="dns-row"><span class="dns-type">A</span><span>@</span><span class="dns-val">185.199.108.153</span></div>
+              <div class="dns-row"><span class="dns-type">A</span><span>@</span><span class="dns-val">185.199.109.153</span></div>
               <div class="dns-row"><span class="dns-type">CNAME</span><span>www</span><span class="dns-val">musrh.github.io</span></div>
             </div>
             <button class="btn-action small" @click="showDnsInput=true" style="margin-top:10px">
@@ -897,7 +1049,17 @@ const setPageStyle = (type, value) => {
             </button>
           </div>
 
-          <p class="pub-note">📄 {{ t.publishNoteFile }}</p>
+          <!-- Firestore info -->
+          <div class="pub-firestore-info">
+            <span class="pub-fi-icon">🔥</span>
+            <div>
+              <div class="pub-fi-title">Données Firestore</div>
+              <div class="pub-fi-detail"><code>users/{{ publishInfo.uid }}/siteData</code></div>
+              <div class="pub-fi-detail"><code>slugs/{{ publishInfo.slug }}</code> → uid</div>
+            </div>
+          </div>
+
+          <p class="pub-note" style="margin-top:12px">📄 {{ t.publishNoteFile }}</p>
 
           <button class="btn-action" @click="publishStatus=''; publishAddress=''; publishDomain=''; dnsSaved=false" style="margin-top:12px;width:100%;justify-content:center">
             {{ t.modifyAddress }}
@@ -918,22 +1080,10 @@ const setPageStyle = (type, value) => {
           <p class="modal-desc">{{ t.dnsInputDesc }}</p>
         </div>
         <div class="dns-input-form">
-          <div class="dns-input-row">
-            <label>{{ t.dnsNs1 }} *</label>
-            <input v-model="customDns.ns1" class="dns-input-field" placeholder="ns1.votreregistrar.com"/>
-          </div>
-          <div class="dns-input-row">
-            <label>{{ t.dnsNs2 }} *</label>
-            <input v-model="customDns.ns2" class="dns-input-field" placeholder="ns2.votreregistrar.com"/>
-          </div>
-          <div class="dns-input-row">
-            <label>{{ t.dnsNs3 }}</label>
-            <input v-model="customDns.ns3" class="dns-input-field" placeholder="ns3.votreregistrar.com"/>
-          </div>
-          <div class="dns-input-row">
-            <label>{{ t.dnsNs4 }}</label>
-            <input v-model="customDns.ns4" class="dns-input-field" placeholder="ns4.votreregistrar.com"/>
-          </div>
+          <div class="dns-input-row"><label>{{ t.dnsNs1 }} *</label><input v-model="customDns.ns1" class="dns-input-field" placeholder="ns1.registrar.com"/></div>
+          <div class="dns-input-row"><label>{{ t.dnsNs2 }} *</label><input v-model="customDns.ns2" class="dns-input-field" placeholder="ns2.registrar.com"/></div>
+          <div class="dns-input-row"><label>{{ t.dnsNs3 }}</label><input v-model="customDns.ns3" class="dns-input-field" placeholder="ns3.registrar.com"/></div>
+          <div class="dns-input-row"><label>{{ t.dnsNs4 }}</label><input v-model="customDns.ns4" class="dns-input-field" placeholder="ns4.registrar.com"/></div>
         </div>
         <div class="dns-instructions">
           <div class="dns-inst-title">{{ t.dnsInstructions }}</div>
@@ -957,25 +1107,23 @@ const setPageStyle = (type, value) => {
         <button class="modal-close" @click="showExportModal=false">✕</button>
         <div class="modal-header">
           <span class="modal-icon">🚀</span>
-          <h2>Exporter le site</h2>
-          <p class="modal-desc">Choisissez votre format d'export</p>
+          <h2>{{ t.exportTitle }}</h2>
+          <p class="modal-desc">{{ t.exportDesc }}</p>
         </div>
         <div class="export-options">
           <div class="export-card" @click="exportSite">
             <span class="export-icon">📄</span>
-            <strong>HTML statique</strong>
-            <p>Un fichier .html tout-en-un, prêt à héberger.</p>
-            <span class="export-badge">Recommandé</span>
+            <strong>{{ t.htmlStatic }}</strong>
+            <p>{{ t.htmlDesc }}</p>
+            <span class="export-badge">{{ t.recommended }}</span>
           </div>
           <div class="export-card" @click="exportSite">
             <span class="export-icon">📦</span>
-            <strong>Télécharger</strong>
-            <p>Téléchargez votre site complet.</p>
+            <strong>{{ t.download }}</strong>
+            <p>{{ t.dlDesc }}</p>
           </div>
         </div>
-        <div class="export-note">
-          <strong>Note :</strong> Les images sont intégrées en base64. Les paiements Stripe/PayPal nécessitent un backend.
-        </div>
+        <div class="export-note"><strong>Note :</strong> {{ t.exportNote }}</div>
       </div>
     </div>
   </Transition>
@@ -988,12 +1136,7 @@ const setPageStyle = (type, value) => {
         <img v-if="siteLogo" :src="siteLogo" class="site-logo-img"/>
         <span v-else class="brand-icon">◈</span>
       </label>
-      <input
-        v-model="siteName"
-        class="brand-name-input"
-        :placeholder="t.siteNamePlaceholder"
-        :title="t.siteNameLabel"
-      />
+      <input v-model="siteName" class="brand-name-input" :placeholder="t.siteNamePlaceholder" :title="t.siteNameLabel"/>
       <span class="brand-badge">Pro</span>
     </div>
     <nav class="page-tabs">
@@ -1005,6 +1148,9 @@ const setPageStyle = (type, value) => {
       <button class="page-tab add-tab" @click="addPage">+</button>
     </nav>
     <div class="topbar-actions" :dir="isRtl?'rtl':'ltr'">
+      <button class="btn-action cart-btn" @click="showCart=true" v-if="cartCount>0">
+        🛒 <span class="cart-badge">{{ cartCount }}</span>
+      </button>
       <select class="lang-select" v-model="currentLang">
         <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
       </select>
@@ -1032,7 +1178,6 @@ const setPageStyle = (type, value) => {
         <button :class="{active:sidebarTab==='sections'}" @click="sidebarTab='sections'">{{ t.sections }}</button>
         <button :class="{active:sidebarTab==='style'}" @click="sidebarTab='style'">{{ t.style }}</button>
       </div>
-
       <div v-if="sidebarTab==='sections'" class="sidebar-content">
         <p class="sidebar-label">{{ t.addSection }}</p>
         <div class="section-grid">
@@ -1062,34 +1207,24 @@ const setPageStyle = (type, value) => {
               <button @click="setStyle('align','right')">⬛</button>
             </div>
           </div>
-          <div class="prop-row">
-            <label>{{ t.textColor }}</label>
-            <input type="color" :value="activeSection.style?.color||'#111111'" @input="setStyle('color',$event.target.value)" class="color-input"/>
-          </div>
-          <div class="prop-row">
-            <label>{{ t.sectionBg }}</label>
-            <input type="color" :value="activeSection.style?.backgroundColor||'#ffffff'" @input="setStyle('bg',$event.target.value)" class="color-input"/>
-          </div>
+          <div class="prop-row"><label>{{ t.textColor }}</label><input type="color" :value="activeSection.style?.color||'#111111'" @input="setStyle('color',$event.target.value)" class="color-input"/></div>
+          <div class="prop-row"><label>{{ t.sectionBg }}</label><input type="color" :value="activeSection.style?.backgroundColor||'#ffffff'" @input="setStyle('bg',$event.target.value)" class="color-input"/></div>
           <div v-if="['text','hero'].includes(activeSection.type)" class="prop-row">
             <label>{{ t.fontSize }}</label>
             <select @change="setStyle('fontSize',$event.target.value)" class="prop-select">
-              <option value="">{{ t.auto }}</option><option value="14px">{{ t.small }}</option>
-              <option value="18px">{{ t.normal }}</option><option value="24px">{{ t.large }}</option><option value="36px">{{ t.xlarge }}</option>
+              <option value="">{{ t.auto }}</option>
+              <option value="14px">{{ t.small }}</option>
+              <option value="18px">{{ t.normal }}</option>
+              <option value="24px">{{ t.large }}</option>
+              <option value="36px">{{ t.xlarge }}</option>
             </select>
           </div>
         </div>
       </div>
-
       <div v-if="sidebarTab==='style'" class="sidebar-content">
         <p class="sidebar-label">{{ t.pageStyle }}</p>
-        <div class="prop-row">
-          <label>{{ t.bgColor }}</label>
-          <input type="color" :value="currentPage.style?.backgroundColor||'#ffffff'" @input="setPageStyle('bg',$event.target.value)" class="color-input"/>
-        </div>
-        <div class="prop-row">
-          <label>{{ t.textColorPage }}</label>
-          <input type="color" :value="currentPage.style?.color||'#111111'" @input="setPageStyle('color',$event.target.value)" class="color-input"/>
-        </div>
+        <div class="prop-row"><label>{{ t.bgColor }}</label><input type="color" :value="currentPage.style?.backgroundColor||'#ffffff'" @input="setPageStyle('bg',$event.target.value)" class="color-input"/></div>
+        <div class="prop-row"><label>{{ t.textColorPage }}</label><input type="color" :value="currentPage.style?.color||'#111111'" @input="setPageStyle('color',$event.target.value)" class="color-input"/></div>
         <div class="prop-row">
           <label>{{ t.font }}</label>
           <select @change="setPageStyle('fontFamily',$event.target.value)" class="prop-select">
@@ -1106,7 +1241,6 @@ const setPageStyle = (type, value) => {
     <!-- CANVAS -->
     <main class="canvas" :class="{preview:mode==='preview'}">
       <div class="canvas-inner" :style="currentPage?.style">
-
         <template v-if="mode==='edit'">
           <div v-if="!currentPage.sections.length" class="empty-page">
             <span>✦</span><p>{{ t.emptyPage }}</p><p>{{ t.addSectionHint }}</p>
@@ -1117,19 +1251,16 @@ const setPageStyle = (type, value) => {
               <button @click.stop="moveSection(i,1)" :disabled="i===currentPage.sections.length-1">↓</button>
               <button @click.stop="deleteSection(i)" class="del-btn">✕</button>
             </div>
-
             <!-- HERO -->
             <div v-if="s.type==='hero'" class="sec-hero" :style="s.style">
               <textarea v-model="s.content" class="hero-title-input" :placeholder="t.heroTitlePh"/>
               <input v-model="s.subtitle" class="hero-sub-input" :placeholder="t.heroSubPh"/>
               <input v-model="s.cta" class="hero-cta-input" :placeholder="t.heroCtaPh"/>
             </div>
-
             <!-- TEXT -->
             <div v-else-if="s.type==='text'" class="sec-text" :style="s.style">
               <textarea v-model="s.content" class="text-input" :placeholder="t.textPh"/>
             </div>
-
             <!-- IMAGE -->
             <div v-else-if="s.type==='image'" class="sec-image" :style="s.style">
               <label class="img-drop" v-if="!s.url">
@@ -1139,21 +1270,16 @@ const setPageStyle = (type, value) => {
               <div v-else class="img-preview-wrap">
                 <img :src="s.url" class="img-preview" :alt="s.alt"/>
                 <div class="img-overlay">
-                  <label class="btn-action" style="cursor:pointer">
-                    <input type="file" accept="image/*" @change="uploadImage($event,s)" hidden/>{{ t.imgChange }}
-                  </label>
+                  <label class="btn-action" style="cursor:pointer"><input type="file" accept="image/*" @change="uploadImage($event,s)" hidden/>{{ t.imgChange }}</label>
                   <input v-model="s.alt" :placeholder="t.imgAltPh" class="alt-input"/>
                 </div>
               </div>
             </div>
-
             <!-- GALLERY -->
             <div v-else-if="s.type==='gallery'" class="sec-gallery" :style="s.style">
               <div class="gallery-toolbar">
                 <span class="sec-type-label">🎨 {{ t.galleryLabel }} — {{ s.images.length }} {{ t.galleryImages }}</span>
-                <label class="btn-action small" style="cursor:pointer">
-                  <input type="file" accept="image/*" multiple @change="uploadGalleryImage($event,s)" hidden/>{{ t.galleryAdd }}
-                </label>
+                <label class="btn-action small" style="cursor:pointer"><input type="file" accept="image/*" multiple @change="uploadGalleryImage($event,s)" hidden/>{{ t.galleryAdd }}</label>
               </div>
               <div v-if="s.images.length" class="gallery-grid-edit" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
                 <div v-for="(img,gi) in s.images" :key="img.id" class="gallery-item">
@@ -1163,18 +1289,14 @@ const setPageStyle = (type, value) => {
               </div>
               <div v-else class="gallery-empty">{{ t.galleryEmpty }}</div>
             </div>
-
             <!-- VIDEO -->
             <div v-else-if="s.type==='video'" class="sec-video" :style="s.style">
               <div class="video-toolbar"><span class="sec-type-label">▶️ {{ t.videoLabel }}</span></div>
               <input v-model="s.title" class="video-title-input" :placeholder="t.videoTitlePh"/>
               <input v-model="s.url" class="video-url-input" :placeholder="t.videoUrlPh"/>
-              <div v-if="s.url" class="video-preview">
-                <iframe :src="getEmbedUrl(s.url)" allowfullscreen class="video-iframe"/>
-              </div>
+              <div v-if="s.url" class="video-preview"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="video-iframe"/></div>
               <div v-else class="video-placeholder"><span>▶</span><span>{{ t.videoHint }}</span></div>
             </div>
-
             <!-- PRODUCTS -->
             <div v-else-if="s.type==='products'" class="sec-products" :style="s.style">
               <div class="products-toolbar">
@@ -1203,7 +1325,6 @@ const setPageStyle = (type, value) => {
                 </div>
               </div>
             </div>
-
             <!-- FEATURES -->
             <div v-else-if="s.type==='features'" class="sec-features" :style="s.style">
               <div class="features-grid">
@@ -1214,19 +1335,15 @@ const setPageStyle = (type, value) => {
                 </div>
               </div>
             </div>
-
             <!-- PAYMENT -->
             <div v-else-if="s.type==='payment'" class="sec-payment" :style="s.style">
               <div class="payment-edit-header">
                 <span class="sec-type-label">💳 {{ t.paymentLabel }}</span>
-                <div class="pay-providers-badge">
-                  <span class="badge-stripe">Stripe</span>
-                  <span class="badge-paypal">PayPal</span>
-                </div>
+                <div class="pay-providers-badge"><span class="badge-stripe">Stripe</span><span class="badge-paypal">PayPal</span></div>
               </div>
               <div class="payment-edit-fields">
                 <input v-model="s.title" class="payment-title-input" :placeholder="t.paymentTitlePh"/>
-                <input v-model="s.description" class="payment-desc-input" :placeholder="t.featureDescPh"/>
+                <input v-model="s.description" class="payment-desc-input" :placeholder="t.paymentDescPh"/>
                 <div class="payment-price-row">
                   <input v-model="s.amount" class="payment-amount-input" :placeholder="t.paymentAmountPh"/>
                   <select v-model="s.currency" class="payment-currency-select">
@@ -1245,7 +1362,6 @@ const setPageStyle = (type, value) => {
                 <button @click.stop="openConfigEditor('paypal')">paypal.js</button>
               </div>
             </div>
-
             <!-- FORM -->
             <div v-else-if="s.type==='form'" class="sec-form" :style="s.style">
               <p class="form-label-heading">{{ t.contactLabel }}</p>
@@ -1256,10 +1372,9 @@ const setPageStyle = (type, value) => {
                 <button disabled class="form-submit">{{ t.sendBtn }}</button>
               </div>
             </div>
-
             <!-- DIVIDER -->
             <div v-else-if="s.type==='divider'" class="sec-divider" :style="s.style">
-              <div class="divider-line"/>
+              <div class="divider-line"></div>
             </div>
           </div>
         </template>
@@ -1268,33 +1383,27 @@ const setPageStyle = (type, value) => {
         <template v-else>
           <div class="preview-mode">
             <div v-for="s in currentPage.sections" :key="s.id">
-
               <div v-if="s.type==='hero'" class="prev-hero" :style="s.style">
                 <h1 class="prev-hero-title">{{ s.content }}</h1>
                 <p class="prev-hero-sub">{{ s.subtitle }}</p>
                 <button v-if="s.cta" class="prev-hero-cta">{{ s.cta }}</button>
               </div>
-
               <div v-else-if="s.type==='text'" class="prev-text" :style="s.style"><p>{{ s.content }}</p></div>
-
               <div v-else-if="s.type==='image'" class="prev-image" :style="s.style">
                 <img v-if="s.url" :src="s.url" :alt="s.alt" class="prev-img"/>
                 <div v-else class="prev-img-placeholder">{{ t.prevImgEmpty }}</div>
               </div>
-
               <div v-else-if="s.type==='gallery'" class="prev-gallery" :style="s.style">
                 <div v-if="s.images.length" class="prev-gallery-grid" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
                   <div v-for="img in s.images" :key="img.id" class="prev-gallery-item"><img :src="img.url" :alt="img.alt"/></div>
                 </div>
                 <div v-else class="prev-img-placeholder">{{ t.prevGalleryEmpty }}</div>
               </div>
-
               <div v-else-if="s.type==='video'" class="prev-video" :style="s.style">
                 <h3 v-if="s.title" class="prev-video-title">{{ s.title }}</h3>
                 <div v-if="s.url" class="prev-video-wrap"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="prev-video-iframe"/></div>
                 <div v-else class="prev-img-placeholder">{{ t.prevVideoEmpty }}</div>
               </div>
-
               <div v-else-if="s.type==='products'" class="prev-products" :style="s.style">
                 <div class="prev-products-grid">
                   <div v-for="p in s.items" :key="p.id" class="prev-product-card">
@@ -1308,13 +1417,12 @@ const setPageStyle = (type, value) => {
                       <div class="prev-product-desc">{{ p.description }}</div>
                       <div class="prev-product-footer">
                         <span class="prev-product-price">{{ p.price }}{{ p.currency }}</span>
-                        <button class="prev-product-btn">{{ t.prevBuyBtn }}</button>
+                        <button class="prev-product-btn" @click.stop="addToCart(p)">🛒 {{ t.prevBuyBtn }}</button>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-
               <div v-else-if="s.type==='features'" class="prev-features" :style="s.style">
                 <div class="prev-features-grid">
                   <div v-for="(item,fi) in s.items" :key="fi" class="prev-feature-card">
@@ -1323,7 +1431,6 @@ const setPageStyle = (type, value) => {
                   </div>
                 </div>
               </div>
-
               <div v-else-if="s.type==='payment'" class="prev-payment" :style="s.style">
                 <h2 class="prev-payment-title">{{ s.title }}</h2>
                 <p class="prev-payment-desc">{{ s.description }}</p>
@@ -1333,7 +1440,6 @@ const setPageStyle = (type, value) => {
                   <button class="prev-pay-btn paypal-btn" @click="paymentProvider='paypal';openPaymentModal(s)">{{ t.prevPayPaypal }}</button>
                 </div>
               </div>
-
               <div v-else-if="s.type==='form'" class="prev-form" :style="s.style">
                 <h3>{{ t.prevContactTitle }}</h3>
                 <input :placeholder="t.prevNamePh" class="prev-form-field"/>
@@ -1341,12 +1447,12 @@ const setPageStyle = (type, value) => {
                 <textarea :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
                 <button class="prev-form-btn">{{ t.prevSendBtn }}</button>
               </div>
-
-              <div v-else-if="s.type==='divider'"" class="prev-divider" :style="s.style"><hr class="prev-divider-line"/></div>
+              <div v-else-if="s.type==='divider'" class="prev-divider" :style="s.style">
+                <hr class="prev-divider-line"/>
+              </div>
             </div>
           </div>
         </template>
-
       </div>
     </main>
   </div>
@@ -1359,14 +1465,10 @@ const setPageStyle = (type, value) => {
 :root{--bg:#0f0f11;--surface:#17171a;--surface2:#1f1f23;--border:#2a2a2f;--border2:#35353c;--accent:#6c63ff;--accent2:#a78bfa;--text:#f0f0f0;--text2:#8a8a9a;--text3:#5a5a6a;--green:#22c55e;--red:#ef4444;--stripe:#635bff;--paypal:#ffc439;--radius:8px;--sidebar-w:260px;--topbar-h:56px}
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .saas-root{min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
-
-/* NOTIF */
 .notif{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--green);color:white;padding:10px 24px;border-radius:100px;font-size:14px;font-weight:500;z-index:9999;box-shadow:0 8px 24px rgba(34,197,94,.35)}
 .notif.error{background:var(--red);box-shadow:0 8px 24px rgba(239,68,68,.35)}
 .notif-enter-active,.notif-leave-active{transition:all .3s ease}
 .notif-enter-from,.notif-leave-to{opacity:0;transform:translateX(-50%) translateY(12px)}
-
-/* MODAL */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:32px;position:relative;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
 .modal-close{position:absolute;top:16px;right:16px;background:var(--surface2);border:1px solid var(--border2);color:var(--text2);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
@@ -1377,14 +1479,10 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .modal-amount{font-size:42px;font-weight:700;color:var(--accent);margin-top:12px}
 .modal-enter-active,.modal-leave-active{transition:all .25s ease}
 .modal-enter-from,.modal-leave-to{opacity:0;transform:scale(.95)}
-
-/* PAY TABS */
 .pay-tabs{display:flex;gap:8px;margin-bottom:20px}
 .pay-tab-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--surface2);border:2px solid var(--border2);color:var(--text2);font-size:14px;font-weight:600;padding:10px;border-radius:var(--radius);cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
 .pay-tab-btn.active{border-color:var(--stripe);color:var(--stripe);background:rgba(99,91,255,.1)}
 .pay-tab-btn.paypal-tab.active{border-color:#b8860b;color:#b8860b;background:rgba(255,196,57,.1)}
-
-/* PAY FORM */
 .pay-form{display:flex;flex-direction:column;gap:14px}
 .pay-form-row label,.pay-form-two label{display:block;font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
 .card-input-mock{background:var(--surface2);border:1px solid var(--border2);color:var(--text3);padding:10px 14px;border-radius:var(--radius);font-size:14px;font-family:monospace;letter-spacing:1px}
@@ -1406,13 +1504,9 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pay-success-icon{width:64px;height:64px;border-radius:50%;background:var(--green);color:white;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
 .pay-success h2{font-family:'Playfair Display',serif;font-size:24px;color:var(--text);margin-bottom:8px}
 .pay-success p{color:var(--text2);margin-bottom:24px}
-
-/* CONFIG MODAL */
 .config-modal{max-width:640px}
 .config-editor-textarea{width:100%;height:300px;background:#0a0a0c;border:1px solid var(--border2);color:#a78bfa;font-family:'Courier New',monospace;font-size:13px;line-height:1.6;padding:16px;border-radius:var(--radius);resize:vertical;outline:none;margin-bottom:16px}
 .config-modal-actions{display:flex;gap:10px;justify-content:flex-end}
-
-/* EXPORT MODAL */
 .export-modal{max-width:520px}
 .export-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
 .export-card{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:20px;cursor:pointer;transition:all .15s;text-align:center;position:relative}
@@ -1423,12 +1517,13 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .export-badge{position:absolute;top:10px;right:10px;background:var(--accent);color:white;font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;text-transform:uppercase}
 .export-note{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12px;color:var(--text2);line-height:1.6}
 .export-note strong{color:var(--text)}
-
-/* TOPBAR */
 .topbar{position:fixed;top:0;left:0;right:0;z-index:100;height:var(--topbar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:0;padding:0 16px}
 .topbar-brand{display:flex;align-items:center;gap:8px;min-width:var(--sidebar-w);padding-right:16px;border-right:1px solid var(--border)}
 .brand-icon{font-size:20px;color:var(--accent)}
 .brand-name{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;letter-spacing:-.3px}
+.brand-name-input{background:transparent;border:none;color:var(--text);font-family:'Playfair Display',serif;font-size:17px;font-weight:600;letter-spacing:-.3px;outline:none;width:140px;min-width:80px;max-width:180px;border-bottom:1px solid transparent;transition:border-color .2s;padding:0}
+.brand-name-input:hover,.brand-name-input:focus{border-bottom-color:var(--border2)}
+.brand-name-input::placeholder{color:var(--text3)}
 .brand-badge{background:var(--accent);color:white;font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;text-transform:uppercase;letter-spacing:.5px}
 .page-tabs{flex:1;display:flex;align-items:center;gap:2px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
 .page-tabs::-webkit-scrollbar{display:none}
@@ -1451,11 +1546,10 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .btn-action.icon-btn{padding:6px 10px;font-size:16px}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* WORKSPACE */
+.lang-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:5px 8px;border-radius:var(--radius);cursor:pointer;font-family:'DM Sans',sans-serif;outline:none}
+.publish-btn{background:linear-gradient(135deg,#10b981,#059669);border-color:#059669;color:white;font-weight:600}
+.publish-btn:hover{background:linear-gradient(135deg,#059669,#047857);border-color:#047857}
 .workspace{display:flex;margin-top:var(--topbar-h);min-height:calc(100vh - var(--topbar-h))}
-
-/* SIDEBAR */
 .sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:var(--topbar-h);height:calc(100vh - var(--topbar-h));overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
 .sidebar-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
 .sidebar-tabs button{flex:1;padding:12px;font-size:13px;font-weight:500;background:transparent;border:none;color:var(--text2);cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;border-bottom:2px solid transparent}
@@ -1477,8 +1571,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .style-btns button.on{background:var(--accent);border-color:var(--accent);color:white}
 .color-input{width:40px;height:30px;border:1px solid var(--border2);border-radius:4px;cursor:pointer;background:none;padding:2px}
 .prop-select{width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:13px;padding:7px 10px;border-radius:var(--radius);cursor:pointer;font-family:'DM Sans',sans-serif}
-
-/* CANVAS */
 .canvas{flex:1;background:#0a0a0c;padding:32px;display:flex;justify-content:center;overflow-y:auto}
 .canvas.preview{padding:0;background:white}
 .canvas-inner{width:100%;max-width:900px;min-height:600px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.6)}
@@ -1486,8 +1578,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .empty-page{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;color:#999;text-align:center;gap:8px}
 .empty-page span{font-size:32px;opacity:.4}
 .empty-page p{font-size:14px}
-
-/* SECTION BLOCKS */
 .section-block{position:relative;border:2px solid transparent;cursor:pointer;transition:border-color .15s}
 .section-block:hover{border-color:rgba(108,99,255,.3)}
 .section-block.is-active{border-color:var(--accent)!important}
@@ -1498,19 +1588,13 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .section-actions button.del-btn:hover{background:#fef2f2;color:var(--red);border-color:#fecaca}
 .section-actions button:disabled{opacity:.3;cursor:default}
 .sec-type-label{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
-
-/* HERO */
 .sec-hero{padding:60px 40px;background:linear-gradient(135deg,#f8f7ff 0%,#ede9fe 100%);display:flex;flex-direction:column;gap:12px;align-items:flex-start}
 .hero-title-input{width:100%;font-family:'Playfair Display',serif;font-size:42px;font-weight:600;color:#1a1a2e;border:none;background:transparent;resize:none;line-height:1.2;outline:none;min-height:100px}
 .hero-sub-input{width:100%;font-size:18px;color:#555;background:transparent;border:none;outline:none;border-bottom:1px dashed rgba(108,99,255,.4);padding-bottom:4px}
 .hero-cta-input{font-size:14px;background:#6c63ff;color:white;border:none;outline:none;border-radius:8px;padding:10px 24px;font-weight:600;font-family:'DM Sans',sans-serif;margin-top:8px;cursor:text}
-
-/* TEXT */
 .sec-text{padding:32px 40px}
 .text-input{width:100%;min-height:120px;resize:vertical;border:1px dashed #d1d5db;border-radius:6px;padding:12px;font-size:16px;line-height:1.7;color:#374151;outline:none;background:#fafafa;font-family:'DM Sans',sans-serif;transition:border-color .15s}
 .text-input:focus{border-color:var(--accent);background:white}
-
-/* IMAGE */
 .sec-image{padding:20px 40px}
 .img-drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:2px dashed #d1d5db;border-radius:12px;padding:50px 20px;cursor:pointer;color:#9ca3af;transition:all .15s}
 .img-drop:hover{border-color:var(--accent);color:#6c63ff}
@@ -1521,8 +1605,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .img-overlay{position:absolute;inset:0;background:rgba(0,0,0,.5);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;opacity:0;transition:opacity .2s}
 .img-preview-wrap:hover .img-overlay{opacity:1}
 .alt-input{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:white;padding:6px 12px;border-radius:6px;font-size:12px;text-align:center;outline:none;width:200px;font-family:'DM Sans',sans-serif}
-
-/* GALLERY */
 .sec-gallery{padding:20px 40px}
 .gallery-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .gallery-grid-edit{display:grid;gap:8px}
@@ -1531,8 +1613,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .gallery-del{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.6);border:none;color:white;width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
 .gallery-item:hover .gallery-del{opacity:1}
 .gallery-empty{border:2px dashed #d1d5db;border-radius:12px;padding:40px;text-align:center;color:#9ca3af;font-size:14px}
-
-/* VIDEO */
 .sec-video{padding:20px 40px}
 .video-toolbar{margin-bottom:10px}
 .video-title-input{width:100%;font-size:18px;font-weight:600;color:#1a1a2e;border:none;border-bottom:1px dashed #d1d5db;outline:none;padding-bottom:6px;margin-bottom:10px;background:transparent;font-family:'DM Sans',sans-serif}
@@ -1541,8 +1621,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .video-iframe{width:100%;height:340px;border:none;display:block}
 .video-placeholder{border:2px dashed #d1d5db;border-radius:12px;padding:50px;text-align:center;color:#9ca3af;display:flex;flex-direction:column;align-items:center;gap:8px}
 .video-placeholder span:first-child{font-size:36px;opacity:.4}
-
-/* PRODUCTS */
 .sec-products{padding:20px 40px}
 .products-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .products-grid-edit{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -1559,16 +1637,12 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .product-price-row{display:flex;align-items:center;gap:6px;margin-top:4px}
 .product-price-input{font-size:16px;font-weight:700;color:#6c63ff;border:none;outline:none;background:transparent;width:70px;font-family:'DM Sans',sans-serif}
 .product-currency-select{font-size:13px;background:transparent;border:1px solid #e5e7eb;border-radius:4px;color:#6b7280;padding:2px 4px;cursor:pointer}
-
-/* FEATURES */
 .sec-features{padding:40px}
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 .feature-item{background:#f8f9fa;border:1px solid #e9ecef;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:6px}
 .feat-icon-input{font-size:24px;background:transparent;border:none;outline:none;width:40px}
 .feat-title-input{font-weight:600;font-size:15px;background:transparent;border:none;border-bottom:1px dashed #d1d5db;outline:none;color:#1a1a2e;font-family:'DM Sans',sans-serif;padding-bottom:4px}
 .feat-desc-input{font-size:13px;color:#6b7280;background:transparent;border:none;outline:none;font-family:'DM Sans',sans-serif}
-
-/* PAYMENT SECTION EDIT */
 .sec-payment{padding:32px 40px;background:linear-gradient(135deg,#f8f7ff,#ede9fe)}
 .payment-edit-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
 .pay-providers-badge{display:flex;gap:6px}
@@ -1587,8 +1661,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .paypal-preview{background:var(--paypal);color:#003087}
 .payment-config-hint{font-size:12px;color:#9ca3af;display:flex;align-items:center;gap:6px}
 .payment-config-hint button{background:none;border:none;color:#6c63ff;font-size:12px;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif}
-
-/* FORM */
 .sec-form{padding:40px}
 .form-label-heading{font-size:18px;font-weight:600;color:#1a1a2e;margin-bottom:16px;font-family:'Playfair Display',serif}
 .form-fields{display:flex;flex-direction:column;gap:10px;max-width:480px}
@@ -1597,8 +1669,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .form-submit{background:#6c63ff;color:white;border:none;border-radius:8px;padding:11px 24px;font-weight:600;font-size:14px;cursor:default;font-family:'DM Sans',sans-serif;align-self:flex-start}
 .sec-divider{padding:12px 40px}
 .divider-line{border:none;border-top:1px solid #e5e7eb}
-
-/* PREVIEW */
 .preview-mode{font-family:'DM Sans',sans-serif}
 .prev-hero{padding:100px 60px;background:linear-gradient(135deg,#f8f7ff,#ede9fe);text-align:center}
 .prev-hero-title{font-family:'Playfair Display',serif;font-size:52px;font-weight:600;color:#1a1a2e;line-height:1.15;white-space:pre-line;margin-bottom:16px}
@@ -1654,49 +1724,38 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .prev-form-btn{background:#6c63ff;color:white;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif}
 .prev-divider{padding:8px 60px}
 .prev-divider-line{border:none;border-top:1px solid #e5e7eb}
-
-/* LOGO */
 .logo-area{display:flex;align-items:center;cursor:pointer;border-radius:6px;overflow:hidden;width:32px;height:32px;flex-shrink:0}
 .site-logo-img{width:32px;height:32px;object-fit:contain;border-radius:6px}
-
-/* LANG SELECT */
-.lang-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:5px 8px;border-radius:var(--radius);cursor:pointer;font-family:'DM Sans',sans-serif;outline:none}
-
-/* PUBLISH BUTTON */
-.publish-btn{background:linear-gradient(135deg,#10b981,#059669);border-color:#059669;color:white;font-weight:600}
-.publish-btn:hover{background:linear-gradient(135deg,#059669,#047857);border-color:#047857}
-
-/* PUBLISH MODAL */
-.publish-modal{max-width:540px}
+.publish-modal{max-width:560px}
 .publish-form{display:flex;flex-direction:column;gap:16px}
 .pub-field label{display:block;font-size:11px;color:var(--text2);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
 .pub-url-wrap{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden}
-.pub-url-prefix{font-size:13px;color:var(--text3);padding:10px 10px;white-space:nowrap;border-right:1px solid var(--border2)}
+.pub-url-prefix{font-size:11px;color:var(--text3);padding:10px 8px;white-space:nowrap;border-right:1px solid var(--border2)}
 .pub-input{flex:1;background:transparent;border:none;color:var(--text);font-size:13px;padding:10px 12px;outline:none;font-family:'DM Sans',sans-serif}
-.pub-preview-url{font-size:12px;color:#10b981;margin-top:6px;font-weight:500}
-.pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:20px}
-.pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:16px;margin-bottom:16px}
-.pub-url-card label{display:block;font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-.pub-live-url{color:var(--accent);font-size:14px;font-weight:600;text-decoration:none;word-break:break-all}
+.pub-preview-url{font-size:12px;color:#10b981;margin-top:6px;font-weight:500;word-break:break-all}
+.pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:16px}
+.pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px}
+.pub-url-card label{display:block;font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.pub-live-url{color:var(--accent);font-size:13px;font-weight:600;text-decoration:none;word-break:break-all;display:block}
 .pub-live-url:hover{text-decoration:underline}
-.dns-section{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:16px;margin-bottom:16px}
-.dns-title{font-family:'Playfair Display',serif;font-size:16px;color:var(--text);margin-bottom:6px}
-.dns-desc{font-size:12px;color:var(--text2);margin-bottom:12px}
+.pub-live-url--uid{font-size:11px;color:var(--text3);font-family:monospace}
+.pub-equiv-note{font-size:11px;color:var(--green);margin-top:6px;font-weight:500}
+.dns-section{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px}
+.dns-title{font-family:'Playfair Display',serif;font-size:15px;color:var(--text);margin-bottom:6px}
+.dns-desc{font-size:12px;color:var(--text2);margin-bottom:10px}
 .dns-table{display:flex;flex-direction:column;gap:4px}
 .dns-row{display:grid;grid-template-columns:80px 60px 1fr;gap:8px;font-size:12px;padding:6px 8px;border-radius:4px}
 .dns-head{font-weight:700;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:var(--surface);border-radius:4px}
 .dns-row:not(.dns-head){background:rgba(108,99,255,.06);color:var(--text)}
 .dns-type{color:var(--accent2);font-weight:700;font-family:monospace}
 .dns-val{font-family:monospace;font-size:11px;color:var(--text2);word-break:break-all}
+.pub-firestore-info{display:flex;align-items:flex-start;gap:10px;background:rgba(255,140,0,.06);border:1px solid rgba(255,140,0,.2);border-radius:8px;padding:12px;margin-top:12px}
+.pub-fi-icon{font-size:18px;flex-shrink:0}
+.pub-fi-title{font-size:10px;font-weight:700;color:#f97316;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.pub-fi-detail{font-size:11px;color:var(--text2);font-family:monospace;line-height:1.6}
+.pub-fi-detail code{background:var(--surface);padding:1px 5px;border-radius:3px;color:#fb923c}
 .pub-note{font-size:12px;color:var(--text3);text-align:center;line-height:1.6}
 .pub-note strong{color:var(--text2)}
-
-/* BRAND NAME INPUT */
-.brand-name-input{background:transparent;border:none;color:var(--text);font-family:'Playfair Display',serif;font-size:17px;font-weight:600;letter-spacing:-.3px;outline:none;width:140px;min-width:80px;max-width:180px;border-bottom:1px solid transparent;transition:border-color .2s;padding:0}
-.brand-name-input:hover,.brand-name-input:focus{border-bottom-color:var(--border2)}
-.brand-name-input::placeholder{color:var(--text3)}
-
-/* DNS INPUT MODAL */
 .dns-input-modal{max-width:520px}
 .dns-input-form{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
 .dns-input-row label{display:block;font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
@@ -1706,4 +1765,33 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .dns-instructions{background:rgba(108,99,255,.06);border:1px solid rgba(108,99,255,.15);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:6px}
 .dns-inst-title{font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
 .dns-inst-step{font-size:12px;color:var(--text2);line-height:1.5}
+
+/* CART */
+.cart-btn{position:relative;background:var(--surface2);border:1px solid var(--border2);padding:6px 12px;gap:6px}
+.cart-badge{background:var(--accent);color:white;font-size:10px;font-weight:700;padding:2px 6px;border-radius:100px;min-width:18px;text-align:center;display:inline-block}
+.cart-modal{max-width:540px}
+.cart-empty{text-align:center;padding:40px 20px;color:var(--text3);display:flex;flex-direction:column;align-items:center;gap:12px}
+.cart-empty span{font-size:40px;opacity:.5}
+.cart-empty p{font-size:15px}
+.cart-items{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;max-height:380px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.cart-item{display:grid;grid-template-columns:48px 1fr auto auto 24px;align-items:center;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.cart-item-img{width:48px;height:48px;border-radius:8px;overflow:hidden;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.cart-item-img img{width:100%;height:100%;object-fit:cover}
+.cart-item-info{min-width:0}
+.cart-item-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cart-item-price{font-size:12px;color:var(--text3)}
+.cart-item-qty{display:flex;align-items:center;gap:6px}
+.qty-btn{background:var(--surface);border:1px solid var(--border2);color:var(--text);width:24px;height:24px;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.qty-btn:hover{background:var(--border2)}
+.qty-val{font-size:13px;font-weight:600;color:var(--text);min-width:20px;text-align:center}
+.cart-item-subtotal{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap}
+.cart-item-del{background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all .15s}
+.cart-item-del:hover{background:rgba(239,68,68,.15);color:var(--red)}
+.cart-footer{border-top:1px solid var(--border);padding-top:16px}
+.cart-total-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.cart-total-label{font-size:14px;color:var(--text2);font-weight:500}
+.cart-total-amount{font-size:24px;font-weight:700;color:var(--accent)}
+.cart-actions{display:flex;gap:10px}
+.cart-actions .btn-action{flex:1;justify-content:center}
+.cart-checkout-btn{flex:2;margin-top:0}
 </style>

@@ -1,64 +1,77 @@
-
 <!-- ============================================================
-  SiteViewer.vue — SaaasGenerator
-  Affiche un site publié à partir de Firestore.
-
-  Route : /site/:uid
-  :uid  peut être un UID Firestore OU un slug convivial.
-
-  Algorithme de résolution :
-    1. Cherche users/{uid}/siteData  (cas UID direct)
-    2. Si absent → cherche slugs/{uid} → récupère le vrai uid
-       → cherche users/{vrai uid}/siteData  (cas slug)
-    3. Si toujours absent → affiche "Site introuvable"
+  SaaasGenerator/src/views/SiteViewer.vue
+  
+  Affiche le site PUBLIÉ d'un propriétaire de store.
+  Mode : aperçu final uniquement — pas de barre d'édition.
+  
+  Route  : /site/:uid
+  :uid   : UID Firestore direct OU slug convivial
+  
+  Résolution :
+    1. users/{uid}/siteData          → UID direct
+    2. slugs/{uid} → uid réel        → Slug
+    3. Introuvable                   → Page 404 intégrée
+  
+  Paiement client :
+    - Lit users/{resolvedUid}/config/payment  (storePaymentConfig)
+    - Stripe Elements réel  → backend du STORE
+    - PayPal SDK réel       → backend du STORE
+    - Commande sauvegardée  → users/{resolvedUid}/orders/{id}
 ============================================================ -->
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
+import { ref, onMounted, computed, watch } from "vue"
 import { db } from "../firebase.js"
-import { doc, getDoc } from "firebase/firestore"
+import { doc, getDoc, collection, addDoc } from "firebase/firestore"
 
 // ── Props ─────────────────────────────────────────────────────
-const props = defineProps({
-  uid: { type: String, required: true }
-})
+const props = defineProps({ uid: { type: String, required: true } })
 
-// ── State ─────────────────────────────────────────────────────
-const site        = ref(null)       // { pages: [...] }
-const loading     = ref(true)
-const error       = ref("")
-const resolvedUid = ref("")
+// ── État global ───────────────────────────────────────────────
+const site         = ref(null)
+const loading      = ref(true)
+const error        = ref("")
+const resolvedUid  = ref("")
+const siteMeta     = ref({})          // { name, logo }
 const currentPageIndex = ref(0)
+
+// ── Config paiement du store ──────────────────────────────────
+const storePayConfig = ref({ stripe: null, paypal: null })
 
 // ── Panier ────────────────────────────────────────────────────
 const cart         = ref([])
 const showCart     = ref(false)
 const showPayModal = ref(false)
 const payProvider  = ref("stripe")
+const payProcessing = ref(false)
+const paySuccess   = ref(false)
+const payError     = ref("")
+const customerName  = ref("")
+const customerEmail = ref("")
 
-const cartCount = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
-const cartTotal = computed(() => cart.value.reduce((s, i) => s + parseFloat(i.price || 0) * i.qty, 0).toFixed(2))
+// Stripe
+const stripeInst   = ref(null)
+const stripeCard   = ref(null)
+const stripeReady  = ref(false)
+
+const cartCount    = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
+const cartTotal    = computed(() => cart.value.reduce((s, i) => s + parseFloat(i.price || 0) * i.qty, 0).toFixed(2))
 const cartCurrency = computed(() => cart.value[0]?.currency || "€")
+const currentPage  = computed(() => site.value?.pages?.[currentPageIndex.value] || site.value?.pages?.[0])
 
+// ── Panier — actions ──────────────────────────────────────────
 const addToCart = (product) => {
   const ex = cart.value.find(i => i.id === product.id)
   ex ? ex.qty++ : cart.value.push({ ...product, qty: 1 })
   showCart.value = true
 }
-
 const removeFromCart = (id) => { cart.value = cart.value.filter(i => i.id !== id) }
-
 const updateQty = (id, delta) => {
   const item = cart.value.find(i => i.id === id)
   if (item) item.qty = Math.max(1, item.qty + delta)
 }
 
-// ── Pages ─────────────────────────────────────────────────────
-const currentPage = computed(() => site.value?.pages?.[currentPageIndex.value] || site.value?.pages?.[0])
-
-const goToPage = (i) => { currentPageIndex.value = i }
-
-// ── Vidéo embed ───────────────────────────────────────────────
+// ── Embed vidéo ───────────────────────────────────────────────
 const getEmbedUrl = (url) => {
   if (!url) return ""
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/)
@@ -68,101 +81,269 @@ const getEmbedUrl = (url) => {
   return url
 }
 
-// ── Résolution UID / Slug ─────────────────────────────────────
+// ── Chargement site + config paiement ────────────────────────
 const loadSite = async () => {
   loading.value = true
   error.value   = ""
-
   try {
-    // ── Étape 1 : tenter users/{uid}/siteData ─────────────────
-    const userRef  = doc(db, "users", props.uid)
-    const userSnap = await getDoc(userRef)
-
+    // Étape 1 : UID direct
+    const userSnap = await getDoc(doc(db, "users", props.uid))
     if (userSnap.exists() && userSnap.data().siteData) {
-      // C'est un UID Firestore direct ✓
-      site.value        = userSnap.data().siteData
+      site.value       = userSnap.data().siteData
+      siteMeta.value   = { name: userSnap.data().siteName || "", logo: userSnap.data().siteLogo || "" }
       resolvedUid.value = props.uid
-      loading.value     = false
+      await loadPayConfig(props.uid)
+      loading.value = false
       return
     }
-
-    // ── Étape 2 : tenter slugs/{uid} → vrai UID ───────────────
-    const slugRef  = doc(db, "slugs", props.uid)
-    const slugSnap = await getDoc(slugRef)
-
+    // Étape 2 : Slug
+    const slugSnap = await getDoc(doc(db, "slugs", props.uid))
     if (slugSnap.exists()) {
-      const realUid = slugSnap.data().uid
-
-      // Charger le siteData depuis le vrai UID
-      const realUserRef  = doc(db, "users", realUid)
-      const realUserSnap = await getDoc(realUserRef)
-
-      if (realUserSnap.exists() && realUserSnap.data().siteData) {
-        site.value        = realUserSnap.data().siteData
+      const realUid   = slugSnap.data().uid
+      const realSnap  = await getDoc(doc(db, "users", realUid))
+      if (realSnap.exists() && realSnap.data().siteData) {
+        site.value        = realSnap.data().siteData
+        siteMeta.value    = { name: realSnap.data().siteName || "", logo: realSnap.data().siteLogo || "" }
         resolvedUid.value = realUid
-        loading.value     = false
+        await loadPayConfig(realUid)
+        loading.value = false
         return
       }
     }
-
-    // ── Étape 3 : introuvable ──────────────────────────────────
     error.value   = "Site introuvable. Vérifiez l'adresse."
     loading.value = false
-
   } catch (e) {
-    console.error("SiteViewer error:", e)
     error.value   = "Erreur de chargement : " + e.message
     loading.value = false
   }
 }
 
+const loadPayConfig = async (uid) => {
+  try {
+    // Chercher d'abord dans users/{uid}/config/payment (sous-collection)
+    const snap = await getDoc(doc(db, "users", uid, "config", "payment"))
+    if (snap.exists()) { storePayConfig.value = snap.data(); return }
+    // Fallback : storePaymentConfig dans le document principal
+    const mainSnap = await getDoc(doc(db, "users", uid))
+    if (mainSnap.exists() && mainSnap.data().storePaymentConfig) {
+      storePayConfig.value = mainSnap.data().storePaymentConfig
+    }
+  } catch (e) { console.warn("Pas de config paiement:", e.message) }
+}
+
 onMounted(loadSite)
+
+// ── Stripe Elements ───────────────────────────────────────────
+const initStripe = async () => {
+  const cfg = storePayConfig.value?.stripe
+  if (!cfg?.publishableKey || cfg.publishableKey.length < 10) {
+    payError.value = "Paiement Stripe non configuré pour ce store."
+    return
+  }
+  try {
+    if (!window.Stripe) {
+      await new Promise((res, rej) => {
+        const s = document.createElement("script")
+        s.src = "https://js.stripe.com/v3/"
+        s.onload = res; s.onerror = rej
+        document.head.appendChild(s)
+      })
+    }
+    stripeInst.value = window.Stripe(cfg.publishableKey)
+    const elements   = stripeInst.value.elements()
+    await new Promise(r => setTimeout(r, 120))
+    const el = document.getElementById("sv-card-el")
+    if (el && !stripeReady.value) {
+      const card = elements.create("card", {
+        style: {
+          base:    { fontSize: "15px", color: "#374151", fontFamily: "DM Sans, sans-serif",
+                     "::placeholder": { color: "#9ca3af" } },
+          invalid: { color: "#ef4444" },
+        },
+        hidePostalCode: true,
+      })
+      card.mount(el)
+      stripeCard.value  = card
+      stripeReady.value = true
+    }
+  } catch (e) { payError.value = "Erreur Stripe : " + e.message }
+}
+
+// ── PayPal buttons ────────────────────────────────────────────
+const initPaypal = async () => {
+  const cfg = storePayConfig.value?.paypal
+  if (!cfg?.clientId || cfg.clientId.length < 5) {
+    payError.value = "Paiement PayPal non configuré pour ce store."
+    return
+  }
+  try {
+    if (!window.paypal || window.paypal._clientId !== cfg.clientId) {
+      const old = document.getElementById("paypal-sdk")
+      if (old) old.remove()
+      await new Promise((res, rej) => {
+        const s = document.createElement("script")
+        s.id  = "paypal-sdk"
+        s.src = `https://www.paypal.com/sdk/js?client-id=${cfg.clientId}&currency=${cfg.currency || "EUR"}`
+        s.onload = () => { window.paypal._clientId = cfg.clientId; res() }
+        s.onerror = rej
+        document.head.appendChild(s)
+      })
+    }
+    const container = document.getElementById("sv-paypal-container")
+    if (container) container.innerHTML = ""
+    await new Promise(r => setTimeout(r, 100))
+    window.paypal.Buttons({
+      createOrder: async () => {
+        if (!cfg.createOrderUrl) throw new Error("createOrderUrl non défini")
+        const res = await fetch(cfg.createOrderUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount:   cartTotal.value,
+            currency: cfg.currency || "EUR",
+            items:    cart.value.map(i => ({ name: i.name, unit_amount: parseFloat(i.price), quantity: i.qty })),
+          }),
+        })
+        const data = await res.json()
+        return data.orderID
+      },
+      onApprove: async (data) => {
+        payProcessing.value = true
+        if (cfg.captureOrderUrl) {
+          const res = await fetch(cfg.captureOrderUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderID: data.orderID }),
+          })
+          const result = await res.json()
+          if (result.status === "COMPLETED") {
+            await saveOrder("paypal", result.id)
+            paySuccess.value    = true
+            payProcessing.value = false
+          }
+        }
+      },
+      onError: (err) => { payError.value = "Erreur PayPal : " + String(err) },
+    }).render("#sv-paypal-container")
+  } catch (e) { payError.value = "Erreur PayPal : " + e.message }
+}
+
+// ── Watch payment modal ───────────────────────────────────────
+watch([showPayModal, payProvider], ([open, provider]) => {
+  if (!open) return
+  payError.value = ""; stripeReady.value = false
+  if (provider === "stripe") setTimeout(initStripe, 150)
+  if (provider === "paypal") setTimeout(initPaypal, 150)
+})
+
+// ── Paiement Stripe ───────────────────────────────────────────
+const payWithStripe = async () => {
+  const cfg = storePayConfig.value?.stripe
+  if (!cfg?.backendUrl) { payError.value = "backendUrl Stripe non configuré."; return }
+  payProcessing.value = true
+  payError.value = ""
+  try {
+    const res = await fetch(cfg.backendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount:      Math.round(parseFloat(cartTotal.value) * 100),
+        currency:    cfg.currency || "eur",
+        description: `Commande — ${cartCount.value} article(s)`,
+        items:       cart.value.map(i => ({ name: i.name, price: i.price, qty: i.qty })),
+        uid:         resolvedUid.value,
+      }),
+    })
+    if (!res.ok) throw new Error("Erreur backend " + res.status)
+    const { clientSecret } = await res.json()
+    const { error, paymentIntent } = await stripeInst.value.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: stripeCard.value,
+        billing_details: { name: customerName.value, email: customerEmail.value },
+      },
+    })
+    if (error) throw new Error(error.message)
+    if (paymentIntent.status === "succeeded") {
+      await saveOrder("stripe", paymentIntent.id)
+      paySuccess.value = true
+    }
+  } catch (e) {
+    payError.value = e.message
+  } finally { payProcessing.value = false }
+}
+
+// ── Sauvegarde commande Firestore ─────────────────────────────
+// Écrit dans : users/{ownerUid}/orders/{orderId}
+const saveOrder = async (provider, transactionId) => {
+  if (!resolvedUid.value) return
+  try {
+    await addDoc(collection(db, "users", resolvedUid.value, "orders"), {
+      items: cart.value.map(i => ({
+        id: i.id, name: i.name, price: i.price,
+        currency: i.currency, qty: i.qty, image: i.image || "",
+      })),
+      total:         cartTotal.value,
+      currency:      cartCurrency.value,
+      itemCount:     cartCount.value,
+      provider,
+      transactionId,
+      customerName:  customerName.value,
+      customerEmail: customerEmail.value,
+      status:        "paid",
+      createdAt:     new Date().toISOString(),
+      siteSlug:      props.uid,
+    })
+    cart.value = []  // vider le panier après commande
+  } catch (e) { console.error("Erreur sauvegarde commande:", e) }
+}
 </script>
 
 <template>
 <div class="sv-root">
 
-  <!-- ── LOADING ─────────────────────────────────────────── -->
+  <!-- LOADING -->
   <div v-if="loading" class="sv-loading">
-    <div class="sv-spinner"/>
+    <div class="sv-spinner"></div>
     <p>Chargement du site...</p>
   </div>
 
-  <!-- ── ERROR ──────────────────────────────────────────── -->
+  <!-- ERREUR -->
   <div v-else-if="error" class="sv-error">
     <span>🔍</span>
     <h2>{{ error }}</h2>
     <p>L'adresse <code>{{ props.uid }}</code> ne correspond à aucun site publié.</p>
   </div>
 
-  <!-- ── SITE ───────────────────────────────────────────── -->
+  <!-- SITE -->
   <template v-else-if="site">
 
-    <!-- NAV -->
+    <!-- NAV du store -->
     <nav class="sv-nav">
-      <span class="sv-brand">{{ site.name || '◈ Site' }}</span>
+      <div class="sv-brand">
+        <img v-if="siteMeta.logo" :src="siteMeta.logo" class="sv-brand-logo" alt="logo"/>
+        <span v-else class="sv-brand-icon">◈</span>
+        <span class="sv-brand-name">{{ siteMeta.name || site.pages?.[0]?.name || 'Mon Store' }}</span>
+      </div>
       <div class="sv-page-tabs">
         <button
-          v-for="(p, i) in site.pages"
-          :key="p.id"
-          class="sv-tab"
-          :class="{ active: currentPageIndex === i }"
-          @click="goToPage(i)"
+          v-for="(p, i) in site.pages" :key="p.id"
+          class="sv-tab" :class="{ active: currentPageIndex === i }"
+          @click="currentPageIndex = i"
         >{{ p.name }}</button>
       </div>
-      <button v-if="cartCount > 0" class="sv-cart-btn" @click="showCart=true">
+      <button v-if="cartCount > 0" class="sv-cart-btn" @click="showCart = true">
         🛒 <span class="sv-cart-badge">{{ cartCount }}</span>
       </button>
     </nav>
 
-    <!-- PAGE CONTENT -->
+    <!-- CONTENU PAGE -->
     <main class="sv-page" :style="currentPage?.style">
       <template v-for="s in currentPage?.sections" :key="s.id">
 
         <!-- HERO -->
         <div v-if="s.type==='hero'" class="sv-hero" :style="s.style">
           <h1 class="sv-hero-title">{{ s.content }}</h1>
-          <p class="sv-hero-sub">{{ s.subtitle }}</p>
+          <p  class="sv-hero-sub">{{ s.subtitle }}</p>
           <button v-if="s.cta" class="sv-hero-cta">{{ s.cta }}</button>
         </div>
 
@@ -189,7 +370,7 @@ onMounted(loadSite)
         <div v-else-if="s.type==='video'" class="sv-video" :style="s.style">
           <h3 v-if="s.title" class="sv-video-title">{{ s.title }}</h3>
           <div v-if="s.url" class="sv-video-wrap">
-            <iframe :src="getEmbedUrl(s.url)" allowfullscreen/>
+            <iframe :src="getEmbedUrl(s.url)" allowfullscreen></iframe>
           </div>
         </div>
 
@@ -207,9 +388,7 @@ onMounted(loadSite)
                 <div class="sv-product-desc">{{ p.description }}</div>
                 <div class="sv-product-footer">
                   <span class="sv-product-price">{{ p.price }}{{ p.currency }}</span>
-                  <button class="sv-product-btn" @click="addToCart(p)">
-                    🛒 Acheter
-                  </button>
+                  <button class="sv-product-btn" @click="addToCart(p)">🛒 Acheter</button>
                 </div>
               </div>
             </div>
@@ -230,13 +409,15 @@ onMounted(loadSite)
         <!-- PAYMENT -->
         <div v-else-if="s.type==='payment'" class="sv-payment" :style="s.style">
           <h2 class="sv-payment-title">{{ s.title }}</h2>
-          <p class="sv-payment-desc">{{ s.description }}</p>
+          <p  class="sv-payment-desc">{{ s.description }}</p>
           <div class="sv-payment-amount">{{ s.amount }}{{ s.currency }}</div>
           <div class="sv-payment-btns">
-            <button class="sv-pay-btn sv-stripe" @click="payProvider='stripe'; showPayModal=true">
+            <button class="sv-pay-btn sv-stripe"
+              @click="cart=[{...s, id:'direct', qty:1, price:s.amount}]; payProvider='stripe'; showPayModal=true">
               💳 Payer avec Stripe
             </button>
-            <button class="sv-pay-btn sv-paypal" @click="payProvider='paypal'; showPayModal=true">
+            <button class="sv-pay-btn sv-paypal"
+              @click="cart=[{...s, id:'direct', qty:1, price:s.amount}]; payProvider='paypal'; showPayModal=true">
               🅿 Payer avec PayPal
             </button>
           </div>
@@ -247,7 +428,7 @@ onMounted(loadSite)
           <h3>Contactez-nous</h3>
           <input placeholder="Nom complet"/>
           <input placeholder="Email"/>
-          <textarea rows="4" placeholder="Votre message..."/>
+          <textarea rows="4" placeholder="Votre message..."></textarea>
           <button type="button">Envoyer →</button>
         </div>
 
@@ -259,14 +440,13 @@ onMounted(loadSite)
       </template>
     </main>
 
-    <!-- ── CART MODAL ──────────────────────────────────── -->
+    <!-- ── MODAL PANIER ─────────────────────────────────────── -->
     <Transition name="sv-modal">
       <div v-if="showCart" class="sv-modal-overlay" @click.self="showCart=false">
         <div class="sv-modal-box">
           <button class="sv-modal-close" @click="showCart=false">✕</button>
           <div class="sv-modal-header">
-            <span>🛒</span>
-            <h2>Mon panier</h2>
+            <span>🛒</span><h2>Mon panier</h2>
           </div>
 
           <div v-if="cart.length === 0" class="sv-cart-empty">
@@ -309,40 +489,63 @@ onMounted(loadSite)
       </div>
     </Transition>
 
-    <!-- ── PAYMENT MODAL ──────────────────────────────── -->
+    <!-- ── MODAL PAIEMENT ───────────────────────────────────── -->
     <Transition name="sv-modal">
       <div v-if="showPayModal" class="sv-modal-overlay" @click.self="showPayModal=false">
         <div class="sv-modal-box sv-pay-box">
           <button class="sv-modal-close" @click="showPayModal=false">✕</button>
-          <div class="sv-modal-header">
-            <span>💳</span>
-            <h2>Finaliser le paiement</h2>
-            <div class="sv-pay-amount">{{ cartTotal || '—' }}{{ cartCurrency }}</div>
-          </div>
 
-          <div class="sv-pay-tabs">
-            <button :class="{active:payProvider==='stripe'}" @click="payProvider='stripe'">💳 Stripe</button>
-            <button :class="{active:payProvider==='paypal'}" @click="payProvider='paypal'">🅿 PayPal</button>
-          </div>
-
-          <div v-if="payProvider==='stripe'" class="sv-pay-form">
-            <label>Numéro de carte</label>
-            <div class="sv-card-mock">4242 4242 4242 4242</div>
-            <div class="sv-pay-row2">
-              <div><label>Expiration</label><div class="sv-card-mock">12 / 27</div></div>
-              <div><label>CVC</label><div class="sv-card-mock">123</div></div>
-            </div>
-            <p class="sv-pay-note">🔒 Paiement sécurisé via Stripe</p>
-            <button class="sv-btn-primary sv-pay-btn-submit">
-              Payer {{ cartTotal }}{{ cartCurrency }}
+          <!-- Succès -->
+          <div v-if="paySuccess" class="sv-pay-success">
+            <div class="sv-success-icon">✓</div>
+            <h2>Commande confirmée !</h2>
+            <p>Merci pour votre achat. Un email de confirmation vous sera envoyé à <strong>{{ customerEmail }}</strong>.</p>
+            <button class="sv-btn-primary" style="margin-top:20px;width:100%" @click="showPayModal=false; paySuccess=false">
+              Fermer
             </button>
           </div>
 
-          <div v-else class="sv-paypal-info">
-            <div class="sv-paypal-logo">PayPal</div>
-            <p>Vous serez redirigé vers PayPal pour finaliser votre paiement.</p>
-            <button class="sv-btn-paypal">Payer avec PayPal</button>
-          </div>
+          <template v-else>
+            <div class="sv-modal-header">
+              <span>💳</span>
+              <h2>Paiement</h2>
+              <div class="sv-pay-amount">{{ cartTotal }}{{ cartCurrency }}</div>
+            </div>
+
+            <!-- Infos client -->
+            <div class="sv-customer-fields">
+              <input v-model="customerName"  class="sv-cust-input" placeholder="Votre nom complet *"/>
+              <input v-model="customerEmail" class="sv-cust-input" placeholder="Votre email *" type="email"/>
+            </div>
+
+            <!-- Erreur -->
+            <div v-if="payError" class="sv-pay-error">⚠️ {{ payError }}</div>
+
+            <!-- Tabs -->
+            <div class="sv-pay-tabs">
+              <button :class="{active:payProvider==='stripe'}"
+                @click="payProvider='stripe'">💳 Stripe</button>
+              <button :class="{active:payProvider==='paypal'}"
+                @click="payProvider='paypal'">🅿 PayPal</button>
+            </div>
+
+            <!-- Stripe -->
+            <div v-if="payProvider==='stripe'" class="sv-pay-form">
+              <label class="sv-card-label">Informations de carte</label>
+              <div id="sv-card-el" class="sv-card-el"></div>
+              <p class="sv-pay-note">🔒 Paiement sécurisé via Stripe</p>
+              <button class="sv-btn-primary sv-pay-submit" :disabled="payProcessing" @click="payWithStripe">
+                <span v-if="payProcessing" class="sv-spinner-sm"></span>
+                {{ payProcessing ? "Traitement..." : `Payer ${cartTotal}${cartCurrency}` }}
+              </button>
+            </div>
+
+            <!-- PayPal -->
+            <div v-else class="sv-pay-form">
+              <div id="sv-paypal-container" class="sv-paypal-wrap"></div>
+              <p class="sv-pay-note">🔒 Paiement sécurisé via PayPal</p>
+            </div>
+          </template>
         </div>
       </div>
     </Transition>
@@ -353,22 +556,22 @@ onMounted(loadSite)
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@500;600&display=swap');
-
 *{box-sizing:border-box;margin:0;padding:0}
 .sv-root{min-height:100vh;font-family:'DM Sans',sans-serif;color:#374151;background:#fff}
 
 /* LOADING / ERROR */
-.sv-loading,.sv-error{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#6b7280}
+.sv-loading,.sv-error{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#6b7280;text-align:center;padding:20px}
 .sv-spinner{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#6c63ff;border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.sv-error span{font-size:48px}
-.sv-error h2{font-size:22px;color:#374151}
-.sv-error p{font-size:14px}
-.sv-error code{background:#f3f4f6;padding:2px 8px;border-radius:4px;font-size:13px}
+.sv-error span{font-size:48px}.sv-error h2{font-size:22px;color:#374151}
+.sv-error p{font-size:14px}.sv-error code{background:#f3f4f6;padding:2px 8px;border-radius:4px}
 
 /* NAV */
 .sv-nav{background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 32px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06)}
-.sv-brand{font-family:'Playfair Display',serif;font-size:18px;color:#1a1a2e;margin-right:auto;font-weight:600}
+.sv-brand{display:flex;align-items:center;gap:8px;margin-right:auto}
+.sv-brand-logo{width:32px;height:32px;border-radius:6px;object-fit:contain}
+.sv-brand-icon{font-size:20px;color:#6c63ff}
+.sv-brand-name{font-family:'Playfair Display',serif;font-size:18px;color:#1a1a2e;font-weight:600}
 .sv-page-tabs{display:flex;gap:4px;flex-wrap:wrap}
 .sv-tab{background:transparent;border:1px solid transparent;color:#6b7280;font-size:14px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
 .sv-tab:hover{background:#f3f4f6;color:#111}
@@ -376,8 +579,6 @@ onMounted(loadSite)
 .sv-cart-btn{display:flex;align-items:center;gap:6px;background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;transition:all .15s}
 .sv-cart-btn:hover{background:#ede9fe;border-color:#6c63ff}
 .sv-cart-badge{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px}
-
-/* PAGE */
 .sv-page{min-height:calc(100vh - 57px)}
 
 /* HERO */
@@ -386,27 +587,19 @@ onMounted(loadSite)
 .sv-hero-sub{font-size:20px;color:#6b7280;margin-bottom:32px}
 .sv-hero-cta{background:#6c63ff;color:white;border:none;border-radius:10px;padding:14px 32px;font-size:16px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:transform .2s}
 .sv-hero-cta:hover{transform:translateY(-2px)}
-
 /* TEXT */
-.sv-text{padding:48px 60px}
-.sv-text p{font-size:17px;line-height:1.8;color:#374151;max-width:720px}
-
+.sv-text{padding:48px 60px}.sv-text p{font-size:17px;line-height:1.8;color:#374151;max-width:720px}
 /* IMAGE */
-.sv-image{padding:32px 60px}
-.sv-image img{width:100%;border-radius:12px;display:block}
-
+.sv-image{padding:32px 60px}.sv-image img{width:100%;border-radius:12px;display:block}
 /* GALLERY */
-.sv-gallery{padding:32px 60px}
-.sv-gallery-grid{display:grid;gap:10px}
+.sv-gallery{padding:32px 60px}.sv-gallery-grid{display:grid;gap:10px}
 .sv-gallery-item{border-radius:10px;overflow:hidden;aspect-ratio:1}
 .sv-gallery-item img{width:100%;height:100%;object-fit:cover;display:block}
-
 /* VIDEO */
 .sv-video{padding:32px 60px}
 .sv-video-title{font-family:'Playfair Display',serif;font-size:24px;color:#1a1a2e;margin-bottom:16px}
 .sv-video-wrap{border-radius:12px;overflow:hidden}
 .sv-video-wrap iframe{width:100%;height:400px;border:none;display:block}
-
 /* PRODUCTS */
 .sv-products{padding:48px 60px;background:#fafafa}
 .sv-products-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
@@ -423,7 +616,6 @@ onMounted(loadSite)
 .sv-product-price{font-size:20px;font-weight:700;color:#6c63ff}
 .sv-product-btn{background:#6c63ff;color:white;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;display:flex;align-items:center;gap:6px}
 .sv-product-btn:hover{background:#5b52ee;transform:translateY(-1px)}
-
 /* FEATURES */
 .sv-features{padding:60px;background:#fafafa}
 .sv-features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:840px;margin:0 auto}
@@ -431,7 +623,6 @@ onMounted(loadSite)
 .sv-feat-icon{font-size:32px;display:block;margin-bottom:12px}
 .sv-feature-card strong{font-size:16px;color:#111;display:block;margin-bottom:6px}
 .sv-feature-card p{font-size:14px;color:#6b7280;line-height:1.5}
-
 /* PAYMENT */
 .sv-payment{padding:80px 60px;background:linear-gradient(135deg,#f8f7ff,#ede9fe);text-align:center}
 .sv-payment-title{font-family:'Playfair Display',serif;font-size:36px;color:#1a1a2e;margin-bottom:10px}
@@ -440,15 +631,12 @@ onMounted(loadSite)
 .sv-payment-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
 .sv-pay-btn{padding:14px 32px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:transform .2s}
 .sv-pay-btn:hover{transform:translateY(-2px)}
-.sv-stripe{background:#635bff;color:white}
-.sv-paypal{background:#ffc439;color:#003087}
-
+.sv-stripe{background:#635bff;color:white}.sv-paypal{background:#ffc439;color:#003087}
 /* FORM */
 .sv-form{padding:60px;background:#f8f7ff;display:flex;flex-direction:column;align-items:center;gap:12px}
 .sv-form h3{font-family:'Playfair Display',serif;font-size:30px;color:#1a1a2e;margin-bottom:12px}
 .sv-form input,.sv-form textarea{width:100%;max-width:500px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:'DM Sans',sans-serif;background:white}
 .sv-form button{background:#6c63ff;color:white;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif}
-
 /* DIVIDER */
 .sv-divider hr{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
 
@@ -456,19 +644,19 @@ onMounted(loadSite)
 .sv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px}
 .sv-modal-box{background:white;border-radius:16px;padding:32px;position:relative;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.18)}
 .sv-modal-close{position:absolute;top:16px;right:16px;background:#f3f4f6;border:none;color:#6b7280;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
-.sv-modal-header{text-align:center;margin-bottom:24px}
+.sv-modal-header{text-align:center;margin-bottom:20px}
 .sv-modal-header span{font-size:36px;display:block;margin-bottom:10px}
 .sv-modal-header h2{font-family:'Playfair Display',serif;font-size:22px;color:#1a1a2e}
 .sv-modal-enter-active,.sv-modal-leave-active{transition:all .25s ease}
 .sv-modal-enter-from,.sv-modal-leave-to{opacity:0;transform:scale(.95)}
-
-/* CART MODAL */
+/* CART */
 .sv-cart-empty{text-align:center;padding:40px;color:#9ca3af;display:flex;flex-direction:column;align-items:center;gap:12px}
 .sv-cart-empty span{font-size:40px;opacity:.5}
-.sv-cart-items{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;max-height:360px;overflow-y:auto}
+.sv-cart-items{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;max-height:340px;overflow-y:auto}
 .sv-cart-item{display:grid;grid-template-columns:48px 1fr auto auto 24px;align-items:center;gap:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px}
 .sv-ci-img{width:48px;height:48px;border-radius:8px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
 .sv-ci-img img{width:100%;height:100%;object-fit:cover}
+.sv-ci-info{min-width:0}
 .sv-ci-name{font-size:13px;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sv-ci-price{font-size:12px;color:#6b7280}
 .sv-ci-qty{display:flex;align-items:center;gap:6px}
@@ -485,31 +673,35 @@ onMounted(loadSite)
 .sv-btn-sec{flex:1;padding:11px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;color:#374151}
 .sv-btn-primary{flex:2;padding:12px;background:#6c63ff;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif}
 .sv-btn-primary:hover{background:#5b52ee}
-
 /* PAYMENT MODAL */
 .sv-pay-box{max-width:440px}
-.sv-pay-amount{font-size:38px;font-weight:700;color:#6c63ff;margin-top:8px}
-.sv-pay-tabs{display:flex;gap:8px;margin-bottom:20px}
+.sv-pay-amount{font-size:34px;font-weight:700;color:#6c63ff;margin-top:6px}
+.sv-customer-fields{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.sv-cust-input{width:100%;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none}
+.sv-cust-input:focus{border-color:#6c63ff}
+.sv-pay-error{background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
+.sv-pay-tabs{display:flex;gap:8px;margin-bottom:16px}
 .sv-pay-tabs button{flex:1;padding:10px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;color:#6b7280;transition:all .15s}
 .sv-pay-tabs button.active{background:#635bff;color:white;border-color:#635bff}
-.sv-pay-form{display:flex;flex-direction:column;gap:14px}
-.sv-pay-form label{display:block;font-size:11px;color:#6b7280;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.sv-card-mock{background:#f3f4f6;border:1px solid #e5e7eb;padding:10px 14px;border-radius:8px;font-size:14px;font-family:monospace;letter-spacing:1px;color:#9ca3af}
-.sv-pay-row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sv-pay-form{display:flex;flex-direction:column;gap:12px}
+.sv-card-label{font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.sv-card-el{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:13px 14px;min-height:46px}
+.sv-paypal-wrap{min-height:50px}
 .sv-pay-note{font-size:11px;color:#9ca3af;text-align:center}
-.sv-pay-btn-submit{width:100%;padding:14px;background:#635bff;color:white;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:4px}
-.sv-paypal-info{text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
-.sv-paypal-logo{font-size:22px;font-weight:800;color:#003087;background:#ffc439;padding:8px 24px;border-radius:8px;display:inline-block}
-.sv-paypal-info p{font-size:14px;color:#6b7280}
-.sv-btn-paypal{background:#ffc439;color:#003087;border:none;border-radius:8px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;width:100%}
+.sv-pay-submit{width:100%;padding:14px;background:#635bff;color:white;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
+.sv-pay-submit:disabled{opacity:.6;cursor:not-allowed}
+.sv-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
+/* PAY SUCCESS */
+.sv-pay-success{text-align:center;padding:16px 0}
+.sv-success-icon{width:64px;height:64px;background:#10b981;border-radius:50%;color:white;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+.sv-pay-success h2{font-family:'Playfair Display',serif;font-size:22px;color:#1a1a2e;margin-bottom:8px}
+.sv-pay-success p{font-size:14px;color:#6b7280;line-height:1.6}
 
 @media(max-width:768px){
   .sv-nav{padding:10px 16px;flex-wrap:wrap}
-  .sv-hero{padding:60px 24px}
-  .sv-hero-title{font-size:34px}
+  .sv-hero{padding:60px 24px}.sv-hero-title{font-size:34px}
   .sv-text,.sv-image,.sv-gallery,.sv-video,.sv-products,.sv-features,.sv-payment,.sv-form{padding-left:20px;padding-right:20px}
-  .sv-products-grid{grid-template-columns:1fr 1fr}
-  .sv-features-grid{grid-template-columns:1fr}
+  .sv-products-grid{grid-template-columns:1fr 1fr}.sv-features-grid{grid-template-columns:1fr}
 }
 @media(max-width:480px){
   .sv-products-grid{grid-template-columns:1fr}

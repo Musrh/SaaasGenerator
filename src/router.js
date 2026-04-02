@@ -31,9 +31,9 @@ const routes = [
 
   // ── Pages résultat paiement client du store ───────────────
   { path: "/payment-success", name: "payment-success",
-    component: () => import("../views/PaymentSuccess.vue") },
+    component: () => import("./views/PaymentSuccess.vue") },
   { path: "/payment-cancel",  name: "payment-cancel",
-    component: () => import("../views/PaymentCancel.vue")  },
+    component: () => import("./views/PaymentCancel.vue")  },
 
   // ── 404 ───────────────────────────────────────────────────
   {

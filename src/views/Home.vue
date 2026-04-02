@@ -469,6 +469,8 @@ const publishSite = async () => {
     const userRef = doc(db, "users", uid)
     await setDoc(userRef, {
       siteData: site.value,
+      siteName: siteName.value,
+      siteLogo: siteLogo.value,
       publishedSlug: slug,
       publishedAt: new Date().toISOString(),
       customDomain: domain || null,
@@ -556,14 +558,26 @@ const activeSection = computed(() => currentPage.value?.sections?.[activeSection
 
 onMounted(() => {
   loadSavedConfigs()
+  // Restaurer depuis localStorage immédiatement (avant Firestore)
+  const sn = localStorage.getItem("siteName")
+  const sl = localStorage.getItem("siteLogo")
+  if (sn) siteName.value = sn
+  if (sl) siteLogo.value = sl
   onAuthStateChanged(auth, async (user) => {
     if (!user) return
     currentUser.value = user
     try {
       const docRef = doc(db, "users", user.uid)
       const snap = await getDoc(docRef)
-      if (snap.exists() && snap.data().siteData) {
-        site.value = snap.data().siteData
+      if (snap.exists()) {
+        const d = snap.data()
+        if (d.siteData)   site.value     = d.siteData
+        if (d.siteName)   siteName.value = d.siteName
+        if (d.siteLogo)   siteLogo.value = d.siteLogo
+        if (!d.siteData) {
+          const saved = localStorage.getItem("siteDataPro")
+          if (saved) site.value = JSON.parse(saved)
+        }
       } else {
         const saved = localStorage.getItem("siteDataPro")
         if (saved) site.value = JSON.parse(saved)
@@ -578,6 +592,8 @@ onMounted(() => {
 })
 
 watch(site, () => { isSaved.value = false }, { deep: true })
+watch(siteName, (v) => { localStorage.setItem("siteName", v) })
+watch(siteLogo, (v) => { localStorage.setItem("siteLogo", v) })
 watch(currentPageIndex, () => { activeSectionIndex.value = null })
 
 // Init Stripe Elements when payment modal opens on Stripe tab
@@ -599,7 +615,7 @@ const saveSite = async () => {
   isSaving.value = true
   try {
     const docRef = doc(db, "users", currentUser.value.uid)
-    await setDoc(docRef, { siteData: site.value }, { merge: true })
+    await setDoc(docRef, { siteData: site.value, siteName: siteName.value, siteLogo: siteLogo.value }, { merge: true })
     localStorage.setItem("siteDataPro", JSON.stringify(site.value))
     isSaved.value = true
     notify(t.value.saved)
@@ -769,6 +785,10 @@ const processStripePayment = async () => {
     }
     // 1. Create PaymentIntent on backend
     const amount = Math.round(parseFloat(paymentModalSection.value?.amount || "0") * 100)
+    // Construire les items du panier pour le backend
+    const orderItems = cart.value.length > 0
+      ? cart.value.map(i => ({ nom: i.name, prix: parseFloat(i.price), quantity: i.qty }))
+      : [{ nom: paymentModalSection.value?.title || "Commande", prix: parseFloat(paymentModalSection.value?.amount || 0), quantity: 1 }]
     const res = await fetch(cfg.backendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -776,6 +796,9 @@ const processStripePayment = async () => {
         amount,
         currency: cfg.currency || "eur",
         description: paymentModalSection.value?.description || "Commande",
+        items: orderItems,
+        storeName: cfg.storeName || siteName.value,
+        uid: currentUser.value?.uid,
       }),
     })
     if (!res.ok) throw new Error(`Backend error: ${res.status}`)
@@ -1322,7 +1345,11 @@ const setPageStyle = (type, value) => {
       <button class="pub-preview-close" @click="showPublicPreview=false">✕ Fermer l'aperçu</button>
       <!-- Navigation du site -->
       <nav class="pub-preview-nav">
-        <span class="pub-preview-brand">{{ siteLogo ? '' : '◈' }} {{ siteName }}</span>
+        <div class="pub-preview-brand-wrap">
+          <img v-if="siteLogo" :src="siteLogo" class="pub-preview-logo" alt="logo"/>
+          <span v-else class="pub-preview-brand-icon">◈</span>
+          <span class="pub-preview-brand-name">{{ siteName }}</span>
+        </div>
         <div class="pub-preview-tabs">
           <button
             v-for="(p,i) in site.pages" :key="p.id"

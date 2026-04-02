@@ -5,8 +5,8 @@
 export const stripeConfig = {
   publishableKey: "pk_test_51T20K6AwgHqDmd0F8LcnioXKpuzSyQv7aPkDhhmtPEH9BA98KOzf6F43K2O4A5WjhHHVlguyp48W0bmqMbwSvcDm00YINXIME3",
 
-  // ✅ Route backend Stripe Checkout
-  backendUrl: "https://stripe-backend-production-2ac4.up.railway.app/create-stripe-session",
+  // ✅ Nouveau backend Railway
+  backendUrl: "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
 
   currency: "eur",
   storeName: "RmStore",
@@ -29,7 +29,7 @@ export const createCheckoutSession = async ({
   plan = "basic",
 }) => {
   try {
-    console.log("🚀 Envoi vers backend :", stripeConfig.backendUrl);
+    console.log("🚀 Backend utilisé :", stripeConfig.backendUrl);
 
     const response = await fetch(stripeConfig.backendUrl, {
       method: "POST",
@@ -46,9 +46,9 @@ export const createCheckoutSession = async ({
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      console.error("❌ Erreur backend :", text);
-      throw new Error("Erreur Stripe session");
+      const errorText = await response.text();
+      console.error("❌ Erreur backend :", errorText);
+      throw new Error("Erreur création session Stripe");
     }
 
     const data = await response.json();
@@ -61,13 +61,13 @@ export const createCheckoutSession = async ({
     window.location.href = data.url;
 
   } catch (error) {
-    console.error("❌ Checkout error :", error);
+    console.error("❌ Erreur paiement :", error);
     alert("Erreur lors du paiement");
   }
 };
 
 // ============================================================
-// (Optionnel) Charger Stripe SDK si besoin futur
+// (Optionnel) Charger Stripe SDK
 // ============================================================
 
 export const loadStripeSDK = () => {
@@ -84,7 +84,7 @@ export const loadStripeSDK = () => {
     };
 
     script.onerror = () => {
-      reject("Erreur chargement Stripe SDK");
+      reject("Erreur chargement Stripe");
     };
 
     document.head.appendChild(script);

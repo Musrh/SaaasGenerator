@@ -294,6 +294,8 @@ const saveOrder = async (provider, transactionId) => {
       siteSlug:      props.uid,
     })
     cart.value = []  // vider le panier après commande
+    // Stocker la commande dans sessionStorage pour la page de succès
+    sessionStorage.setItem("lastOrder", JSON.stringify(orderData))
   } catch (e) { console.error("Erreur sauvegarde commande:", e) }
 }
 </script>

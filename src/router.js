@@ -29,6 +29,12 @@ const routes = [
     props: true,          // passe uid comme prop au composant
   },
 
+  // ── Pages résultat paiement client du store ───────────────
+  { path: "/payment-success", name: "payment-success",
+    component: () => import("./views/PaymentSuccess.vue") },
+  { path: "/payment-cancel",  name: "payment-cancel",
+    component: () => import("./views/PaymentCancel.vue")  },
+
   // ── 404 ───────────────────────────────────────────────────
   {
     path: "/:pathMatch(.*)*",

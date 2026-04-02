@@ -557,7 +557,6 @@ const currentPage = computed(() => site.value.pages[currentPageIndex.value] || s
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
 onMounted(() => {
-  loadSavedConfigs()
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")
@@ -566,6 +565,7 @@ onMounted(() => {
   onAuthStateChanged(auth, async (user) => {
     if (!user) return
     currentUser.value = user
+    await loadSavedConfigs()
     try {
       const docRef = doc(db, "users", user.uid)
       const snap = await getDoc(docRef)
@@ -880,57 +880,131 @@ const processPaypalPayment = async () => {
   }
 }
 
-// Live config objects (overridable from the editor)
-const liveStripeConfig = ref({ ...stripeConfig })
-const livePaypalConfig = ref({ ...paypalConfig })
+// Live config objects du STORE (propres à chaque propriétaire)
+// Ces configs sont SÉPARÉES de stripe.js/paypal.js qui servent
+// pour les paiements des plans vers Sassbuilder
+const liveStripeConfig = ref({
+  publishableKey: "",
+  backendUrl: "",
+  currency: "eur",
+  storeName: "",
+  successUrl: "",
+  cancelUrl: "",
+  mode: "test",
+})
+const livePaypalConfig = ref({
+  clientId: "",
+  mode: "sandbox",
+  currency: "EUR",
+  locale: "fr_FR",
+  createOrderUrl: "",
+  captureOrderUrl: "",
+  successUrl: "",
+  brandName: "",
+})
 
-// Load any saved configs from localStorage
-const loadSavedConfigs = () => {
+// Charger la config paiement du store depuis Firestore
+const loadSavedConfigs = async () => {
+  if (!currentUser.value) return
   try {
-    const sc = localStorage.getItem("stripeConfigCustom")
-    if (sc) liveStripeConfig.value = { ...stripeConfig, ...JSON.parse(sc) }
-    const pc = localStorage.getItem("paypalConfigCustom")
-    if (pc) livePaypalConfig.value = { ...paypalConfig, ...JSON.parse(pc) }
+    const { doc: fsDoc, getDoc: fsGet } = await import("firebase/firestore")
+    // Chercher dans users/{uid}/storePaymentConfig
+    const userSnap = await fsGet(fsDoc(db, "users", currentUser.value.uid))
+    if (userSnap.exists()) {
+      const d = userSnap.data()
+      if (d.storePaymentConfig?.stripe) {
+        liveStripeConfig.value = { ...liveStripeConfig.value, ...d.storePaymentConfig.stripe }
+      }
+      if (d.storePaymentConfig?.paypal) {
+        livePaypalConfig.value = { ...livePaypalConfig.value, ...d.storePaymentConfig.paypal }
+      }
+    }
   } catch(e) { console.warn("Config load error:", e) }
 }
 
 const openConfigEditor = (target) => {
   configEditorTarget.value = target
-  const cfg = target === "stripe" ? liveStripeConfig.value : livePaypalConfig.value
-  const fields = target === "stripe"
-    ? ["publishableKey","backendUrl","currency","storeName","successUrl","cancelUrl","mode"]
-    : ["clientId","mode","currency","locale","createOrderUrl","captureOrderUrl","successUrl","brandName"]
-  const prefix = target === "stripe"
-    ? "// stripe.js — Paramètres Stripe\nexport const stripeConfig = {"
-    : "// paypal.js — Paramètres PayPal\nexport const paypalConfig = {"
-  configEditorContent.value = prefix + "\n" +
-    fields.map(k => `  ${k}: "${cfg[k] || ""}",`).join("\n") +
-    "\n}"
+  // Auto-générer les URLs selon le slug publié du store
+  const uid  = currentUser.value?.uid || ""
+  const slug = publishAddress.value?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || uid
+  const base = "https://musrh.github.io/SaaasGenerator/#"
+
+  if (target === "stripe") {
+    const cfg = liveStripeConfig.value
+    // Si pas d'URLs configurées, générer automatiquement
+    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${uid}`
+    const cancelUrl  = cfg.cancelUrl  || `${base}/site/${slug || uid}`
+    configEditorContent.value =
+`// ============================================================
+//  Config Stripe de VOTRE STORE
+//  Ces paramètres permettent à vos CLIENTS de vous payer.
+//  Différent de stripe.js (qui sert pour les plans Sassbuilder)
+// ============================================================
+{
+  "publishableKey": "${cfg.publishableKey || "pk_test_VOTRE_CLE_PUBLIQUE"}",
+  "backendUrl": "${cfg.backendUrl || "https://votre-backend.com/create-payment-intent"}",
+  "currency": "${cfg.currency || "eur"}",
+  "storeName": "${cfg.storeName || siteName.value}",
+  "successUrl": "${successUrl}",
+  "cancelUrl": "${cancelUrl}",
+  "mode": "${cfg.mode || "test"}"
+}`
+  } else {
+    const cfg = livePaypalConfig.value
+    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${uid}`
+    configEditorContent.value =
+`// ============================================================
+//  Config PayPal de VOTRE STORE
+//  Vos clients vous paient via votre propre compte PayPal.
+// ============================================================
+{
+  "clientId": "${cfg.clientId || "VOTRE_CLIENT_ID_PAYPAL"}",
+  "mode": "${cfg.mode || "sandbox"}",
+  "currency": "${cfg.currency || "EUR"}",
+  "locale": "${cfg.locale || "fr_FR"}",
+  "createOrderUrl": "${cfg.createOrderUrl || "https://votre-backend.com/paypal/create-order"}",
+  "captureOrderUrl": "${cfg.captureOrderUrl || "https://votre-backend.com/paypal/capture-order"}",
+  "successUrl": "${successUrl}",
+  "brandName": "${cfg.brandName || siteName.value}"
+}`
+  }
   showConfigEditor.value = true
 }
 
-const saveConfigFile = () => {
+const saveConfigFile = async () => {
+  if (!currentUser.value) { notify("Connectez-vous d'abord.", "error"); return }
   try {
-    // Parse the JS object from the textarea content
+    // Parser le JSON depuis le textarea
     const txt = configEditorContent.value
-    const jsonStr = txt
-      .replace(/\/\/.*$/gm, '')           // remove comments
-      .replace(/export const \w+ = /, '') // remove export
-      .replace(/(\w+):/g, '"$1":')        // quote keys
-      .replace(/,(\s*[}\]])/g, '$1')      // remove trailing commas
+      .replace(/\/\/.*$/gm, "")      // supprimer commentaires
+      .replace(/\/\*[\s\S]*?\*\//g, "") // commentaires bloc
       .trim()
-    const parsed = JSON.parse(jsonStr)
+    // Extraire le JSON entre { }
+    const jsonMatch = txt.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error("Format invalide — doit contenir { ... }")
+    const parsed = JSON.parse(jsonMatch[0])
+
     if (configEditorTarget.value === "stripe") {
-      liveStripeConfig.value = { ...stripeConfig, ...parsed }
-      localStorage.setItem("stripeConfigCustom", JSON.stringify(parsed))
+      liveStripeConfig.value = { ...liveStripeConfig.value, ...parsed }
     } else {
-      livePaypalConfig.value = { ...paypalConfig, ...parsed }
-      localStorage.setItem("paypalConfigCustom", JSON.stringify(parsed))
+      livePaypalConfig.value = { ...livePaypalConfig.value, ...parsed }
     }
-    notify(`✓ ${configEditorTarget.value}.js sauvegardé et activé`)
+
+    // Sauvegarder dans Firestore users/{uid}/storePaymentConfig
+    const storePaymentConfig = {
+      stripe: { ...liveStripeConfig.value },
+      paypal: { ...livePaypalConfig.value },
+    }
+    await setDoc(
+      doc(db, "users", currentUser.value.uid),
+      { storePaymentConfig },
+      { merge: true }
+    )
+
+    notify(`✓ Config ${configEditorTarget.value} sauvegardée dans Firestore`)
     showConfigEditor.value = false
   } catch(e) {
-    notify("Erreur de parsing — vérifiez la syntaxe", "error")
+    notify("Erreur : " + e.message, "error")
     console.error(e)
   }
 }
@@ -1149,14 +1223,16 @@ const setPageStyle = (type, value) => {
         <button class="modal-close" @click="showConfigEditor=false">✕</button>
         <div class="modal-header">
           <span class="modal-icon">{{ configEditorTarget==='stripe'?'💳':'🅿' }}</span>
-          <h2>{{ configEditorTarget==='stripe'?'stripe.js':'paypal.js' }}</h2>
-          <p class="modal-desc">Modifiez et téléchargez votre fichier de configuration</p>
+          <h2>Config {{ configEditorTarget==='stripe'?'Stripe':'PayPal' }} de votre store</h2>
+          <p class="modal-desc">
+            Configurez vos clés pour recevoir les paiements de <strong>vos clients</strong>.
+            Sauvegardé dans Firestore — actif immédiatement.
+          </p>
         </div>
         <textarea v-model="configEditorContent" class="config-editor-textarea" spellcheck="false"/>
         <div class="config-modal-actions">
           <button class="btn-action" @click="showConfigEditor=false">Annuler</button>
-          <button class="btn-action" @click="downloadConfigFile">⬇ Télécharger</button>
-          <button class="btn-action primary" @click="saveConfigFile">💾 Sauvegarder & Activer</button>
+          <button class="btn-action primary" @click="saveConfigFile">💾 Sauvegarder dans Firestore</button>
         </div>
       </div>
     </div>

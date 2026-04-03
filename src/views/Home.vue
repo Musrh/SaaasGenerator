@@ -1129,33 +1129,26 @@ const setPageStyle = (type, value) => {
 }
 
 
-export default {
-  components: {
-    VoiceAssistant
-  },
+const showAssistant = ref(false);
 
-  data() {
-    return {
-      showAssistant: false
-    };
-  },
-
-  methods: {
-    toggleAssistant() {
-      this.showAssistant = !this.showAssistant;
-    }
-  }
-};
+function toggleAssistant() {
+  showAssistant.value = !showAssistant.value;
+}
   
   
 </script>
 
 <template>
-<div class="saas-root" :dir="isRtl?'rtl':'ltr'">
-
-  <button class="voice-assistant-btn" @click="toggleAssistant">
+<button class="voice-assistant-btn" @click="toggleAssistant">
   🎤 Assistant vocal
 </button>
+
+<VoiceAssistant
+  v-if="showAssistant"
+  @close="showAssistant = false"
+/>
+
+  
 
 <VoiceAssistant v-if="showAssistant" @close="showAssistant = false" />
 

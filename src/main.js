@@ -1,9 +1,7 @@
 // ============================================================
 //  SaaasGenerator/src/main.js
-//  ⚠️  Ce fichier REMPLACE votre main.js existant
-//  Chemin : SaaasGenerator/src/main.js
+//  Remplace TOUT le contenu de votre main.js existant
 // ============================================================
-
 import { createApp } from "vue"
 import App    from "./App.vue"
 import router from "./router.js"
@@ -11,28 +9,23 @@ import router from "./router.js"
 const app = createApp(App)
 app.use(router)
 
-// ── Détection automatique du retour Stripe ───────────────────
-// Stripe redirige vers l'URL racine car il supprime le fragment #
-// On détecte au démarrage si une commande est en attente
-// via localStorage et on redirige vers /payment-success
+// ── Détection retour Stripe ───────────────────────────────────
+// Stripe redirige vers l'URL racine (il supprime le #fragment)
+// On détecte au démarrage via localStorage et on redirige
 router.isReady().then(() => {
   const pending = localStorage.getItem("pendingStripeOrder")
-  const route   = router.currentRoute.value
-
-  if (pending && route.name === "home") {
+  if (pending && router.currentRoute.value.name === "home") {
     try {
       const order = JSON.parse(pending)
-      // Vérifier que la commande date de moins de 30 minutes
-      const age = Date.now() - new Date(order.createdAt).getTime()
-      if (age < 30 * 60 * 1000) {
-        router.push({ name: "payment-success" })
+      const age   = Date.now() - new Date(order.createdAt).getTime()
+      if (age < 30 * 60 * 1000) {   // moins de 30 minutes
+        router.replace({ name: "payment-success" })
       } else {
-        // Trop ancienne → nettoyer
         localStorage.removeItem("pendingStripeOrder")
         localStorage.removeItem("stripeOwnerUid")
         localStorage.removeItem("stripeSiteSlug")
       }
-    } catch (e) {
+    } catch(e) {
       localStorage.removeItem("pendingStripeOrder")
     }
   }

@@ -932,8 +932,10 @@ const openConfigEditor = (target) => {
   if (target === "stripe") {
     const cfg = liveStripeConfig.value
     // Si pas d'URLs configurées, générer automatiquement
-    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${uid}`
-    const cancelUrl  = cfg.cancelUrl  || `${base}/site/${slug || uid}`
+    // URLs correctes : paramètres AVANT le # (Stripe ignore tout après #)
+    const origin = "https://musrh.github.io/SaaasGenerator"
+    const successUrl = cfg.successUrl || `${origin}/?stripe=success&uid=${uid}#/payment-success`
+    const cancelUrl  = cfg.cancelUrl  || `${origin}/?stripe=cancel&uid=${uid}#/site/${slug || uid}`
     configEditorContent.value =
 `// ============================================================
 //  Config Stripe de VOTRE STORE
@@ -951,7 +953,8 @@ const openConfigEditor = (target) => {
 }`
   } else {
     const cfg = livePaypalConfig.value
-    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${uid}`
+    const origin2 = "https://musrh.github.io/SaaasGenerator"
+    const successUrl = cfg.successUrl || `${origin2}/?stripe=success&uid=${uid}#/payment-success`
     configEditorContent.value =
 `// ============================================================
 //  Config PayPal de VOTRE STORE

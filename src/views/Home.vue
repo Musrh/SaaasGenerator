@@ -1128,7 +1128,9 @@ const setPageStyle = (type, value) => {
   if (type==="fontFamily") currentPage.value.style.fontFamily = value
 }
 
-components: {
+
+export default {
+  components: {
     VoiceAssistant
   },
 
@@ -1143,6 +1145,8 @@ components: {
       this.showAssistant = !this.showAssistant;
     }
   }
+};
+  
   
 </script>
 

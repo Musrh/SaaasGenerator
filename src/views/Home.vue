@@ -1139,18 +1139,19 @@ function toggleAssistant() {
 </script>
 
 <template>
-<button class="voice-assistant-btn" @click="toggleAssistant">
-  🎤 Assistant vocal
-</button>
 
-<VoiceAssistant
-  v-if="showAssistant"
-  @close="showAssistant = false"
-/>
 
-  
 
-<VoiceAssistant v-if="showAssistant" @close="showAssistant = false" />
+  <template>
+  <button class="voice-assistant-btn" @click="toggleAssistant">
+    🎤 Assistant vocal
+  </button>
+
+  <VoiceAssistant
+    v-if="showAssistant"
+    @close="showAssistant = false"
+  />
+</template>
 
   <!-- NOTIFICATION -->
   <Transition name="notif">

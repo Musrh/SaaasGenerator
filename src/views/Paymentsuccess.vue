@@ -17,8 +17,13 @@
         </div>
       </div>
 
+      <div v-if="saving" class="ps-saving">
+        <div class="ps-saving-spinner"></div>
+        <p>Enregistrement de votre commande...</p>
+      </div>
+      <template v-else>
       <h1 class="ps-title">Commande confirmée !</h1>
-      <p class="ps-subtitle">Votre paiement a bien été traité.</p>
+      <p class="ps-subtitle">Votre paiement a bien été traité. {{ saved ? '✓ Commande enregistrée.' : '' }}</p>
 
       <!-- Récapitulatif -->
       <div v-if="orderData" class="ps-summary">
@@ -63,6 +68,7 @@
           Accueil
         </button>
       </div>
+      </template>
 
     </div>
   </div>
@@ -71,25 +77,48 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { useRouter, useRoute } from "vue-router"
+import { db } from "../firebase.js"
+import { collection, addDoc } from "firebase/firestore"
 
 const router    = useRouter()
 const route     = useRoute()
 const orderData = ref(null)
+const saving    = ref(true)
+const saved     = ref(false)
 
-onMounted(() => {
-  // Récupérer les données de commande depuis sessionStorage (placé par SiteViewer)
-  const raw = sessionStorage.getItem("lastOrder")
+onMounted(async () => {
+  // 1. Récupérer la commande en attente depuis sessionStorage
+  //    (sauvegardée par SiteViewer avant le redirect Stripe)
+  const raw = sessionStorage.getItem("pendingOrder") || sessionStorage.getItem("lastOrder")
   if (raw) {
     try {
-      orderData.value = JSON.parse(raw)
+      const order = JSON.parse(raw)
+      orderData.value = order
+
+      // 2. Sauvegarder la commande dans Firestore
+      //    users/{ownerUid}/orders/{orderId}
+      const ownerUid = order.ownerUid || route.query.uid
+      if (ownerUid) {
+        await addDoc(collection(db, "users", ownerUid, "orders"), {
+          ...order,
+          status:    "paid",
+          createdAt: new Date().toISOString(),
+          transactionId: route.query.session_id || "stripe-checkout",
+        })
+        saved.value = true
+      }
+
+      sessionStorage.removeItem("pendingOrder")
       sessionStorage.removeItem("lastOrder")
-    } catch(e) { console.warn(e) }
+    } catch(e) {
+      console.error("Erreur sauvegarde commande:", e)
+    }
   }
+  saving.value = false
 })
 
 const goBack = () => {
-  // Retourner au store depuis lequel le client venait
-  const siteUid = route.query.uid || orderData.value?.siteSlug
+  const siteUid = route.query.uid || orderData.value?.siteSlug || orderData.value?.ownerUid
   if (siteUid) router.push(`/site/${siteUid}`)
   else router.push("/")
 }
@@ -137,4 +166,7 @@ const goHome = () => router.push("/")
 .ps-btn-primary:hover{background:#059669;transform:translateY(-1px)}
 .ps-btn-sec{flex:1;background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;border-radius:12px;padding:14px;font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
 .ps-btn-sec:hover{background:#e5e7eb}
+.ps-saving{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 0;color:#6b7280}
+.ps-saving-spinner{width:36px;height:36px;border:3px solid #d1fae5;border-top-color:#10b981;border-radius:50%;animation:pop2 .7s linear infinite}
+@keyframes pop2{to{transform:rotate(360deg)}}
 </style>

@@ -557,7 +557,7 @@ const copyDnsRecords = () => {
 const currentPage = computed(() => site.value.pages[currentPageIndex.value] || site.value.pages[0])
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
-const paymentSuccess = ref(false)
+
 onMounted(() => {
   // ── DÉTECTION RETOUR STRIPE ─────────────────────────────────
   // Si Stripe a redirigé ici après paiement, on redirige vers PaymentSuccess

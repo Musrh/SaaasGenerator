@@ -1131,6 +1131,12 @@ const setPageStyle = (type, value) => {
 <template>
 <div class="saas-root" :dir="isRtl?'rtl':'ltr'">
 
+  <button class="voice-assistant-btn" @click="toggleAssistant">
+  🎤 Assistant vocal
+</button>
+
+<VoiceAssistant v-if="showAssistant" @close="showAssistant = false" />
+
   <!-- NOTIFICATION -->
   <Transition name="notif">
     <div v-if="showNotif" class="notif" :class="notifType">{{ notifMsg }}</div>

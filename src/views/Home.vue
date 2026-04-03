@@ -7,6 +7,7 @@ import { onAuthStateChanged } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
 
+import VoiceAssistant from "./components/VoiceAssistant.vue";
 const site = ref({
   pages: [{
     id: 1, name: "Accueil", style: {},
@@ -1126,6 +1127,23 @@ const setPageStyle = (type, value) => {
   if (type==="color") currentPage.value.style.color = value
   if (type==="fontFamily") currentPage.value.style.fontFamily = value
 }
+
+components: {
+    VoiceAssistant
+  },
+
+  data() {
+    return {
+      showAssistant: false
+    };
+  },
+
+  methods: {
+    toggleAssistant() {
+      this.showAssistant = !this.showAssistant;
+    }
+  }
+  
 </script>
 
 <template>

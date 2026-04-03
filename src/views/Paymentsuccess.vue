@@ -1,73 +1,85 @@
 <!-- ============================================================
-  SaaasGenerator/src/views/PaymentSuccess.vue
-  Affiché après un paiement client RÉUSSI dans un store.
-  - Le client vient d'acheter dans le store d'un propriétaire
-  - La commande a déjà été sauvegardée dans Firestore
-    par SiteViewer.vue (users/{ownerUid}/orders/{id})
-  - Cette page confirme visuellement le succès
+  PaymentSuccess.vue — VERSION CORRIGÉE
 ============================================================ -->
 <template>
   <div class="ps-root">
     <div class="ps-card">
 
-      <!-- Icône succès animée -->
+      <!-- Icône succès -->
       <div class="ps-icon-wrap">
         <div class="ps-circle">
           <span class="ps-check">✓</span>
         </div>
       </div>
 
+      <!-- Chargement -->
       <div v-if="saving" class="ps-saving">
         <div class="ps-saving-spinner"></div>
-        <p>Enregistrement de votre commande...</p>
+        <p>Confirmation de votre commande...</p>
       </div>
-      <template v-else>
-      <h1 class="ps-title">Commande confirmée !</h1>
-      <p class="ps-subtitle">Votre paiement a bien été traité. {{ saved ? '✓ Commande enregistrée.' : '' }}</p>
 
-      <!-- Récapitulatif -->
-      <div v-if="orderData" class="ps-summary">
-        <div class="ps-summary-row">
-          <span>Montant payé</span>
-          <strong>{{ orderData.total }}{{ orderData.currency }}</strong>
-        </div>
-        <div class="ps-summary-row" v-if="orderData.provider">
-          <span>Via</span>
-          <strong class="ps-provider" :class="orderData.provider">{{ orderData.provider }}</strong>
-        </div>
-        <div class="ps-summary-row" v-if="orderData.customerEmail">
-          <span>Email</span>
-          <strong>{{ orderData.customerEmail }}</strong>
-        </div>
-        <div class="ps-items" v-if="orderData.items?.length">
-          <div class="ps-items-title">Articles commandés</div>
-          <div v-for="item in orderData.items" :key="item.id" class="ps-item">
-            <div class="ps-item-img">
-              <img v-if="item.image" :src="item.image" :alt="item.name"/>
-              <span v-else>🛍️</span>
+      <!-- Succès -->
+      <template v-else>
+        <h1 class="ps-title">Commande confirmée !</h1>
+        <p class="ps-subtitle">
+          Paiement validé avec succès
+          <span v-if="saved"> • Commande enregistrée ✓</span>
+        </p>
+
+        <!-- Résumé -->
+        <div v-if="orderData" class="ps-summary">
+          <div class="ps-summary-row">
+            <span>Montant payé</span>
+            <strong>{{ orderData.total }} {{ orderData.currency }}</strong>
+          </div>
+
+          <div class="ps-summary-row" v-if="orderData.customerEmail">
+            <span>Email</span>
+            <strong>{{ orderData.customerEmail }}</strong>
+          </div>
+
+          <div class="ps-items" v-if="orderData.items?.length">
+            <div class="ps-items-title">Articles</div>
+
+            <div
+              v-for="item in orderData.items"
+              :key="item.id"
+              class="ps-item"
+            >
+              <div class="ps-item-img">
+                <img v-if="item.image" :src="item.image" />
+                <span v-else>🛍️</span>
+              </div>
+
+              <div class="ps-item-info">
+                <span class="ps-item-name">{{ item.name }}</span>
+                <span class="ps-item-qty">× {{ item.qty }}</span>
+              </div>
+
+              <span class="ps-item-price">
+                {{ (item.price * item.qty).toFixed(2) }}
+                {{ item.currency || orderData.currency }}
+              </span>
             </div>
-            <div class="ps-item-info">
-              <span class="ps-item-name">{{ item.name }}</span>
-              <span class="ps-item-qty">× {{ item.qty }}</span>
-            </div>
-            <span class="ps-item-price">{{ (parseFloat(item.price) * item.qty).toFixed(2) }}{{ item.currency }}</span>
           </div>
         </div>
-      </div>
 
-      <!-- Message si pas de données (accès direct) -->
-      <div v-else class="ps-summary">
-        <p class="ps-no-data">Votre commande a été enregistrée. Vous recevrez une confirmation par email.</p>
-      </div>
+        <!-- fallback -->
+        <div v-else class="ps-summary">
+          <p class="ps-no-data">
+            Votre commande a été traitée avec succès.
+          </p>
+        </div>
 
-      <div class="ps-actions">
-        <button class="ps-btn-primary" @click="goBack">
-          ← Retourner au store
-        </button>
-        <button class="ps-btn-sec" @click="goHome">
-          Accueil
-        </button>
-      </div>
+        <!-- Actions -->
+        <div class="ps-actions">
+          <button class="ps-btn-primary" @click="goBack">
+            ← Retour au store
+          </button>
+          <button class="ps-btn-sec" @click="goHome">
+            Accueil
+          </button>
+        </div>
       </template>
 
     </div>
@@ -80,111 +92,153 @@ import { useRouter, useRoute } from "vue-router"
 import { db } from "../firebase.js"
 import { collection, addDoc } from "firebase/firestore"
 
-const router    = useRouter()
-const route     = useRoute()
+const router = useRouter()
+const route = useRoute()
+
 const orderData = ref(null)
-const saving    = ref(true)
-const saved     = ref(false)
+const saving = ref(true)
+const saved = ref(false)
 
 onMounted(async () => {
-  // Lire depuis localStorage (résiste au redirect cross-origin Stripe)
-  const raw = localStorage.getItem("pendingStripeOrder")
-        || localStorage.getItem("pendingOrder")
-        || sessionStorage.getItem("pendingOrder")
+  try {
+    // 🔥 1. récupérer la commande (résiste au redirect Stripe)
+    const raw =
+      localStorage.getItem("pendingStripeOrder") ||
+      localStorage.getItem("pendingOrder") ||
+      sessionStorage.getItem("pendingOrder")
 
-  if (raw) {
-    try {
+    if (raw) {
       const order = JSON.parse(raw)
       orderData.value = order
 
-      // Sauvegarder dans Firestore users/{ownerUid}/orders/
-      const ownerUid = order.ownerUid
-               || localStorage.getItem("stripeOwnerUid")
-               || route.query.uid
+      // 🔥 2. récupérer owner UID
+      const ownerUid =
+        order.ownerUid ||
+        localStorage.getItem("stripeOwnerUid") ||
+        route.query.uid
 
+      // 🔥 3. sauvegarde Firestore
       if (ownerUid) {
         await addDoc(collection(db, "users", ownerUid, "orders"), {
-          items:         order.items || [],
-          total:         order.total,
-          currency:      order.currency,
-          itemCount:     order.itemCount,
-          customerName:  order.customerName,
+          items: order.items || [],
+          total: order.total,
+          currency: order.currency,
+          itemCount: order.itemCount,
+          customerName: order.customerName,
           customerEmail: order.customerEmail,
-          siteSlug:      order.siteSlug || localStorage.getItem("stripeSiteSlug"),
+          siteSlug: order.siteSlug || localStorage.getItem("stripeSiteSlug"),
           ownerUid,
-          provider:      "stripe",
-          status:        "paid",
-          createdAt:     new Date().toISOString(),
+          provider: "stripe",
+          status: "paid",
+          createdAt: new Date(),
           transactionId: "stripe-checkout",
         })
+
         saved.value = true
       }
-    } catch(e) {
-      console.error("Erreur sauvegarde commande:", e)
-    } finally {
-      // Nettoyer localStorage
-      localStorage.removeItem("pendingStripeOrder")
-      localStorage.removeItem("pendingOrder")
-      localStorage.removeItem("stripeOwnerUid")
-      localStorage.removeItem("stripeSiteSlug")
-      sessionStorage.removeItem("pendingOrder")
     }
+  } catch (err) {
+    console.error("❌ Erreur PaymentSuccess:", err)
+  } finally {
+    // 🔥 4. nettoyage complet
+    localStorage.removeItem("pendingStripeOrder")
+    localStorage.removeItem("pendingOrder")
+    localStorage.removeItem("stripeOwnerUid")
+    localStorage.removeItem("stripeSiteSlug")
+    localStorage.removeItem("cart")
+    sessionStorage.removeItem("pendingOrder")
+
+    saving.value = false
   }
-  saving.value = false
 })
 
 const goBack = () => {
-  const siteUid = orderData.value?.siteSlug
-    || orderData.value?.ownerUid
-    || route.query.uid
+  const siteUid =
+    orderData.value?.siteSlug ||
+    orderData.value?.ownerUid ||
+    route.query.uid
+
   if (siteUid) router.push(`/site/${siteUid}`)
   else router.push("/")
 }
 
-const goHome = () => router.push("/")
+const goHome = () => {
+  router.push("/")
+}
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@500;600&display=swap');
-*{box-sizing:border-box;margin:0;padding:0}
-.ps-root{min-height:100vh;background:linear-gradient(135deg,#f0fdf4,#dcfce7);display:flex;align-items:center;justify-content:center;padding:24px;font-family:'DM Sans',sans-serif}
-.ps-card{background:white;border-radius:24px;padding:48px 36px;max-width:480px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(16,185,129,.15)}
+.ps-root {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: sans-serif;
+}
 
-/* Icône */
-.ps-icon-wrap{display:flex;justify-content:center;margin-bottom:24px}
-.ps-circle{width:80px;height:80px;background:linear-gradient(135deg,#10b981,#059669);border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pop .4s cubic-bezier(.175,.885,.32,1.275)}
-@keyframes pop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
-.ps-check{color:white;font-size:36px;font-weight:700;line-height:1}
+.ps-card {
+  background: white;
+  padding: 40px;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+}
 
-.ps-title{font-family:'Playfair Display',serif;font-size:28px;color:#111;margin-bottom:8px}
-.ps-subtitle{font-size:15px;color:#6b7280;margin-bottom:28px}
+.ps-circle {
+  width: 80px;
+  height: 80px;
+  background: #10b981;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: auto;
+}
 
-/* Résumé */
-.ps-summary{background:#f9fafb;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-bottom:28px;text-align:left}
-.ps-summary-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;color:#6b7280}
-.ps-summary-row:not(:last-child){border-bottom:1px solid #f3f4f6}
-.ps-summary-row strong{color:#111}
-.ps-provider{text-transform:capitalize;background:#f3f4f6;padding:2px 10px;border-radius:100px;font-size:12px}
-.ps-provider.stripe{background:rgba(99,91,255,.1);color:#635bff}
-.ps-provider.paypal{background:rgba(255,196,57,.2);color:#92400e}
-.ps-items{margin-top:14px;padding-top:14px;border-top:1px solid #e5e7eb}
-.ps-items-title{font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
-.ps-item{display:flex;align-items:center;gap:10px;padding:6px 0}
-.ps-item-img{width:36px;height:36px;border-radius:6px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.ps-item-img img{width:100%;height:100%;object-fit:cover}
-.ps-item-info{flex:1;display:flex;flex-direction:column}
-.ps-item-name{font-size:13px;font-weight:600;color:#111}
-.ps-item-qty{font-size:11px;color:#9ca3af}
-.ps-item-price{font-size:13px;font-weight:700;color:#10b981;white-space:nowrap}
-.ps-no-data{font-size:14px;color:#6b7280;line-height:1.6;text-align:center;padding:8px 0}
+.ps-check {
+  color: white;
+  font-size: 30px;
+}
 
-/* Actions */
-.ps-actions{display:flex;gap:10px}
-.ps-btn-primary{flex:2;background:#10b981;color:white;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
-.ps-btn-primary:hover{background:#059669;transform:translateY(-1px)}
-.ps-btn-sec{flex:1;background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;border-radius:12px;padding:14px;font-size:14px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
-.ps-btn-sec:hover{background:#e5e7eb}
-.ps-saving{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px 0;color:#6b7280}
-.ps-saving-spinner{width:36px;height:36px;border:3px solid #d1fae5;border-top-color:#10b981;border-radius:50%;animation:pop2 .7s linear infinite}
-@keyframes pop2{to{transform:rotate(360deg)}}
+.ps-title {
+  font-size: 24px;
+  margin-top: 20px;
+}
+
+.ps-summary {
+  background: #f9fafb;
+  padding: 15px;
+  border-radius: 10px;
+  margin-top: 20px;
+}
+
+.ps-item {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.ps-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.ps-btn-primary {
+  flex: 2;
+  background: #10b981;
+  color: white;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+}
+
+.ps-btn-sec {
+  flex: 1;
+  background: #eee;
+  padding: 12px;
+  border-radius: 10px;
+}
 </style>

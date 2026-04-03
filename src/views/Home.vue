@@ -1,13 +1,12 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
-import { useRouter } from "vue-router"
+import VoiceAssistant from "../components/VoiceAssistant.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
 
-import VoiceAssistant from "./components/VoiceAssistant.vue";
 const site = ref({
   pages: [{
     id: 1, name: "Accueil", style: {},
@@ -558,31 +557,7 @@ const copyDnsRecords = () => {
 const currentPage = computed(() => site.value.pages[currentPageIndex.value] || site.value.pages[0])
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
-
 onMounted(() => {
-  // ── DÉTECTION RETOUR STRIPE ─────────────────────────────────
-  // Si Stripe a redirigé ici après paiement, on redirige vers PaymentSuccess
-
-   const isSuccess = window.location.hash.includes("payment-success")
-
-  if (isSuccess) {
-    paymentSuccess.value = true
-
-    // 🔥 vider panier
-    localStorage.removeItem("cart")
-
-    // 🔥 éviter retour après refresh
-    localStorage.setItem("lastPayment", "success")
-  }
-
-  // 🔁 fallback refresh
-  if (localStorage.getItem("lastPayment") === "success") {
-    paymentSuccess.value = true
-  }
-  
-  
-  // ── FIN DÉTECTION STRIPE ────────────────────────────────────
-
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")
@@ -623,6 +598,32 @@ watch(siteLogo, (v) => { localStorage.setItem("siteLogo", v) })
 watch(currentPageIndex, () => { activeSectionIndex.value = null })
 
 // Init Stripe Elements when payment modal opens on Stripe tab
+// ── VOICE ASSISTANT HANDLERS ─────────────────────────────────
+const onVoiceAddSection = ({ type }) => {
+  addSection(type)
+  notify(`Section "${type}" ajoutée ✓`)
+}
+
+const onVoiceDeleteSection = () => {
+  if (activeSectionIndex.value !== null) {
+    deleteSection(activeSectionIndex.value)
+  } else if (currentPage.value.sections.length > 0) {
+    deleteSection(currentPage.value.sections.length - 1)
+  } else {
+    notify("Aucune section à supprimer", "error")
+  }
+}
+
+const onVoiceSetMode = ({ mode: m }) => {
+  mode.value = m
+}
+
+const onVoiceSave    = () => saveSite()
+const onVoicePublish = () => { showPublishModal.value = true }
+const onVoiceAddPage = () => addPage()
+const onVoiceNotify  = ({ msg, type }) => notify(msg, type || "success")
+
+
 watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, provider]) => {
   if (modalOpen && provider === 'stripe') {
     stripeCardMounted.value = false
@@ -1127,31 +1128,11 @@ const setPageStyle = (type, value) => {
   if (type==="color") currentPage.value.style.color = value
   if (type==="fontFamily") currentPage.value.style.fontFamily = value
 }
-
-
-const showAssistant = ref(false);
-
-function toggleAssistant() {
-  showAssistant.value = !showAssistant.value;
-}
-  
-  
 </script>
 
 <template>
+<div class="saas-root" :dir="isRtl?'rtl':'ltr'">
 
-  <div>
-
-  <button class="voice-assistant-btn" @click="toggleAssistant">
-    🎤 Assistant vocal
-  </button>
-
-  <VoiceAssistant
-    v-if="showAssistant"
-    @close="showAssistant = false"
-  />
-
-</div>
   <!-- NOTIFICATION -->
   <Transition name="notif">
     <div v-if="showNotif" class="notif" :class="notifType">{{ notifMsg }}</div>
@@ -1888,6 +1869,22 @@ function toggleAssistant() {
       </div>
     </main>
   </div>
+  <!-- VOICE ASSISTANT -->
+  <VoiceAssistant
+    :lang="currentLang"
+    :site-name="siteName"
+    :current-user="currentUser"
+    :is-rtl="isRtl"
+    @add-section="onVoiceAddSection"
+    @delete-section="onVoiceDeleteSection"
+    @save-site="onVoiceSave"
+    @preview="() => { mode = 'preview' }"
+    @publish="onVoicePublish"
+    @set-mode="onVoiceSetMode"
+    @add-page="onVoiceAddPage"
+    @notify="onVoiceNotify"
+  />
+
 </div>
 </template>
 

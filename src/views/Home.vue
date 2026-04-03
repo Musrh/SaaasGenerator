@@ -1140,9 +1140,6 @@ function toggleAssistant() {
 
 <template>
 
-
-
-  <template>
   <button class="voice-assistant-btn" @click="toggleAssistant">
     🎤 Assistant vocal
   </button>
@@ -1151,7 +1148,7 @@ function toggleAssistant() {
     v-if="showAssistant"
     @close="showAssistant = false"
   />
-</template>
+
 
   <!-- NOTIFICATION -->
   <Transition name="notif">

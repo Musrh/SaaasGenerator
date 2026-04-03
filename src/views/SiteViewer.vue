@@ -230,11 +230,12 @@ const payWithStripe = async () => {
     localStorage.setItem("stripeSiteSlug", props.uid)
 
     // ── URLs de retour Stripe
-    // IMPORTANT : Stripe ignore tout ce qui est après #
-    // On utilise donc des query params AVANT le # (lus dans App.vue)
+    // Stripe supprime tout ce qui est après #
+    // Solution : URL racine simple, la détection se fait dans main.js
+    // via localStorage("pendingStripeOrder") au démarrage de l'app
     const origin     = "https://musrh.github.io/SaaasGenerator"
-    const successUrl = `${origin}/?stripe=success&uid=${resolvedUid.value}#/payment-success`
-    const cancelUrl  = `${origin}/?stripe=cancel&uid=${resolvedUid.value}#/site/${props.uid}`
+    const successUrl = cfg.successUrl || `${origin}/`
+    const cancelUrl  = cfg.cancelUrl  || `${origin}/`
 
     // ── Appel backend
     const res = await fetch(cfg.backendUrl, {

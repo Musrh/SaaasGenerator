@@ -49,10 +49,8 @@ const payError     = ref("")
 const customerName  = ref("")
 const customerEmail = ref("")
 
-// Stripe
-const stripeInst   = ref(null)
-const stripeCard   = ref(null)
-const stripeReady  = ref(false)
+// Stripe Checkout (redirect vers Stripe)
+const stripeLoading = ref(false)
 
 const cartCount    = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
 const cartTotal    = computed(() => cart.value.reduce((s, i) => s + parseFloat(i.price || 0) * i.qty, 0).toFixed(2))
@@ -133,41 +131,9 @@ const loadPayConfig = async (uid) => {
 
 onMounted(loadSite)
 
-// ── Stripe Elements ───────────────────────────────────────────
-const initStripe = async () => {
-  const cfg = storePayConfig.value?.stripe
-  if (!cfg?.publishableKey || cfg.publishableKey.length < 10) {
-    payError.value = "Paiement Stripe non configuré pour ce store."
-    return
-  }
-  try {
-    if (!window.Stripe) {
-      await new Promise((res, rej) => {
-        const s = document.createElement("script")
-        s.src = "https://js.stripe.com/v3/"
-        s.onload = res; s.onerror = rej
-        document.head.appendChild(s)
-      })
-    }
-    stripeInst.value = window.Stripe(cfg.publishableKey)
-    const elements   = stripeInst.value.elements()
-    await new Promise(r => setTimeout(r, 120))
-    const el = document.getElementById("sv-card-el")
-    if (el && !stripeReady.value) {
-      const card = elements.create("card", {
-        style: {
-          base:    { fontSize: "15px", color: "#374151", fontFamily: "DM Sans, sans-serif",
-                     "::placeholder": { color: "#9ca3af" } },
-          invalid: { color: "#ef4444" },
-        },
-        hidePostalCode: true,
-      })
-      card.mount(el)
-      stripeCard.value  = card
-      stripeReady.value = true
-    }
-  } catch (e) { payError.value = "Erreur Stripe : " + e.message }
-}
+// ── Stripe Checkout (redirect) ───────────────────────────────
+// Le backend retourne { url } → on redirige vers Stripe Checkout
+// Pas besoin de Stripe Elements (formulaire inline)
 
 // ── PayPal buttons ────────────────────────────────────────────
 const initPaypal = async () => {
@@ -228,21 +194,44 @@ const initPaypal = async () => {
   } catch (e) { payError.value = "Erreur PayPal : " + e.message }
 }
 
-// ── Watch payment modal ───────────────────────────────────────
+// ── Watch payment modal → init PayPal si nécessaire ─────────
 watch([showPayModal, payProvider], ([open, provider]) => {
   if (!open) return
-  payError.value = ""; stripeReady.value = false
-  if (provider === "stripe") setTimeout(initStripe, 150)
+  payError.value = ""
   if (provider === "paypal") setTimeout(initPaypal, 150)
 })
 
-// ── Paiement Stripe ───────────────────────────────────────────
+// ── Paiement Stripe Checkout (redirect) ──────────────────────
 const payWithStripe = async () => {
   const cfg = storePayConfig.value?.stripe
   if (!cfg?.backendUrl) { payError.value = "backendUrl Stripe non configuré."; return }
+  if (!customerName.value || !customerEmail.value) {
+    payError.value = "Nom et email obligatoires."; return
+  }
   payProcessing.value = true
   payError.value = ""
   try {
+    // Sauvegarder le panier en sessionStorage AVANT le redirect
+    // (récupéré par PaymentSuccess.vue au retour)
+    const pendingOrder = {
+      items:         cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, currency: i.currency, qty: i.qty, image: i.image || "" })),
+      total:         cartTotal.value,
+      currency:      cartCurrency.value,
+      itemCount:     cartCount.value,
+      customerName:  customerName.value,
+      customerEmail: customerEmail.value,
+      siteSlug:      props.uid,
+      ownerUid:      resolvedUid.value,
+      provider:      "stripe",
+    }
+    sessionStorage.setItem("pendingOrder", JSON.stringify(pendingOrder))
+
+    // Construire les URLs de retour
+    const base       = "https://musrh.github.io/SaaasGenerator/#"
+    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${resolvedUid.value}`
+    const cancelUrl  = cfg.cancelUrl  || `${base}/site/${props.uid}`
+
+    // Appeler le backend → reçoit { url } (Stripe Checkout session)
     const res = await fetch(cfg.backendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -250,26 +239,36 @@ const payWithStripe = async () => {
         amount:      Math.round(parseFloat(cartTotal.value) * 100),
         currency:    cfg.currency || "eur",
         description: `Commande — ${cartCount.value} article(s)`,
-        items:       cart.value.map(i => ({ name: i.name, price: i.price, qty: i.qty })),
-        uid:         resolvedUid.value,
+        items:       cart.value.map(i => ({
+          nom:      i.name,
+          prix:     parseFloat(i.price),
+          quantity: i.qty,
+        })),
+        email:             customerEmail.value,
+        clientId:          resolvedUid.value,
+        storeName:         cfg.storeName || "Store",
+        adresseLivraison:  "",
+        successUrl,
+        cancelUrl,
       }),
     })
     if (!res.ok) throw new Error("Erreur backend " + res.status)
-    const { clientSecret } = await res.json()
-    const { error, paymentIntent } = await stripeInst.value.confirmCardPayment(clientSecret, {
-      payment_method: {
-        card: stripeCard.value,
-        billing_details: { name: customerName.value, email: customerEmail.value },
-      },
-    })
-    if (error) throw new Error(error.message)
-    if (paymentIntent.status === "succeeded") {
-      await saveOrder("stripe", paymentIntent.id)
-      paySuccess.value = true
+    const data = await res.json()
+
+    // Le backend retourne { url } → redirect vers Stripe Checkout
+    if (data.url) {
+      window.location.href = data.url
+      return
     }
+    // Fallback : si le backend retourne { clientSecret } (PaymentIntent)
+    if (data.clientSecret) {
+      throw new Error("Ce backend utilise PaymentIntent, pas Checkout. Contactez le support.")
+    }
+    throw new Error("Réponse backend invalide : pas d'URL Stripe")
   } catch (e) {
     payError.value = e.message
-  } finally { payProcessing.value = false }
+    payProcessing.value = false
+  }
 }
 
 // ── Sauvegarde commande Firestore ─────────────────────────────
@@ -531,14 +530,26 @@ const saveOrder = async (provider, transactionId) => {
                 @click="payProvider='paypal'">🅿 PayPal</button>
             </div>
 
-            <!-- Stripe -->
+            <!-- Stripe Checkout (redirect) -->
             <div v-if="payProvider==='stripe'" class="sv-pay-form">
-              <label class="sv-card-label">Informations de carte</label>
-              <div id="sv-card-el" class="sv-card-el"></div>
-              <p class="sv-pay-note">🔒 Paiement sécurisé via Stripe</p>
-              <button class="sv-btn-primary sv-pay-submit" :disabled="payProcessing" @click="payWithStripe">
+              <div class="sv-stripe-checkout-info">
+                <div class="sv-stripe-logo">
+                  <span>stripe</span>
+                </div>
+                <p class="sv-stripe-checkout-desc">
+                  Vous allez être redirigé vers la page de paiement sécurisée Stripe.
+                  Vos données bancaires sont traitées directement par Stripe.
+                </p>
+                <div class="sv-stripe-badges">
+                  <span>🔒 SSL</span>
+                  <span>💳 Visa / MC / CB</span>
+                  <span>🛡 3D Secure</span>
+                </div>
+              </div>
+              <button class="sv-pay-submit" :disabled="payProcessing" @click="payWithStripe">
                 <span v-if="payProcessing" class="sv-spinner-sm"></span>
-                {{ payProcessing ? "Traitement..." : `Payer ${cartTotal}${cartCurrency}` }}
+                <span v-else>💳</span>
+                {{ payProcessing ? "Redirection vers Stripe..." : `Payer ${cartTotal}${cartCurrency} par Stripe` }}
               </button>
             </div>
 
@@ -686,8 +697,11 @@ const saveOrder = async (provider, transactionId) => {
 .sv-pay-tabs button{flex:1;padding:10px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;color:#6b7280;transition:all .15s}
 .sv-pay-tabs button.active{background:#635bff;color:white;border-color:#635bff}
 .sv-pay-form{display:flex;flex-direction:column;gap:12px}
-.sv-card-label{font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.sv-card-el{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:13px 14px;min-height:46px}
+.sv-stripe-checkout-info{background:#f8f9ff;border:1px solid #e0e7ff;border-radius:10px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.sv-stripe-logo{background:#635bff;color:white;font-size:13px;font-weight:800;letter-spacing:2px;padding:6px 16px;border-radius:6px;text-transform:lowercase}
+.sv-stripe-checkout-desc{font-size:13px;color:#6b7280;line-height:1.6}
+.sv-stripe-badges{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.sv-stripe-badges span{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;font-size:11px;font-weight:600;padding:3px 10px;border-radius:100px}
 .sv-paypal-wrap{min-height:50px}
 .sv-pay-note{font-size:11px;color:#9ca3af;text-align:center}
 .sv-pay-submit{width:100%;padding:14px;background:#635bff;color:white;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}

@@ -211,8 +211,8 @@ const payWithStripe = async () => {
   payProcessing.value = true
   payError.value = ""
   try {
-    // Sauvegarder le panier en sessionStorage AVANT le redirect
-    // (récupéré par PaymentSuccess.vue au retour)
+    // ── Sauvegarder la commande dans localStorage (pas sessionStorage)
+    // sessionStorage est effacé par Stripe sur certains navigateurs mobiles
     const pendingOrder = {
       items:         cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, currency: i.currency, qty: i.qty, image: i.image || "" })),
       total:         cartTotal.value,
@@ -223,50 +223,54 @@ const payWithStripe = async () => {
       siteSlug:      props.uid,
       ownerUid:      resolvedUid.value,
       provider:      "stripe",
+      createdAt:     new Date().toISOString(),
     }
-    sessionStorage.setItem("pendingOrder", JSON.stringify(pendingOrder))
+    localStorage.setItem("pendingStripeOrder", JSON.stringify(pendingOrder))
+    localStorage.setItem("stripeOwnerUid", resolvedUid.value)
+    localStorage.setItem("stripeSiteSlug", props.uid)
 
-    // Construire les URLs de retour
-    const base       = "https://musrh.github.io/SaaasGenerator/#"
-    const successUrl = cfg.successUrl || `${base}/payment-success?uid=${resolvedUid.value}`
-    const cancelUrl  = cfg.cancelUrl  || `${base}/site/${props.uid}`
+    // ── URLs de retour Stripe
+    // IMPORTANT : Stripe ignore tout ce qui est après #
+    // On utilise donc des query params AVANT le # (lus dans App.vue)
+    const origin     = "https://musrh.github.io/SaaasGenerator"
+    const successUrl = `${origin}/?stripe=success&uid=${resolvedUid.value}#/payment-success`
+    const cancelUrl  = `${origin}/?stripe=cancel&uid=${resolvedUid.value}#/site/${props.uid}`
 
-    // Appeler le backend → reçoit { url } (Stripe Checkout session)
+    // ── Appel backend
     const res = await fetch(cfg.backendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount:      Math.round(parseFloat(cartTotal.value) * 100),
-        currency:    cfg.currency || "eur",
-        description: `Commande — ${cartCount.value} article(s)`,
-        items:       cart.value.map(i => ({
+        amount:           Math.round(parseFloat(cartTotal.value) * 100),
+        currency:         cfg.currency || "eur",
+        description:      `Commande — ${cartCount.value} article(s)`,
+        items:            cart.value.map(i => ({
           nom:      i.name,
           prix:     parseFloat(i.price),
           quantity: i.qty,
         })),
-        email:             customerEmail.value,
-        clientId:          resolvedUid.value,
-        storeName:         cfg.storeName || "Store",
-        adresseLivraison:  "",
+        email:            customerEmail.value,
+        clientId:         resolvedUid.value,
+        plan:             "store-order",
+        storeName:        cfg.storeName || "Store",
+        adresseLivraison: "",
         successUrl,
         cancelUrl,
       }),
     })
-    if (!res.ok) throw new Error("Erreur backend " + res.status)
+    if (!res.ok) throw new Error("Erreur serveur " + res.status)
     const data = await res.json()
 
-    // Le backend retourne { url } → redirect vers Stripe Checkout
     if (data.url) {
+      // Fermer les modales avant redirect
+      showCart.value     = false
+      showPayModal.value = false
       window.location.href = data.url
       return
     }
-    // Fallback : si le backend retourne { clientSecret } (PaymentIntent)
-    if (data.clientSecret) {
-      throw new Error("Ce backend utilise PaymentIntent, pas Checkout. Contactez le support.")
-    }
-    throw new Error("Réponse backend invalide : pas d'URL Stripe")
+    throw new Error(data.error || "Pas d'URL Stripe reçue")
   } catch (e) {
-    payError.value = e.message
+    payError.value      = e.message
     payProcessing.value = false
   }
 }

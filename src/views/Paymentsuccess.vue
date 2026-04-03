@@ -1,65 +1,56 @@
 <!-- ============================================================
-  PaymentSuccess.vue — VERSION CORRIGÉE
+  PaymentSuccess.vue — VERSION STABLE & PRO
 ============================================================ -->
 <template>
   <div class="ps-root">
     <div class="ps-card">
 
-      <!-- Icône succès -->
+      <!-- Icône -->
       <div class="ps-icon-wrap">
         <div class="ps-circle">
           <span class="ps-check">✓</span>
         </div>
       </div>
 
-      <!-- Chargement -->
+      <!-- Loading -->
       <div v-if="saving" class="ps-saving">
         <div class="ps-saving-spinner"></div>
-        <p>Confirmation de votre commande...</p>
+        <p>Confirmation de votre paiement...</p>
       </div>
 
-      <!-- Succès -->
+      <!-- Success -->
       <template v-else>
-        <h1 class="ps-title">Commande confirmée !</h1>
+        <h1 class="ps-title">Paiement réussi 🎉</h1>
+
         <p class="ps-subtitle">
-          Paiement validé avec succès
-          <span v-if="saved"> • Commande enregistrée ✓</span>
+          Votre commande a bien été validée
         </p>
 
         <!-- Résumé -->
         <div v-if="orderData" class="ps-summary">
           <div class="ps-summary-row">
-            <span>Montant payé</span>
+            <span>Montant</span>
             <strong>{{ orderData.total }} {{ orderData.currency }}</strong>
           </div>
 
-          <div class="ps-summary-row" v-if="orderData.customerEmail">
+          <div v-if="orderData.customerEmail" class="ps-summary-row">
             <span>Email</span>
             <strong>{{ orderData.customerEmail }}</strong>
           </div>
 
-          <div class="ps-items" v-if="orderData.items?.length">
+          <div v-if="orderData.items?.length" class="ps-items">
             <div class="ps-items-title">Articles</div>
 
             <div
-              v-for="item in orderData.items"
-              :key="item.id"
+              v-for="(item, i) in orderData.items"
+              :key="i"
               class="ps-item"
             >
-              <div class="ps-item-img">
-                <img v-if="item.image" :src="item.image" />
-                <span v-else>🛍️</span>
-              </div>
-
-              <div class="ps-item-info">
-                <span class="ps-item-name">{{ item.name }}</span>
-                <span class="ps-item-qty">× {{ item.qty }}</span>
-              </div>
-
-              <span class="ps-item-price">
-                {{ (item.price * item.qty).toFixed(2) }}
-                {{ item.currency || orderData.currency }}
-              </span>
+              <span>{{ item.nom || item.name }}</span>
+              <span>× {{ item.quantity || item.qty }}</span>
+              <strong>
+                {{ (item.prix || item.price) * (item.quantity || item.qty) }}
+              </strong>
             </div>
           </div>
         </div>
@@ -67,7 +58,7 @@
         <!-- fallback -->
         <div v-else class="ps-summary">
           <p class="ps-no-data">
-            Votre commande a été traitée avec succès.
+            Paiement confirmé. Vous recevrez un email de confirmation.
           </p>
         </div>
 
@@ -89,58 +80,35 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { useRouter, useRoute } from "vue-router"
-import { db } from "../firebase.js"
-import { collection, addDoc } from "firebase/firestore"
 
 const router = useRouter()
 const route = useRoute()
 
 const orderData = ref(null)
 const saving = ref(true)
-const saved = ref(false)
 
-onMounted(async () => {
+onMounted(() => {
   try {
-    // 🔥 1. récupérer la commande (résiste au redirect Stripe)
+    // 🔥 1. récupérer session Stripe
+    const sessionId = route.query.session_id
+
+    // 🔥 2. récupérer commande locale (si dispo)
     const raw =
       localStorage.getItem("pendingStripeOrder") ||
       localStorage.getItem("pendingOrder") ||
       sessionStorage.getItem("pendingOrder")
 
     if (raw) {
-      const order = JSON.parse(raw)
-      orderData.value = order
-
-      // 🔥 2. récupérer owner UID
-      const ownerUid =
-        order.ownerUid ||
-        localStorage.getItem("stripeOwnerUid") ||
-        route.query.uid
-
-      // 🔥 3. sauvegarde Firestore
-      if (ownerUid) {
-        await addDoc(collection(db, "users", ownerUid, "orders"), {
-          items: order.items || [],
-          total: order.total,
-          currency: order.currency,
-          itemCount: order.itemCount,
-          customerName: order.customerName,
-          customerEmail: order.customerEmail,
-          siteSlug: order.siteSlug || localStorage.getItem("stripeSiteSlug"),
-          ownerUid,
-          provider: "stripe",
-          status: "paid",
-          createdAt: new Date(),
-          transactionId: "stripe-checkout",
-        })
-
-        saved.value = true
-      }
+      orderData.value = JSON.parse(raw)
     }
+
+    // 🔥 3. sécuriser : même sans données → succès affiché
+    console.log("✅ PaymentSuccess loaded | session:", sessionId)
+
   } catch (err) {
-    console.error("❌ Erreur PaymentSuccess:", err)
+    console.error("❌ PaymentSuccess error:", err)
   } finally {
-    // 🔥 4. nettoyage complet
+    // 🔥 4. nettoyage GLOBAL (CRITIQUE)
     localStorage.removeItem("pendingStripeOrder")
     localStorage.removeItem("pendingOrder")
     localStorage.removeItem("stripeOwnerUid")
@@ -148,18 +116,25 @@ onMounted(async () => {
     localStorage.removeItem("cart")
     sessionStorage.removeItem("pendingOrder")
 
+    // 🔥 éviter retour panier après refresh
+    localStorage.setItem("lastPayment", "success")
+
     saving.value = false
   }
 })
 
+// 🔁 navigation
 const goBack = () => {
   const siteUid =
     orderData.value?.siteSlug ||
     orderData.value?.ownerUid ||
     route.query.uid
 
-  if (siteUid) router.push(`/site/${siteUid}`)
-  else router.push("/")
+  if (siteUid) {
+    router.push(`/site/${siteUid}`)
+  } else {
+    router.push("/")
+  }
 }
 
 const goHome = () => {
@@ -174,7 +149,6 @@ const goHome = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: sans-serif;
 }
 
 .ps-card {

@@ -32,7 +32,11 @@ const router = useRouter()
 const route  = useRoute()
 
 const goBack = () => {
-  const siteUid = route.query.uid
+  // Essayer d'abord depuis localStorage (Stripe ignore les params après #)
+  const siteUid = localStorage.getItem("stripeSiteSlug")
+    || localStorage.getItem("stripeOwnerUid")
+    || route.query.uid
+  // Ne pas supprimer le localStorage ici (PaymentSuccess peut encore en avoir besoin)
   if (siteUid) router.push(`/site/${siteUid}`)
   else router.push("/")
 }

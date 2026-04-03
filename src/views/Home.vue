@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
+import { useRouter } from "vue-router"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
@@ -557,12 +558,25 @@ const currentPage = computed(() => site.value.pages[currentPageIndex.value] || s
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
 onMounted(() => {
-
-  if (window.location.hash.includes("payment-success")) 
-  {
-    localStorage.removeItem("cart")
+  // ── DÉTECTION RETOUR STRIPE ─────────────────────────────────
+  // Si Stripe a redirigé ici après paiement, on redirige vers PaymentSuccess
+  const pending = localStorage.getItem("pendingStripeOrder")
+  if (pending) {
+    try {
+      const order = JSON.parse(pending)
+      const age   = Date.now() - new Date(order.createdAt).getTime()
+      if (age < 30 * 60 * 1000) {
+        // Paiement récent → afficher PaymentSuccess
+        // window.location.hash suffit avec createWebHashHistory
+        window.location.hash = "#/payment-success"
+        return  // Arrêter l'initialisation du builder
+      } else {
+        localStorage.removeItem("pendingStripeOrder")
+      }
+    } catch(e) { localStorage.removeItem("pendingStripeOrder") }
   }
-  
+  // ── FIN DÉTECTION STRIPE ────────────────────────────────────
+
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")

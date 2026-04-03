@@ -557,6 +557,12 @@ const currentPage = computed(() => site.value.pages[currentPageIndex.value] || s
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
 onMounted(() => {
+
+  if (window.location.hash.includes("payment-success")) 
+  {
+    localStorage.removeItem("cart")
+  }
+  
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")

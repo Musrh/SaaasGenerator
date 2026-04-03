@@ -557,24 +557,29 @@ const copyDnsRecords = () => {
 const currentPage = computed(() => site.value.pages[currentPageIndex.value] || site.value.pages[0])
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
+const paymentSuccess = ref(false)
 onMounted(() => {
   // ── DÉTECTION RETOUR STRIPE ─────────────────────────────────
   // Si Stripe a redirigé ici après paiement, on redirige vers PaymentSuccess
-  const pending = localStorage.getItem("pendingStripeOrder")
-  if (pending) {
-    try {
-      const order = JSON.parse(pending)
-      const age   = Date.now() - new Date(order.createdAt).getTime()
-      if (age < 30 * 60 * 1000) {
-        // Paiement récent → afficher PaymentSuccess
-        // window.location.hash suffit avec createWebHashHistory
-        window.location.hash = "#/payment-success"
-        return  // Arrêter l'initialisation du builder
-      } else {
-        localStorage.removeItem("pendingStripeOrder")
-      }
-    } catch(e) { localStorage.removeItem("pendingStripeOrder") }
+
+   const isSuccess = window.location.hash.includes("payment-success")
+
+  if (isSuccess) {
+    paymentSuccess.value = true
+
+    // 🔥 vider panier
+    localStorage.removeItem("cart")
+
+    // 🔥 éviter retour après refresh
+    localStorage.setItem("lastPayment", "success")
   }
+
+  // 🔁 fallback refresh
+  if (localStorage.getItem("lastPayment") === "success") {
+    paymentSuccess.value = true
+  }
+  
+  
   // ── FIN DÉTECTION STRIPE ────────────────────────────────────
 
   // Restaurer depuis localStorage immédiatement (avant Firestore)

@@ -87,38 +87,56 @@ const saving    = ref(true)
 const saved     = ref(false)
 
 onMounted(async () => {
-  // 1. Récupérer la commande en attente depuis sessionStorage
-  //    (sauvegardée par SiteViewer avant le redirect Stripe)
-  const raw = sessionStorage.getItem("pendingOrder") || sessionStorage.getItem("lastOrder")
+  // Lire depuis localStorage (résiste au redirect cross-origin Stripe)
+  const raw = localStorage.getItem("pendingStripeOrder")
+        || localStorage.getItem("pendingOrder")
+        || sessionStorage.getItem("pendingOrder")
+
   if (raw) {
     try {
       const order = JSON.parse(raw)
       orderData.value = order
 
-      // 2. Sauvegarder la commande dans Firestore
-      //    users/{ownerUid}/orders/{orderId}
-      const ownerUid = order.ownerUid || route.query.uid
+      // Sauvegarder dans Firestore users/{ownerUid}/orders/
+      const ownerUid = order.ownerUid
+               || localStorage.getItem("stripeOwnerUid")
+               || route.query.uid
+
       if (ownerUid) {
         await addDoc(collection(db, "users", ownerUid, "orders"), {
-          ...order,
-          status:    "paid",
-          createdAt: new Date().toISOString(),
-          transactionId: route.query.session_id || "stripe-checkout",
+          items:         order.items || [],
+          total:         order.total,
+          currency:      order.currency,
+          itemCount:     order.itemCount,
+          customerName:  order.customerName,
+          customerEmail: order.customerEmail,
+          siteSlug:      order.siteSlug || localStorage.getItem("stripeSiteSlug"),
+          ownerUid,
+          provider:      "stripe",
+          status:        "paid",
+          createdAt:     new Date().toISOString(),
+          transactionId: "stripe-checkout",
         })
         saved.value = true
       }
-
-      sessionStorage.removeItem("pendingOrder")
-      sessionStorage.removeItem("lastOrder")
     } catch(e) {
       console.error("Erreur sauvegarde commande:", e)
+    } finally {
+      // Nettoyer localStorage
+      localStorage.removeItem("pendingStripeOrder")
+      localStorage.removeItem("pendingOrder")
+      localStorage.removeItem("stripeOwnerUid")
+      localStorage.removeItem("stripeSiteSlug")
+      sessionStorage.removeItem("pendingOrder")
     }
   }
   saving.value = false
 })
 
 const goBack = () => {
-  const siteUid = route.query.uid || orderData.value?.siteSlug || orderData.value?.ownerUid
+  const siteUid = orderData.value?.siteSlug
+    || orderData.value?.ownerUid
+    || route.query.uid
   if (siteUid) router.push(`/site/${siteUid}`)
   else router.push("/")
 }

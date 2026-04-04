@@ -36,18 +36,20 @@ const routes = [
   { path: "/payment-cancel",  name: "payment-cancel",
     component: () => import("./views/Paymentcancel.vue")  },
 
-  // ── 404 ───────────────────────────────────────────────────
-  {
-    path: "/:pathMatch(.*)*",
-    name: "not-found",
-    component: NotFound,
-  },
-
+  
   {
     path: "/orders",
     name: "Orders",
     component: Orders
   }
+
+  // ── 404 ───────────────────────────────────────────────────
+  {
+    path: "/:pathMatch(.*)*",
+    name: "not-found",
+    component: NotFound,
+  }
+
 ]
 
 const router = createRouter({

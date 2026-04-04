@@ -21,7 +21,7 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from "vue"
-import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
+import VoiceAssistantClient from "./components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
 import { doc, getDoc, collection, addDoc } from "firebase/firestore"
 

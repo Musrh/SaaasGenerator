@@ -8,6 +8,7 @@ import Home        from "./views/Home.vue"
 import SiteViewer  from "./views/SiteViewer.vue"
 import NotFound    from "./views/NotFound.vue"
 
+import Orders from "./views/Orders.vue"
 const routes = [
 
   // ── Page d'accueil de SaaasGenerator ──────────────────────
@@ -41,6 +42,12 @@ const routes = [
     name: "not-found",
     component: NotFound,
   },
+
+  {
+    path: "/orders",
+    name: "Orders",
+    component: Orders
+  }
 ]
 
 const router = createRouter({

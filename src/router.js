@@ -41,7 +41,7 @@ const routes = [
     path: "/orders",
     name: "Orders",
     component: Orders
-  }
+  },
 
   // ── 404 ───────────────────────────────────────────────────
   {

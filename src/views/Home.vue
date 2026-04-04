@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
-import VoiceAssistant from "../components/VoiceAssistant.vue"
+import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db, auth } from "../firebase.js"
-import { doc, getDoc, setDoc } from "firebase/firestore"
+import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
@@ -557,6 +557,53 @@ const copyDnsRecords = () => {
 const currentPage = computed(() => site.value.pages[currentPageIndex.value] || site.value.pages[0])
 const activeSection = computed(() => currentPage.value?.sections?.[activeSectionIndex.value])
 
+// ===== FORMULAIRE CONTACT =====
+const contactForm = ref({ name: "", email: "", message: "" })
+const contactSending = ref(false)
+const contactSent    = ref(false)
+const contactError   = ref("")
+
+const sendContact = async (sectionStyle) => {
+  if (!contactForm.value.name || !contactForm.value.email || !contactForm.value.message) {
+    contactError.value = "Veuillez remplir tous les champs."; return
+  }
+  contactSending.value = true
+  contactError.value   = ""
+  try {
+    // Sauvegarder dans Firestore collection "contacts"
+    // Sous le store du propriétaire : users/{uid}/contacts/{id}
+    const uid = currentUser.value?.uid
+    if (uid) {
+      await addDoc(collection(db, "users", uid, "contacts"), {
+        name:      contactForm.value.name,
+        email:     contactForm.value.email,
+        message:   contactForm.value.message,
+        createdAt: new Date().toISOString(),
+        storeUid:  uid,
+        status:    "nouveau",
+      })
+    } else {
+      // Fallback : collection globale contacts
+      await addDoc(collection(db, "contacts"), {
+        name:      contactForm.value.name,
+        email:     contactForm.value.email,
+        message:   contactForm.value.message,
+        createdAt: new Date().toISOString(),
+        status:    "nouveau",
+      })
+    }
+    contactSent.value   = true
+    contactForm.value   = { name: "", email: "", message: "" }
+    notify("✓ Message envoyé avec succès !")
+    setTimeout(() => { contactSent.value = false }, 4000)
+  } catch(e) {
+    contactError.value = "Erreur d'envoi. Réessayez."
+    console.error("Contact form error:", e)
+  } finally {
+    contactSending.value = false
+  }
+}
+
 onMounted(() => {
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
@@ -598,32 +645,6 @@ watch(siteLogo, (v) => { localStorage.setItem("siteLogo", v) })
 watch(currentPageIndex, () => { activeSectionIndex.value = null })
 
 // Init Stripe Elements when payment modal opens on Stripe tab
-// ── VOICE ASSISTANT HANDLERS ─────────────────────────────────
-const onVoiceAddSection = ({ type }) => {
-  addSection(type)
-  notify(`Section "${type}" ajoutée ✓`)
-}
-
-const onVoiceDeleteSection = () => {
-  if (activeSectionIndex.value !== null) {
-    deleteSection(activeSectionIndex.value)
-  } else if (currentPage.value.sections.length > 0) {
-    deleteSection(currentPage.value.sections.length - 1)
-  } else {
-    notify("Aucune section à supprimer", "error")
-  }
-}
-
-const onVoiceSetMode = ({ mode: m }) => {
-  mode.value = m
-}
-
-const onVoiceSave    = () => saveSite()
-const onVoicePublish = () => { showPublishModal.value = true }
-const onVoiceAddPage = () => addPage()
-const onVoiceNotify  = ({ msg, type }) => notify(msg, type || "success")
-
-
 watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, provider]) => {
   if (modalOpen && provider === 'stripe') {
     stripeCardMounted.value = false
@@ -1527,10 +1548,15 @@ const setPageStyle = (type, value) => {
           </div>
           <div v-else-if="s.type==='form'" class="prev-form" :style="s.style">
             <h3>{{ t.prevContactTitle }}</h3>
-            <input :placeholder="t.prevNamePh" class="prev-form-field"/>
-            <input :placeholder="t.prevEmailPh" class="prev-form-field"/>
-            <textarea :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
-            <button class="prev-form-btn">{{ t.prevSendBtn }}</button>
+            <input v-model="contactForm.name"    :placeholder="t.prevNamePh"  class="prev-form-field"/>
+            <input v-model="contactForm.email"   :placeholder="t.prevEmailPh" class="prev-form-field" type="email"/>
+            <textarea v-model="contactForm.message" :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
+            <p v-if="contactError" class="prev-form-error">{{ contactError }}</p>
+            <div v-if="contactSent" class="prev-form-success">✓ Message envoyé !</div>
+            <button class="prev-form-btn" @click="sendContact(s.style)" :disabled="contactSending">
+              <span v-if="contactSending">Envoi...</span>
+              <span v-else>{{ t.prevSendBtn }}</span>
+            </button>
           </div>
           <div v-else-if="s.type==='divider'" class="prev-divider" :style="s.style"><hr class="prev-divider-line"/></div>
         </div>
@@ -1855,10 +1881,15 @@ const setPageStyle = (type, value) => {
               </div>
               <div v-else-if="s.type==='form'" class="prev-form" :style="s.style">
                 <h3>{{ t.prevContactTitle }}</h3>
-                <input :placeholder="t.prevNamePh" class="prev-form-field"/>
-                <input :placeholder="t.prevEmailPh" class="prev-form-field"/>
-                <textarea :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
-                <button class="prev-form-btn">{{ t.prevSendBtn }}</button>
+                <input v-model="contactForm.name"    :placeholder="t.prevNamePh"  class="prev-form-field"/>
+                <input v-model="contactForm.email"   :placeholder="t.prevEmailPh" class="prev-form-field" type="email"/>
+                <textarea v-model="contactForm.message" :placeholder="t.prevMsgPh" class="prev-form-field prev-form-ta"></textarea>
+                <p v-if="contactError" class="prev-form-error">{{ contactError }}</p>
+                <div v-if="contactSent" class="prev-form-success">✓ Message envoyé !</div>
+                <button class="prev-form-btn" @click="sendContact(s.style)" :disabled="contactSending">
+                  <span v-if="contactSending">Envoi...</span>
+                  <span v-else>{{ t.prevSendBtn }}</span>
+                </button>
               </div>
               <div v-else-if="s.type==='divider'" class="prev-divider" :style="s.style">
                 <hr class="prev-divider-line"/>
@@ -1869,20 +1900,14 @@ const setPageStyle = (type, value) => {
       </div>
     </main>
   </div>
-  <!-- VOICE ASSISTANT -->
-  <VoiceAssistant
+  <!-- ASSISTANT VOCAL CLIENT (Groq IA) -->
+  <VoiceAssistantClient
+    v-if="currentUser"
+    :store-uid="currentUser?.uid || ''"
+    :store-name="siteName"
+    :store-email="liveStripeConfig?.storeName || ''"
     :lang="currentLang"
-    :site-name="siteName"
-    :current-user="currentUser"
-    :is-rtl="isRtl"
-    @add-section="onVoiceAddSection"
-    @delete-section="onVoiceDeleteSection"
-    @save-site="onVoiceSave"
-    @preview="() => { mode = 'preview' }"
-    @publish="onVoicePublish"
-    @set-mode="onVoiceSetMode"
-    @add-page="onVoiceAddPage"
-    @notify="onVoiceNotify"
+    :backend-url="'https://backend-master-production-cf50.up.railway.app'"
   />
 
 </div>
@@ -2223,4 +2248,9 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .cart-actions{display:flex;gap:10px}
 .cart-actions .btn-action{flex:1;justify-content:center}
 .cart-checkout-btn{flex:2;margin-top:0}
+
+/* CONTACT FORM — état fonctionnel */
+.prev-form-error{color:#ef4444;font-size:12px;margin-bottom:8px;width:100%;max-width:500px}
+.prev-form-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:14px;font-weight:600;padding:10px 16px;border-radius:8px;width:100%;max-width:500px;margin-bottom:8px;text-align:center}
+.prev-form-btn:disabled{opacity:.6;cursor:not-allowed}
 </style>

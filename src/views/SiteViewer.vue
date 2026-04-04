@@ -21,6 +21,7 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from "vue"
+import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
 import { doc, getDoc, collection, addDoc } from "firebase/firestore"
 
@@ -569,6 +570,16 @@ const saveOrder = async (provider, transactionId) => {
     </Transition>
 
   </template>
+  <!-- ASSISTANT VOCAL CLIENT (Groq IA) -->
+  <VoiceAssistantClient
+    v-if="resolvedUid"
+    :store-uid="resolvedUid"
+    :store-name="siteMeta.name || 'Notre boutique'"
+    :store-email="storePayConfig?.stripe?.storeName || ''"
+    :lang="'fr'"
+    :backend-url="'https://backend-master-production-cf50.up.railway.app'"
+  />
+
 </div>
 </template>
 

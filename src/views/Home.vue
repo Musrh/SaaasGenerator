@@ -567,31 +567,30 @@ const sendContact = async (sectionStyle) => {
   if (!contactForm.value.name || !contactForm.value.email || !contactForm.value.message) {
     contactError.value = "Veuillez remplir tous les champs."; return
   }
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactForm.value.email)
+  if (!emailValid) { contactError.value = "Email invalide."; return }
+
   contactSending.value = true
   contactError.value   = ""
   try {
-    // Sauvegarder dans Firestore collection "contacts"
-    // Sous le store du propriétaire : users/{uid}/contacts/{id}
-    const uid = currentUser.value?.uid
-    if (uid) {
-      await addDoc(collection(db, "users", uid, "contacts"), {
-        name:      contactForm.value.name,
-        email:     contactForm.value.email,
-        message:   contactForm.value.message,
-        createdAt: new Date().toISOString(),
-        storeUid:  uid,
-        status:    "nouveau",
-      })
-    } else {
-      // Fallback : collection globale contacts
-      await addDoc(collection(db, "contacts"), {
-        name:      contactForm.value.name,
-        email:     contactForm.value.email,
-        message:   contactForm.value.message,
-        createdAt: new Date().toISOString(),
-        status:    "nouveau",
-      })
+    // uid du propriétaire du store :
+    //   - si connecté (builder) → currentUser.uid
+    //   - si aperçu public → publishInfo.uid
+    const uid = currentUser.value?.uid || publishInfo.value?.uid
+    if (!uid) {
+      contactError.value = "Impossible d'identifier le store. Réessayez."
+      return
     }
+    const contactData = {
+      name:      contactForm.value.name.trim(),
+      email:     contactForm.value.email.trim().toLowerCase(),
+      message:   contactForm.value.message.trim(),
+      createdAt: new Date().toISOString(),
+      storeUid:  uid,
+      status:    "nouveau",
+    }
+    // Écrire dans users/{uid}/contacts → règle Firestore : allow create: if true
+    await addDoc(collection(db, "users", uid, "contacts"), contactData)
     contactSent.value   = true
     contactForm.value   = { name: "", email: "", message: "" }
     notify("✓ Message envoyé avec succès !")

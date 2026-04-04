@@ -41,14 +41,9 @@ const routes = [
     path: "/orders",
     name: "Orders",
     component: Orders
-  },
-
-  // ── 404 ───────────────────────────────────────────────────
-  {
-    path: "/:pathMatch(.*)*",
-    name: "not-found",
-    component: NotFound,
   }
+
+  
 
 ]
 

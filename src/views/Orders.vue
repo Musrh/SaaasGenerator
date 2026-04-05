@@ -1,215 +1,201 @@
-<!-- ============================================================
-  Orders.vue — lecture depuis users (items)
-============================================================ -->
+<template>
+  <div class="orders-page">
+    <h2>📦 Commandes</h2>
+
+    <div v-if="loading">Chargement...</div>
+
+    <div v-else>
+      <div class="filters">
+        <button @click="filter = 'all'">Toutes</button>
+        <button @click="filter = 'pending'">Pending</button>
+        <button @click="filter = 'paid'">Payées</button>
+        <button @click="filter = 'shipped'">Expédiées</button>
+        <button @click="filter = 'cancelled'">Annulées</button>
+      </div>
+
+      <div v-for="order in filteredOrders" :key="order.id" class="card">
+
+        <div class="header">
+          <div>
+            <b>{{ order.email }}</b>
+            <p class="small">{{ order.userId }}</p>
+          </div>
+
+          <div class="status" :class="order.status">
+            {{ order.status }}
+          </div>
+        </div>
+
+        <div class="items">
+          <div v-for="(item, i) in order.items" :key="i" class="item">
+            <span>{{ item.name }}</span>
+            <span>x{{ item.qty }}</span>
+            <span>{{ item.price }}€</span>
+          </div>
+        </div>
+
+        <div class="footer">
+          <b>Total: {{ order.total }} {{ order.currency }}</b>
+
+          <select v-model="order.status" @change="updateStatus(order)">
+            <option value="pending">pending</option>
+            <option value="paid">paid</option>
+            <option value="shipped">shipped</option>
+            <option value="cancelled">cancelled</option>
+          </select>
+        </div>
+
+        <p class="date">
+          {{ formatDate(order.createdAt) }}
+        </p>
+
+      </div>
+    </div>
+  </div>
+</template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue"
-import { db, auth } from "../firebase"
-import { collection, onSnapshot } from "firebase/firestore"
-import { onAuthStateChanged } from "firebase/auth"
+import { ref, computed, onMounted } from "vue"
+import { db } from "../firebase"
+import {
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  serverTimestamp
+} from "firebase/firestore"
 
 const orders = ref([])
 const loading = ref(true)
-const currentUser = ref(null)
-
 const filter = ref("all")
-const search = ref("")
 
-// 🔥 LOAD USERS → ORDERS
+/**
+ * 🔥 LOAD ORDERS
+ */
 onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
-    currentUser.value = user
+  onSnapshot(collection(db, "orders"), (snap) => {
 
-    const usersRef = collection(db, "users")
+    console.log("ORDERS SNAPSHOT =>", snap.docs.map(d => d.data()))
 
-    onSnapshot(usersRef, (snap) => {
+    orders.value = snap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
 
-      // 👇 DEBUG IMPORTANT
-      console.log(
-        "USERS SNAPSHOT",
-        snap.docs.map(d => d.data())
-      )
-
-      const result = []
-
-      snap.forEach(docSnap => {
-        const u = docSnap.data()
-
-        // si pas de panier / items → skip
-        if (!u.items || !Array.isArray(u.items) || u.items.length === 0) return
-
-        const total = u.items.reduce((sum, item) => {
-          return sum + ((item.price || 0) * (item.qty || 1))
-        }, 0)
-
-        result.push({
-          id: docSnap.id,
-          email: u.email || "—",
-          items: u.items,
-          total: total.toFixed(2),
-          paye: u.paye || false,
-          createdAt: u.createdAt || null
-        })
-      })
-
-      orders.value = result
-      loading.value = false
-    })
+    loading.value = false
   })
 })
 
-// 🔎 FILTER + SEARCH
+/**
+ * 🔥 FILTER ORDERS
+ */
 const filteredOrders = computed(() => {
-  return orders.value
-    .filter(o => {
-      if (filter.value === "all") return true
-      if (filter.value === "paid") return o.paye === true
-      if (filter.value === "pending") return o.paye === false
-    })
-    .filter(o => {
-      if (!search.value) return true
-      const s = search.value.toLowerCase()
-      return (
-        o.email.toLowerCase().includes(s) ||
-        o.id.toLowerCase().includes(s)
-      )
-    })
+  if (filter.value === "all") return orders.value
+  return orders.value.filter(o => o.status === filter.value)
 })
 
-// 💰 TOTAL REVENUE
-const totalRevenue = computed(() => {
-  return orders.value
-    .filter(o => o.paye)
-    .reduce((sum, o) => sum + parseFloat(o.total || 0), 0)
-    .toFixed(2)
-})
+/**
+ * 🔥 UPDATE STATUS
+ */
+async function updateStatus(order) {
+  try {
+    await updateDoc(doc(db, "orders", order.id), {
+      status: order.status,
+      updatedAt: serverTimestamp()
+    })
+  } catch (e) {
+    console.error("Erreur update status:", e)
+  }
+}
 
-// 📊 STATS
-const stats = computed(() => ({
-  all: orders.value.length,
-  paid: orders.value.filter(o => o.paye).length,
-  pending: orders.value.filter(o => !o.paye).length
-}))
+/**
+ * 🔥 FORMAT DATE SAFE
+ */
+function formatDate(timestamp) {
+  if (!timestamp) return "—"
 
-// 🕒 FORMAT DATE
-const formatDate = (ts) => {
-  if (!ts) return "—"
-  return new Date(ts).toLocaleString("fr-FR")
+  try {
+    return new Date(timestamp.seconds * 1000).toLocaleString()
+  } catch {
+    return "—"
+  }
 }
 </script>
 
-<template>
-<div class="orders">
-
-  <!-- HEADER -->
-  <div class="header">
-    <div>
-      <h1>📦 Commandes clients</h1>
-      <p>Source : collection users</p>
-    </div>
-
-    <div class="revenue">
-      💰 {{ totalRevenue }} €
-    </div>
-  </div>
-
-  <!-- STATS -->
-  <div class="stats">
-    <button @click="filter='all'">Toutes ({{ stats.all }})</button>
-    <button @click="filter='paid'">Payées ({{ stats.paid }})</button>
-    <button @click="filter='pending'">En attente ({{ stats.pending }})</button>
-  </div>
-
-  <!-- SEARCH -->
-  <input v-model="search" placeholder="Rechercher..." />
-
-  <!-- LOADING -->
-  <div v-if="loading">Chargement...</div>
-
-  <!-- EMPTY -->
-  <div v-else-if="filteredOrders.length === 0">
-    Aucune commande trouvée
-  </div>
-
-  <!-- LIST -->
-  <div v-else>
-
-    <div v-for="order in filteredOrders" :key="order.id" class="card">
-
-      <div class="top">
-        <strong>{{ order.email }}</strong>
-        <span>{{ order.paye ? "Payé" : "En attente" }}</span>
-      </div>
-
-      <div class="items">
-        <div v-for="(item, i) in order.items" :key="i">
-          {{ item.name }} × {{ item.qty }} — {{ item.price }}€
-        </div>
-      </div>
-
-      <div class="bottom">
-        Total : {{ order.total }} €
-        <small>{{ formatDate(order.createdAt) }}</small>
-      </div>
-
-    </div>
-
-  </div>
-
-</div>
-</template>
-
 <style scoped>
-.orders {
+.orders-page {
   padding: 20px;
-  color: white;
-  background: #0f0f11;
+  color: #fff;
+  background: #0f0f0f;
   min-height: 100vh;
+}
+
+.filters button {
+  margin: 5px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.card {
+  background: #1a1a1a;
+  padding: 15px;
+  margin: 15px 0;
+  border-radius: 10px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 20px;
+  align-items: center;
 }
 
-.revenue {
-  background: #10b98122;
-  padding: 10px 15px;
-  border-radius: 8px;
-}
-
-.stats button {
-  margin-right: 10px;
-  padding: 8px 12px;
-  background: #222;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
-
-.card {
-  background: #1a1a1e;
-  padding: 15px;
-  margin: 10px 0;
-  border-radius: 10px;
-}
-
-.top {
-  display: flex;
-  justify-content: space-between;
+.small {
+  font-size: 12px;
+  opacity: 0.6;
 }
 
 .items {
-  margin: 10px 0;
-  font-size: 14px;
-  color: #bbb;
+  margin-top: 10px;
 }
 
-.bottom {
+.item {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
-  color: #888;
+  font-size: 14px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.status {
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.status.pending {
+  background: orange;
+}
+
+.status.paid {
+  background: green;
+}
+
+.status.shipped {
+  background: blue;
+}
+
+.status.cancelled {
+  background: red;
+}
+
+.date {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 5px;
 }
 </style>

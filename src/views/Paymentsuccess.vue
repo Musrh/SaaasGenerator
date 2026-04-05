@@ -1,5 +1,5 @@
 <!-- ============================================================
-  PaymentSuccess.vue — VERSION PRO + FIRESTORE
+  PaymentSuccess.vue — VERSION STABLE & PRO
 ============================================================ -->
 <template>
   <div class="ps-root">
@@ -46,16 +46,19 @@
               :key="i"
               class="ps-item"
             >
-              <span>{{ item.name }}</span>
-              <span>× {{ item.qty }}</span>
-              <strong>{{ item.price * item.qty }} €</strong>
+              <span>{{ item.nom || item.name }}</span>
+              <span>× {{ item.quantity || item.qty }}</span>
+              <strong>
+                {{ (item.prix || item.price) * (item.quantity || item.qty) }}
+              </strong>
             </div>
           </div>
         </div>
 
+        <!-- fallback -->
         <div v-else class="ps-summary">
           <p class="ps-no-data">
-            Paiement confirmé.
+            Paiement confirmé. Vous recevrez un email de confirmation.
           </p>
         </div>
 
@@ -77,8 +80,6 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { useRouter, useRoute } from "vue-router"
-import { db, auth } from "../firebase"
-import { addDoc, collection, serverTimestamp } from "firebase/firestore"
 
 const router = useRouter()
 const route = useRoute()
@@ -86,57 +87,28 @@ const route = useRoute()
 const orderData = ref(null)
 const saving = ref(true)
 
-onMounted(async () => {
+onMounted(() => {
   try {
+    // 🔥 1. récupérer session Stripe
     const sessionId = route.query.session_id
 
+    // 🔥 2. récupérer commande locale (si dispo)
     const raw =
       localStorage.getItem("pendingStripeOrder") ||
       localStorage.getItem("pendingOrder") ||
       sessionStorage.getItem("pendingOrder")
 
     if (raw) {
-      const data = JSON.parse(raw)
-      orderData.value = data
-
-      // 🔥 OWNER ID (CRITIQUE)
-      const ownerId =
-        data.ownerId ||
-        localStorage.getItem("stripeOwnerUid") ||
-        route.query.uid
-
-      // 🔥 ANTI DOUBLE INSERTION
-      const alreadySaved = localStorage.getItem("orderSaved")
-
-      if (!alreadySaved && ownerId) {
-        await addDoc(collection(db, "orders"), {
-          userId: auth.currentUser?.uid || null,
-          ownerId: ownerId,
-          email: data.customerEmail || auth.currentUser?.email || null,
-
-          items: data.items || [],
-          total: data.total || 0,
-          currency: data.currency || "EUR",
-
-          status: "paid",
-
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
-
-        console.log("✅ Commande enregistrée Firestore")
-
-        localStorage.setItem("orderSaved", "true")
-      }
+      orderData.value = JSON.parse(raw)
     }
 
-    console.log("✅ PaymentSuccess OK | session:", sessionId)
+    // 🔥 3. sécuriser : même sans données → succès affiché
+    console.log("✅ PaymentSuccess loaded | session:", sessionId)
 
   } catch (err) {
     console.error("❌ PaymentSuccess error:", err)
   } finally {
-
-    // 🧹 CLEANUP
+    // 🔥 4. nettoyage GLOBAL (CRITIQUE)
     localStorage.removeItem("pendingStripeOrder")
     localStorage.removeItem("pendingOrder")
     localStorage.removeItem("stripeOwnerUid")
@@ -144,12 +116,14 @@ onMounted(async () => {
     localStorage.removeItem("cart")
     sessionStorage.removeItem("pendingOrder")
 
+    // 🔥 éviter retour panier après refresh
     localStorage.setItem("lastPayment", "success")
 
     saving.value = false
   }
 })
 
+// 🔁 navigation
 const goBack = () => {
   const siteUid =
     orderData.value?.siteSlug ||

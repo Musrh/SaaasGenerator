@@ -1,38 +1,71 @@
 <script setup>
-import { createOrder } from "@/services/orders"
-import { auth } from "@/firebase"
-import { useRouter } from "vue-router"
+import { ref, onMounted } from "vue"
+import { auth, db } from "../firebase"
+import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore"
 
-const router = useRouter()
+const cart = ref([])
+const loading = ref(true)
 
-const cartItems = [
-  { name: "Produit 1", price: 49.99, qty: 2 },
-  { name: "Produit 2", price: 29.99, qty: 1 }
-]
+onMounted(() => {
+  const user = auth.currentUser
 
-async function handleCheckout() {
-  try {
-    const user = auth.currentUser
-
-    if (!user) {
-      alert("Utilisateur non connecté")
-      return
-    }
-
-    const orderId = await createOrder(user, cartItems)
-
-    console.log("✅ Order created:", orderId)
-
-    router.push(`/orders/${orderId}`)
-
-  } catch (err) {
-    console.error("❌ Checkout error:", err)
+  if (!user) {
+    console.log("❌ user not logged")
+    loading.value = false
+    return
   }
+
+  const q = collection(db, "users", user.uid, "cart")
+
+  onSnapshot(q, (snap) => {
+    console.log("🛒 CART SIZE =", snap.size)
+
+    cart.value = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }))
+
+    console.log("📦 CART DATA =", cart.value)
+
+    loading.value = false
+  })
+})
+
+async function removeItem(id) {
+  const user = auth.currentUser
+  await deleteDoc(doc(db, "users", user.uid, "cart", id))
 }
 </script>
 
 <template>
-  <button @click="handleCheckout">
-    Payer / Commander
-  </button>
+  <div style="padding:20px">
+
+    <h2>🛒 Mon Panier</h2>
+
+    <div v-if="loading">Chargement...</div>
+
+    <div v-else-if="cart.length === 0">
+      ❌ Panier vide
+    </div>
+
+    <div v-else>
+      <div
+        v-for="item in cart"
+        :key="item.id"
+        style="border:1px solid #ddd;padding:10px;margin-bottom:10px"
+      >
+
+        <p><b>Produit:</b> {{ item.name }}</p>
+        <p><b>Prix:</b> {{ item.price }} €</p>
+        <p><b>Quantité:</b> {{ item.qty }}</p>
+        <p><b>Total:</b> {{ item.total }} €</p>
+
+        <button @click="removeItem(item.id)">
+          ❌ Supprimer
+        </button>
+
+      </div>
+    </div>
+
+  </div>
 </template>

@@ -1,43 +1,51 @@
 <!-- ============================================================
-  PaymentSuccess.vue — VERSION STABLE & PRO
+  PaymentSuccess.vue — VERSION PRO (BACKEND STRIPE WEBHOOK)
 ============================================================ -->
 <template>
   <div class="ps-root">
     <div class="ps-card">
 
-      <!-- Icône -->
+      <!-- ICON -->
       <div class="ps-icon-wrap">
         <div class="ps-circle">
           <span class="ps-check">✓</span>
         </div>
       </div>
 
-      <!-- Loading -->
-      <div v-if="saving" class="ps-saving">
-        <div class="ps-saving-spinner"></div>
+      <!-- LOADING -->
+      <div v-if="loading" class="ps-saving">
+        <div class="ps-spinner"></div>
         <p>Confirmation de votre paiement...</p>
+        <p class="ps-sub">Merci de patienter quelques secondes</p>
       </div>
 
-      <!-- Success -->
+      <!-- SUCCESS -->
       <template v-else>
         <h1 class="ps-title">Paiement réussi 🎉</h1>
 
         <p class="ps-subtitle">
-          Votre commande a bien été validée
+          Votre commande a été confirmée
         </p>
 
-        <!-- Résumé -->
+        <!-- ORDER DATA -->
         <div v-if="orderData" class="ps-summary">
-          <div class="ps-summary-row">
+
+          <div class="ps-row">
+            <span>Commande</span>
+            <strong>#{{ orderData.sessionId?.slice(0,8) }}</strong>
+          </div>
+
+          <div class="ps-row">
             <span>Montant</span>
-            <strong>{{ orderData.total }} {{ orderData.currency }}</strong>
+            <strong>{{ orderData.montant }} €</strong>
           </div>
 
-          <div v-if="orderData.customerEmail" class="ps-summary-row">
+          <div v-if="orderData.email" class="ps-row">
             <span>Email</span>
-            <strong>{{ orderData.customerEmail }}</strong>
+            <strong>{{ orderData.email }}</strong>
           </div>
 
+          <!-- ITEMS -->
           <div v-if="orderData.items?.length" class="ps-items">
             <div class="ps-items-title">Articles</div>
 
@@ -46,31 +54,49 @@
               :key="i"
               class="ps-item"
             >
-              <span>{{ item.nom || item.name }}</span>
-              <span>× {{ item.quantity || item.qty }}</span>
+              <span>
+                {{ item.nom || item.name }}
+              </span>
+
+              <span>
+                × {{ item.quantity || item.qty }}
+              </span>
+
               <strong>
-                {{ (item.prix || item.price) * (item.quantity || item.qty) }}
+                {{
+                  (item.prix || item.price || 0) *
+                  (item.quantity || item.qty || 1)
+                }} €
               </strong>
             </div>
           </div>
+
+          <div v-if="orderData.status" class="ps-row">
+            <span>Statut</span>
+            <strong>{{ orderData.status }}</strong>
+          </div>
+
         </div>
 
-        <!-- fallback -->
+        <!-- FALLBACK -->
         <div v-else class="ps-summary">
-          <p class="ps-no-data">
-            Paiement confirmé. Vous recevrez un email de confirmation.
+          <p>
+            Paiement confirmé ✔<br>
+            Votre commande est en cours de traitement.
           </p>
         </div>
 
-        <!-- Actions -->
+        <!-- ACTIONS -->
         <div class="ps-actions">
-          <button class="ps-btn-primary" @click="goBack">
+          <button class="ps-btn-primary" @click="goStore">
             ← Retour au store
           </button>
+
           <button class="ps-btn-sec" @click="goHome">
             Accueil
           </button>
         </div>
+
       </template>
 
     </div>
@@ -85,56 +111,60 @@ const router = useRouter()
 const route = useRoute()
 
 const orderData = ref(null)
-const saving = ref(true)
+const loading = ref(true)
 
-onMounted(() => {
-  try {
-    // 🔥 1. récupérer session Stripe
-    const sessionId = route.query.session_id
+const API_URL = "https://TON-BACKEND-URL.com" // 🔥 change ici
 
-    // 🔥 2. récupérer commande locale (si dispo)
-    const raw =
-      localStorage.getItem("pendingStripeOrder") ||
-      localStorage.getItem("pendingOrder") ||
-      sessionStorage.getItem("pendingOrder")
+// ======================================================
+// FETCH ORDER WITH RETRY (important Stripe delay)
+// ======================================================
+const fetchOrder = async (sessionId) => {
+  let attempts = 0
 
-    if (raw) {
-      orderData.value = JSON.parse(raw)
+  while (attempts < 5) {
+    try {
+      const res = await fetch(`${API_URL}/api/order/${sessionId}`)
+
+      if (res.ok) {
+        const data = await res.json()
+        return data
+      }
+    } catch (e) {
+      console.warn("Retry fetch order...")
     }
 
-    // 🔥 3. sécuriser : même sans données → succès affiché
-    console.log("✅ PaymentSuccess loaded | session:", sessionId)
+    await new Promise((r) => setTimeout(r, 1200))
+    attempts++
+  }
+
+  return null
+}
+
+// ======================================================
+// INIT
+// ======================================================
+onMounted(async () => {
+  try {
+    const sessionId = route.query.session_id
+
+    console.log("💳 PaymentSuccess session:", sessionId)
+
+    if (sessionId) {
+      orderData.value = await fetchOrder(sessionId)
+    }
 
   } catch (err) {
     console.error("❌ PaymentSuccess error:", err)
   } finally {
-    // 🔥 4. nettoyage GLOBAL (CRITIQUE)
-    localStorage.removeItem("pendingStripeOrder")
-    localStorage.removeItem("pendingOrder")
-    localStorage.removeItem("stripeOwnerUid")
-    localStorage.removeItem("stripeSiteSlug")
-    localStorage.removeItem("cart")
-    sessionStorage.removeItem("pendingOrder")
-
-    // 🔥 éviter retour panier après refresh
-    localStorage.setItem("lastPayment", "success")
-
-    saving.value = false
+    loading.value = false
   }
 })
 
-// 🔁 navigation
-const goBack = () => {
-  const siteUid =
-    orderData.value?.siteSlug ||
-    orderData.value?.ownerUid ||
-    route.query.uid
-
-  if (siteUid) {
-    router.push(`/site/${siteUid}`)
-  } else {
-    router.push("/")
-  }
+// ======================================================
+// NAVIGATION
+// ======================================================
+const goStore = () => {
+  router.push("/")
 }
 
 const goHome = () => {
@@ -145,19 +175,21 @@ const goHome = () => {
 <style scoped>
 .ps-root {
   min-height: 100vh;
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
   display: flex;
   align-items: center;
   justify-content: center;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  padding: 20px;
 }
 
 .ps-card {
   background: white;
+  width: 100%;
+  max-width: 500px;
   padding: 40px;
   border-radius: 20px;
-  width: 100%;
-  max-width: 480px;
   text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
 }
 
 .ps-circle {
@@ -173,7 +205,7 @@ const goHome = () => {
 
 .ps-check {
   color: white;
-  font-size: 30px;
+  font-size: 32px;
 }
 
 .ps-title {
@@ -181,38 +213,76 @@ const goHome = () => {
   margin-top: 20px;
 }
 
+.ps-subtitle {
+  color: #666;
+  margin-bottom: 20px;
+}
+
 .ps-summary {
   background: #f9fafb;
   padding: 15px;
   border-radius: 10px;
   margin-top: 20px;
+  text-align: left;
+}
+
+.ps-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ps-items {
+  margin-top: 15px;
+}
+
+.ps-items-title {
+  font-weight: bold;
+  margin-bottom: 10px;
 }
 
 .ps-item {
   display: flex;
   justify-content: space-between;
-  margin-top: 10px;
+  font-size: 14px;
+  margin-bottom: 8px;
 }
 
 .ps-actions {
-  margin-top: 20px;
   display: flex;
   gap: 10px;
+  margin-top: 20px;
 }
 
 .ps-btn-primary {
   flex: 2;
   background: #10b981;
   color: white;
-  padding: 12px;
   border: none;
+  padding: 12px;
   border-radius: 10px;
 }
 
 .ps-btn-sec {
   flex: 1;
   background: #eee;
+  border: none;
   padding: 12px;
   border-radius: 10px;
+}
+
+/* spinner */
+.ps-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #ddd;
+  border-top-color: #10b981;
+  border-radius: 50%;
+  margin: auto;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

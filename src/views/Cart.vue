@@ -1,38 +1,46 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { auth, db } from "../firebase"
-import { collection, onSnapshot, deleteDoc, doc } from "firebase/firestore"
+import { collection, onSnapshot, deleteDoc, doc, onAuthStateChanged } from "firebase/firestore"
 
 const cart = ref([])
 const loading = ref(true)
 
 onMounted(() => {
-  const user = auth.currentUser
 
-  if (!user) {
-    console.log("❌ user not logged")
-    loading.value = false
-    return
-  }
+  // 🔥 IMPORTANT : attendre auth
+  onAuthStateChanged(auth, (user) => {
 
-  const q = collection(db, "users", user.uid, "cart")
+    if (!user) {
+      console.log("❌ user not logged")
+      loading.value = false
+      return
+    }
 
-  onSnapshot(q, (snap) => {
-    console.log("🛒 CART SIZE =", snap.size)
+    console.log("✅ USER =", user.uid)
 
-    cart.value = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
-    }))
+    const q = collection(db, "users", user.uid, "cart")
 
-    console.log("📦 CART DATA =", cart.value)
+    onSnapshot(q, (snap) => {
 
-    loading.value = false
+      console.log("🛒 CART SIZE =", snap.size)
+
+      cart.value = snap.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }))
+
+      console.log("📦 CART DATA =", cart.value)
+
+      loading.value = false
+    })
   })
 })
 
 async function removeItem(id) {
   const user = auth.currentUser
+  if (!user) return
+
   await deleteDoc(doc(db, "users", user.uid, "cart", id))
 }
 </script>

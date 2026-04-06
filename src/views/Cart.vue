@@ -1,105 +1,114 @@
-<!-- ============================================================
-  Cart.vue — SaaS Generator (PANIER PRO FIX)
-============================================================ -->
-
 <template>
-  <div class="min-h-screen bg-gray-900 text-white p-6">
+  <div class="p-6">
+    <h1 class="text-2xl font-bold mb-6">Mon Panier</h1>
 
-    <h1 class="text-2xl font-bold mb-6">🛒 Mon panier</h1>
+    <div v-if="loading">Chargement...</div>
 
-    <!-- LOADING -->
-    <div v-if="loading" class="text-center py-10">
-      <div class="animate-spin w-10 h-10 border-4 border-gray-600 border-t-blue-400 rounded-full mx-auto"></div>
-    </div>
-
-    <!-- VIDE -->
-    <div v-else-if="cart.length === 0" class="text-gray-400">
-      Votre panier est vide.
-    </div>
-
-    <!-- CART LIST -->
     <div v-else>
+      <div v-if="cart.length === 0">
+        Panier vide 🛒
+      </div>
 
-      <div class="space-y-4">
-
+      <div v-else>
         <div
           v-for="(item, index) in cart"
-          :key="index"
-          class="bg-gray-800 p-4 rounded-xl border border-gray-700 flex justify-between items-center"
+          :key="item.id"
+          class="border p-4 mb-3 rounded-lg flex justify-between items-center"
         >
-
           <div>
             <h2 class="font-bold">{{ item.name }}</h2>
-            <p class="text-gray-400">{{ item.price }} €</p>
+            <p class="text-gray-500">
+              {{ item.price }} € x {{ item.qty }}
+            </p>
           </div>
 
           <button
             @click="removeItem(index)"
-            class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded-lg"
+            class="bg-red-500 text-white px-3 py-1 rounded"
           >
             Supprimer
           </button>
-
         </div>
 
+        <div class="mt-6 text-xl font-bold">
+          Total : {{ total }} €
+        </div>
       </div>
-
-      <!-- TOTAL -->
-      <div class="mt-6 text-xl font-bold">
-        Total : {{ total }} €
-      </div>
-
     </div>
-
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
+import {
+  doc,
+  onSnapshot,
+  updateDoc
+} from "firebase/firestore"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, onSnapshot, updateDoc } from "firebase/firestore"
 
-const user = ref(null)
 const cart = ref([])
 const loading = ref(true)
+const user = ref(null)
 
-// 🔥 AUTH FIX (OPTION B)
-onMounted(() => {
-  onAuthStateChanged(auth, (u) => {
-    user.value = u
+// 🔥 AUTH SAFE
+onAuthStateChanged(auth, (u) => {
+  user.value = u
+})
 
-    if (!u) {
-      loading.value = false
-      return
-    }
-
-    const cartRef = doc(db, "users", u.uid)
-
-    // 🔥 REALTIME CART
-    onSnapshot(cartRef, (snap) => {
-      const data = snap.data()
-      cart.value = data?.cart || []
-      loading.value = false
+// 🔥 SAFE UID
+const getUid = () =>
+  new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      unsub()
+      resolve(u?.uid || null)
     })
+  })
+
+// ==========================
+// LOAD CART
+// ==========================
+onMounted(async () => {
+  const uid = await getUid()
+
+  if (!uid) {
+    loading.value = false
+    return
+  }
+
+  const ref = doc(db, "users", uid)
+
+  onSnapshot(ref, (snap) => {
+    const data = snap.data()
+    cart.value = data?.cart || []
+    loading.value = false
   })
 })
 
-// 💰 TOTAL
+// ==========================
+// TOTAL
+// ==========================
 const total = computed(() => {
-  return cart.value.reduce((sum, item) => sum + (item.price || 0), 0)
+  return cart.value.reduce((sum, item) => {
+    return sum + item.price * item.qty
+  }, 0)
 })
 
-// 🗑️ SUPPRESSION
+// ==========================
+// REMOVE ITEM
+// ==========================
 const removeItem = async (index) => {
-  if (!user.value) return
+  const uid = await getUid()
+
+  if (!uid) return
+
+  const ref = doc(db, "users", uid)
 
   const newCart = [...cart.value]
   newCart.splice(index, 1)
 
-  const cartRef = doc(db, "users", user.value.uid)
-
-  await updateDoc(cartRef, {
+  await updateDoc(ref, {
     cart: newCart
   })
 }

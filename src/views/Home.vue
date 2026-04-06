@@ -1,23 +1,19 @@
-<!-- ============================================================
-  ProductPage.vue — VERSION FINALE CORRIGÉE
-============================================================ -->
-
 <template>
   <div style="padding:20px">
 
-    <h1>Produits</h1>
+    <h1>🛍 Produits</h1>
 
-    <!-- DEBUG UID -->
+    <!-- UID DEBUG -->
     <p><b>UID:</b> {{ uid || "NON CONNECTÉ" }}</p>
 
-    <!-- PANIER -->
+    <!-- BOUTON PANIER -->
     <button @click="goToCart">
-      Voir le panier 🛒
+      🛒 Voir le panier
     </button>
 
     <hr><br>
 
-    <!-- PRODUITS -->
+    <!-- LISTE PRODUITS -->
     <div v-for="product in products" :key="product.id" style="margin-bottom:20px">
 
       <h2>{{ product.name }}</h2>
@@ -35,47 +31,41 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { useRouter } from "vue-router"
-
-import { auth, db } from "../firebase"
+import { auth, db } from "@/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 
-// =====================
 const router = useRouter()
 const uid = ref(null)
 
-// =====================
-// AUTH LISTENER SAFE
-// =====================
+/* =========================================================
+   🔐 AUTH
+========================================================= */
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
-    if (user) {
-      uid.value = user.uid
-    } else {
-      uid.value = null
-    }
+    uid.value = user ? user.uid : null
   })
 })
 
-// =====================
-// PRODUITS
-// =====================
+/* =========================================================
+   🛍 PRODUITS (TEST)
+========================================================= */
 const products = ref([
   { id: "1", name: "Produit 1", price: 29.99 },
   { id: "2", name: "Produit 2", price: 49.99 },
   { id: "3", name: "Produit 3", price: 19.99 }
 ])
 
-// =====================
-// NAVIGATION CART
-// =====================
+/* =========================================================
+   🛒 NAVIGATION
+========================================================= */
 const goToCart = () => {
   router.push("/cart")
 }
 
-// =====================
-// ADD TO CART FIX FINAL
-// =====================
+/* =========================================================
+   🛒 AJOUT AU PANIER SESSION
+========================================================= */
 const addToCart = async (product) => {
 
   const user = auth.currentUser
@@ -90,19 +80,19 @@ const addToCart = async (product) => {
   try {
     const snap = await getDoc(userRef)
 
-    let cart = []
+    let cartSession = []
 
     if (snap.exists()) {
-      cart = snap.data().cart || []
+      cartSession = snap.data().cartSession || []
     }
 
-    // vérifier produit existant
-    const index = cart.findIndex(p => p.id === product.id)
+    // 🔥 logique PRO : pas d'accumulation cachée
+    const index = cartSession.findIndex(p => p.id === product.id)
 
     if (index >= 0) {
-      cart[index].qty += 1
+      cartSession[index].qty = 1   // session = 1 seul achat actif
     } else {
-      cart.push({
+      cartSession.push({
         id: product.id,
         name: product.name,
         price: product.price,
@@ -110,16 +100,17 @@ const addToCart = async (product) => {
       })
     }
 
-    // ✅ ÉCRITURE UNIQUE STABLE
-    await setDoc(userRef, { cart }, { merge: true })
+    await setDoc(userRef, {
+      cartSession
+    }, { merge: true })
 
-    console.log("🛒 CART UPDATED =", cart)
+    console.log("🛒 CART SESSION =", cartSession)
 
-    alert("✅ Produit ajouté au panier")
+    alert("Produit ajouté au panier ✅")
 
-  } catch (error) {
-    console.error("ERREUR FIRESTORE:", error)
-    alert("Erreur ajout panier")
+  } catch (e) {
+    console.error(e)
+    alert("Erreur panier")
   }
 }
 </script>

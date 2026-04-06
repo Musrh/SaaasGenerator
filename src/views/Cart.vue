@@ -4,14 +4,16 @@
     <h1 class="text-2xl font-bold mb-4">Mon Panier</h1>
 
     <!-- DEBUG -->
-    <div class="text-sm text-gray-500 mb-2">
+    <div class="text-sm text-gray-500 mb-3">
       UID: {{ uid || "NULL" }}
     </div>
 
+    <!-- NOT LOGGED -->
     <div v-if="!uid">
       ❌ Vous n’êtes pas connecté
     </div>
 
+    <!-- CART -->
     <div v-else>
 
       <div v-if="cart.length === 0">
@@ -21,18 +23,16 @@
       <div v-else>
 
         <div
-          v-for="(item, index) in cart"
+          v-for="item in cart"
           :key="item.id"
-          class="border p-4 mb-3 flex justify-between"
+          class="border p-4 mb-3"
         >
-          <div>
-            <h2 class="font-bold">{{ item.name }}</h2>
-            <p>{{ item.price }} € x {{ item.qty }}</p>
-          </div>
+          <h2 class="font-bold">{{ item.name }}</h2>
+          <p>{{ item.price }} € x {{ item.qty }}</p>
         </div>
 
         <div class="mt-4 text-xl font-bold">
-          Total: {{ total }} €
+          Total : {{ total }} €
         </div>
 
       </div>
@@ -49,18 +49,16 @@ import { onAuthStateChanged } from "firebase/auth"
 import { doc, onSnapshot } from "firebase/firestore"
 
 // =====================
-// STATE
-// =====================
 const uid = ref(null)
 const cart = ref([])
 
 // =====================
-// AUTH LISTENER (IMPORTANT)
+// 🔥 AUTH + FIRESTORE SYNC
 // =====================
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
 
-    console.log("CART AUTH USER =", user)
+    console.log("AUTH USER =", user)
 
     if (!user) {
       uid.value = null
@@ -70,20 +68,16 @@ onMounted(() => {
 
     uid.value = user.uid
 
-    // 🔥 FIRESTORE REALTIME LISTENER
     const ref = doc(db, "users", user.uid)
 
     onSnapshot(ref, (snap) => {
-
-      console.log("FIRESTORE CART =", snap.data())
-
+      console.log("FIRESTORE DATA =", snap.data())
       cart.value = snap.data()?.cart || []
     })
+
   })
 })
 
-// =====================
-// TOTAL
 // =====================
 const total = computed(() => {
   return cart.value.reduce((sum, item) => {

@@ -42,7 +42,7 @@ import { ref, computed, onMounted } from "vue"
 import { onSnapshot, updateDoc } from "firebase/firestore"
 
 // ⚠️ IMPORT IMPORTANT (à adapter à ton projet)
-import { db } from "@/firebase"
+import { db } from "../firebase"
 import { doc } from "firebase/firestore"
 import { getAuth } from "firebase/auth"
 

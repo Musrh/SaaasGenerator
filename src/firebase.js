@@ -1,7 +1,9 @@
-//SaaasGenerator/src/firebase.js
-//Dimanche 
 import { initializeApp } from "firebase/app"
-import { getAuth } from "firebase/auth"
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence
+} from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 import { getStorage } from "firebase/storage"
 
@@ -15,8 +17,25 @@ const firebaseConfig = {
   measurementId: "G-FP89LBXT3P"
 }
 
+// =====================
+// INIT APP
+// =====================
 const app = initializeApp(firebaseConfig)
 
+// =====================
+// SERVICES
+// =====================
 export const auth = getAuth(app)
 export const db = getFirestore(app)
-export const storage = getStorage(app) // ✅ AJOUT IMPORTANT
+export const storage = getStorage(app)
+
+// =====================
+// 🔥 CRITICAL FIX (SESSION PERSISTENCE)
+// =====================
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log("✅ Firebase Auth persistence OK")
+  })
+  .catch((error) => {
+    console.error("❌ Auth persistence error:", error)
+  })

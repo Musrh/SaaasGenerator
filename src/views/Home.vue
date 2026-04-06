@@ -1,105 +1,95 @@
-<!-- ============================================================
-  ProductPage.vue — SaaS Generator (FIX AUTH + CART)
-============================================================ -->
-
 <template>
-  <div class="min-h-screen bg-gray-900 text-white p-6">
+  <div class="p-6">
+    <h1 class="text-2xl font-bold mb-6">Produits</h1>
 
-    <!-- LOADING AUTH -->
-    <div v-if="loading" class="text-center py-20">
-      <div class="animate-spin w-10 h-10 border-4 border-gray-600 border-t-blue-400 rounded-full mx-auto"></div>
-    </div>
+    <div v-if="loading" class="text-gray-500">Chargement...</div>
 
-    <!-- PRODUITS -->
-    <div v-else>
+    <div v-else class="grid md:grid-cols-3 gap-6">
+      <div
+        v-for="product in products"
+        :key="product.id"
+        class="border p-4 rounded-lg shadow"
+      >
+        <h2 class="font-bold text-lg">{{ product.name }}</h2>
+        <p class="text-gray-500">{{ product.price }} €</p>
 
-      <h1 class="text-2xl font-bold mb-6">Produits</h1>
-
-      <div class="grid md:grid-cols-3 gap-6">
-
-        <div
-          v-for="product in products"
-          :key="product.id"
-          class="bg-gray-800 p-4 rounded-xl border border-gray-700"
+        <button
+          @click="addToCart(product)"
+          class="mt-3 bg-blue-500 text-white px-4 py-2 rounded-lg"
         >
-          <h2 class="font-bold text-lg">{{ product.name }}</h2>
-          <p class="text-gray-400">{{ product.price }} €</p>
-
-          <button
-            @click="addToCart(product)"
-            class="mt-4 w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-lg"
-          >
-            Ajouter au panier
-          </button>
-        </div>
-
+          Ajouter au panier
+        </button>
       </div>
-
     </div>
-
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue"
+import {
+  doc,
+  getDoc,
+  setDoc
+} from "firebase/firestore"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, setDoc, getDoc, updateDoc, arrayUnion } from "firebase/firestore"
 
-const user = ref(null)
-const loading = ref(true)
-
-// PRODUITS TEST (remplace par Firestore si besoin)
 const products = ref([
   { id: "1", name: "Produit 1", price: 29.99 },
   { id: "2", name: "Produit 2", price: 49.99 },
   { id: "3", name: "Produit 3", price: 19.99 }
 ])
 
-// 🔥 AUTH PROPRE (OPTION B FIX)
-onMounted(() => {
-  onAuthStateChanged(auth, (u) => {
-    user.value = u
-    loading.value = false
-  })
+const loading = ref(true)
+const user = ref(null)
+
+// 🔥 AUTH SAFE
+onAuthStateChanged(auth, (u) => {
+  user.value = u
+  loading.value = false
 })
 
-// 🛒 AJOUT AU PANIER (FIX COMPLET)
-const addToCart = async (product) => {
+// 🔥 SAFE UID
+const getUid = () =>
+  new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      unsub()
+      resolve(u?.uid || null)
+    })
+  })
 
-  // ❌ sécurité
-  if (!user.value) {
+// ==========================
+// ADD TO CART
+// ==========================
+const addToCart = async (product) => {
+  const uid = await getUid()
+
+  if (!uid) {
     alert("Vous devez être connecté")
     return
   }
 
-  const uid = user.value.uid
+  const ref = doc(db, "users", uid)
+  const snap = await getDoc(ref)
 
-  const cartRef = doc(db, "users", uid)
+  const data = snap.exists() ? snap.data() : {}
+  let cart = data.cart || []
 
-  try {
-    const snap = await getDoc(cartRef)
+  const index = cart.findIndex(p => p.id === product.id)
 
-    if (!snap.exists()) {
-      // création user doc + cart
-      await setDoc(cartRef, {
-        cart: [product]
-      })
-    } else {
-      // ajout produit au panier
-      await updateDoc(cartRef, {
-        cart: arrayUnion(product)
-      })
-    }
-
-    alert("Produit ajouté au panier ✅")
-
-  } catch (e) {
-    console.error("Erreur panier:", e)
-    alert("Erreur lors de l'ajout")
+  if (index >= 0) {
+    cart[index].qty += 1
+  } else {
+    cart.push({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      qty: 1
+    })
   }
+
+  await setDoc(ref, { cart }, { merge: true })
+
+  alert("Ajouté au panier ✅")
 }
 </script>
-
-<style scoped>
-</style>

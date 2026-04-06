@@ -4,27 +4,21 @@ import { useRouter } from "vue-router"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import {
-  collection, doc, getDoc, setDoc, addDoc,
-  onSnapshot, deleteDoc, query, orderBy, serverTimestamp
+  collection, doc, getDoc, setDoc,
+  onSnapshot, deleteDoc, query, orderBy
 } from "firebase/firestore"
+
+import AddProduct from "./AddProduct.vue" // ✅ IMPORT
 
 const router = useRouter()
 
-// STATE
 const uid         = ref(null)
 const products    = ref([])
 const loading     = ref(true)
 const searchQuery = ref("")
 const cartCount   = ref(0)
-const addedIds    = ref(new Set())
 
-const showAddModal   = ref(false)
-const saving         = ref(false)
-const addError       = ref("")
-const newProduct     = ref({ name: "", price: 0, description: "", badge: "", stock: undefined, image: "" })
-
-const toast     = ref("")
-const toastType = ref("success")
+const showAddModal = ref(false) // ✅ MODAL
 
 let unsubProducts = null
 let unsubCart     = null
@@ -43,7 +37,7 @@ onUnmounted(() => {
   unsubCart?.()
 })
 
-// LOAD PRODUCTS (REALTIME)
+// LOAD PRODUCTS
 const loadProducts = () => {
   const q = query(collection(db, "products"), orderBy("createdAt", "desc"))
 
@@ -56,7 +50,7 @@ const loadProducts = () => {
   })
 }
 
-// CART BADGE
+// CART
 const listenCart = (userId) => {
   const userRef = doc(db, "users", userId)
 
@@ -74,74 +68,9 @@ const filteredProducts = computed(() => {
 
   return products.value.filter(p =>
     (p.name || "").toLowerCase().includes(q) ||
-    (p.description || "").toLowerCase().includes(q) ||
-    (p.badge || "").toLowerCase().includes(q)
+    (p.description || "").toLowerCase().includes(q)
   )
 })
-
-// IMAGE UPLOAD
-const onFileUpload = (e) => {
-  const file = e.target.files?.[0]
-  if (!file) return
-
-  const reader = new FileReader()
-  reader.onload = (ev) => {
-    newProduct.value.image = ev.target.result
-  }
-  reader.readAsDataURL(file)
-}
-
-// SAVE PRODUCT
-const saveProduct = async () => {
-
-  addError.value = ""
-
-  if (!newProduct.value.name.trim()) {
-    addError.value = "Nom obligatoire"
-    return
-  }
-
-  if (!newProduct.value.price || newProduct.value.price <= 0) {
-    addError.value = "Prix invalide"
-    return
-  }
-
-  if (!uid.value) {
-    addError.value = "Connectez-vous"
-    return
-  }
-
-  saving.value = true
-
-  try {
-    const data = {
-      name: newProduct.value.name,
-      price: Number(newProduct.value.price),
-      description: newProduct.value.description,
-      badge: newProduct.value.badge,
-      stock: newProduct.value.stock,
-      image: newProduct.value.image || "",
-      createdBy: uid.value,
-      createdAt: serverTimestamp()
-    }
-
-    const docRef = await addDoc(collection(db, "products"), data)
-
-    // ⚡ AJOUT INSTANT UI
-    products.value.unshift({
-      id: docRef.id,
-      ...data
-    })
-
-    showToast("Produit ajouté ✅")
-    closeAddModal()
-
-  } catch(e) {
-    addError.value = e.message
-  }
-
-  saving.value = false
-}
 
 // DELETE
 const deleteProduct = async (id) => {
@@ -173,24 +102,10 @@ const addToCart = async (product) => {
   }
 
   await setDoc(userRef, { cartSession }, { merge: true })
-
-  showToast("Ajouté au panier")
 }
 
 // NAV
 const goToCart = () => router.push("/cart")
-
-// MODAL
-const closeAddModal = () => {
-  showAddModal.value = false
-  newProduct.value = { name: "", price: 0, description: "", badge: "", stock: undefined, image: "" }
-}
-
-// TOAST
-const showToast = (msg) => {
-  toast.value = msg
-  setTimeout(() => toast.value = "", 2000)
-}
 </script>
 
 <template>
@@ -205,6 +120,7 @@ const showToast = (msg) => {
         🛒 {{ cartCount }}
       </button>
 
+      <!-- ✅ OUVERTURE MODAL -->
       <button @click="showAddModal = true">
         ＋ Produit
       </button>
@@ -220,8 +136,8 @@ const showToast = (msg) => {
     </button>
   </div>
 
-  <!-- MESSAGE SI AUCUN RESULTAT -->
-  <div v-if="searchQuery && filteredProducts.length === 0" class="empty-state">
+  <!-- MESSAGE RECHERCHE -->
+  <div v-if="searchQuery && filteredProducts.length === 0">
     🔍 Aucun résultat pour "{{ searchQuery }}"
   </div>
 
@@ -233,7 +149,6 @@ const showToast = (msg) => {
       :key="product.id"
       class="product-card"
     >
-
       <img v-if="product.image" :src="product.image" />
 
       <h3>{{ product.name }}</h3>
@@ -246,27 +161,15 @@ const showToast = (msg) => {
       <button v-if="uid" @click="deleteProduct(product.id)">
         🗑
       </button>
-
     </div>
 
   </div>
 
-  <!-- MODAL -->
-  <div v-if="showAddModal" class="modal">
-    <input v-model="newProduct.name" placeholder="Nom" />
-    <input v-model="newProduct.price" type="number" placeholder="Prix" />
-    <textarea v-model="newProduct.description" placeholder="Description" />
-
-    <input type="file" @change="onFileUpload" />
-
-    <button @click="saveProduct">Ajouter</button>
-    <button @click="closeAddModal">Annuler</button>
-  </div>
-
-  <!-- TOAST -->
-  <div v-if="toast" class="toast">
-    {{ toast }}
-  </div>
+  <!-- ✅ MODAL ADD PRODUCT -->
+  <AddProduct
+    v-if="showAddModal"
+    @close="showAddModal = false"
+  />
 
 </div>
 </template>

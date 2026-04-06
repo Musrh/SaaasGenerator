@@ -2,7 +2,9 @@
   <div class="p-6">
     <h1 class="text-2xl font-bold mb-6">Mon Panier</h1>
 
-    <div v-if="loading">Chargement...</div>
+    <div v-if="!authReady" class="text-gray-500">
+      Chargement utilisateur...
+    </div>
 
     <div v-else>
       <div v-if="cart.length === 0">
@@ -48,56 +50,65 @@ import {
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
 
+// =====================
+// STATE
+// =====================
 const cart = ref([])
-const loading = ref(true)
+const authReady = ref(false)
 const user = ref(null)
 
-// 🔥 AUTH SAFE
+// =====================
+// AUTH STATE
+// =====================
 onAuthStateChanged(auth, (u) => {
   user.value = u
+  authReady.value = true
 })
 
-// 🔥 SAFE UID
-const getUid = () =>
-  new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+// =====================
+// SAFE UID
+// =====================
+const getUid = async () => {
+  let u = auth.currentUser
+
+  if (u) return u.uid
+
+  return new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       unsub()
-      resolve(u?.uid || null)
+      resolve(user?.uid || null)
     })
   })
+}
 
-// ==========================
+// =====================
 // LOAD CART
-// ==========================
+// =====================
 onMounted(async () => {
   const uid = await getUid()
 
-  if (!uid) {
-    loading.value = false
-    return
-  }
+  if (!uid) return
 
   const ref = doc(db, "users", uid)
 
   onSnapshot(ref, (snap) => {
     const data = snap.data()
     cart.value = data?.cart || []
-    loading.value = false
   })
 })
 
-// ==========================
+// =====================
 // TOTAL
-// ==========================
+// =====================
 const total = computed(() => {
   return cart.value.reduce((sum, item) => {
     return sum + item.price * item.qty
   }, 0)
 })
 
-// ==========================
+// =====================
 // REMOVE ITEM
-// ==========================
+// =====================
 const removeItem = async (index) => {
   const uid = await getUid()
 

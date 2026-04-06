@@ -1,5 +1,5 @@
 <template>
-  <div class="cart-container">
+  <div class="cart">
 
     <h2>🛒 Mon panier</h2>
 
@@ -9,20 +9,22 @@
       <p>Panier vide</p>
     </div>
 
-    <div v-for="(item, index) in cart" :key="index" class="cart-item">
+    <div v-for="(item, index) in cart" :key="item.id || index" class="item">
 
-      <div>
+      <div class="info">
         <strong>{{ item.name }}</strong>
         <p>{{ item.price }} €</p>
       </div>
 
-      <div>
+      <div class="qty">
         <button @click="updateQty(index, item.qty - 1)">-</button>
         <span>{{ item.qty }}</span>
         <button @click="updateQty(index, item.qty + 1)">+</button>
       </div>
 
-      <button @click="removeItem(index)">🗑</button>
+      <button class="delete" @click="removeItem(index)">
+        🗑
+      </button>
 
     </div>
 
@@ -30,7 +32,7 @@
 
     <h3>Total : {{ total }} €</h3>
 
-    <button @click="pay" :disabled="cart.length === 0">
+    <button class="pay" @click="pay" :disabled="cart.length === 0">
       💳 Payer
     </button>
 
@@ -39,54 +41,52 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import { onSnapshot, updateDoc } from "firebase/firestore"
-
-// ⚠️ IMPORT IMPORTANT (à adapter à ton projet)
-import { db } from "../firebase"
-import { doc } from "firebase/firestore"
+import { onSnapshot, updateDoc, doc } from "firebase/firestore"
 import { getAuth } from "firebase/auth"
+import { db } from "@/firebase"
 
 const cart = ref([])
 const error = ref(null)
 
+const auth = getAuth()
 let cartRef = null
 
-const auth = getAuth()
-
 /* =========================================================
-   INIT SAFE
+   🔥 FIRESTORE LISTENER (cart, PAS items)
 ========================================================= */
 onMounted(() => {
-  try {
-    const user = auth.currentUser
+  const user = auth.currentUser
 
-    if (!user) {
-      error.value = "Utilisateur non connecté"
+  if (!user) {
+    error.value = "Utilisateur non connecté"
+    return
+  }
+
+  cartRef = doc(db, "carts", user.uid)
+
+  onSnapshot(cartRef, (snap) => {
+    console.log("🔥 SNAP =", snap.data())
+
+    if (!snap.exists()) {
+      cart.value = []
       return
     }
 
-    cartRef = doc(db, "carts", user.uid)
-
-    onSnapshot(cartRef, (snap) => {
-      const data = snap.data()
-      cart.value = data?.items || []
-    })
-
-  } catch (e) {
-    console.error(e)
-    error.value = "Erreur chargement panier"
-  }
+    cart.value = snap.data().cart || []
+  })
 })
 
 /* =========================================================
-   TOTAL
+   🧮 TOTAL
 ========================================================= */
 const total = computed(() => {
-  return cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
+  return cart.value.reduce((sum, item) => {
+    return sum + item.price * item.qty
+  }, 0)
 })
 
 /* =========================================================
-   QTY
+   ➕➖ QUANTITY
 ========================================================= */
 async function updateQty(index, qty) {
   if (qty < 1) return
@@ -95,24 +95,24 @@ async function updateQty(index, qty) {
   updated[index].qty = qty
 
   await updateDoc(cartRef, {
-    items: updated
+    cart: updated
   })
 }
 
 /* =========================================================
-   DELETE
+   🗑 DELETE ITEM
 ========================================================= */
 async function removeItem(index) {
   const updated = [...cart.value]
   updated.splice(index, 1)
 
   await updateDoc(cartRef, {
-    items: updated
+    cart: updated
   })
 }
 
 /* =========================================================
-   PAY
+   💳 PAY BUTTON
 ========================================================= */
 async function pay() {
   try {
@@ -120,7 +120,7 @@ async function pay() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items: cart.value,
+        cart: cart.value,
         total: total.value
       })
     })
@@ -129,9 +129,50 @@ async function pay() {
 
     if (data.url) {
       window.location.href = data.url
+    } else {
+      alert("Erreur paiement")
     }
+
   } catch (e) {
     console.error(e)
   }
 }
 </script>
+
+<style scoped>
+.cart {
+  max-width: 600px;
+  margin: auto;
+  padding: 20px;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+  border-radius: 8px;
+}
+
+.qty button {
+  margin: 0 5px;
+}
+
+.delete {
+  background: red;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+}
+
+.pay {
+  width: 100%;
+  padding: 10px;
+  background: green;
+  color: white;
+  border: none;
+  margin-top: 10px;
+}
+</style>

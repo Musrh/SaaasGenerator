@@ -1,28 +1,35 @@
 <template>
   <div class="p-6">
-    <h1 class="text-2xl font-bold mb-6">Produits</h1>
 
-    <div v-if="!authReady" class="text-gray-500">
-      Chargement...
+    <h1 class="text-2xl font-bold mb-4">Produits</h1>
+
+    <!-- DEBUG USER -->
+    <div class="text-sm text-gray-500 mb-3">
+      UID: {{ uid || "NULL (non connecté)" }}
     </div>
 
-    <div v-else class="grid md:grid-cols-3 gap-6">
+    <div class="grid md:grid-cols-3 gap-6">
+
       <div
         v-for="product in products"
         :key="product.id"
         class="border p-4 rounded-lg shadow"
       >
+
         <h2 class="font-bold text-lg">{{ product.name }}</h2>
         <p class="text-gray-500">{{ product.price }} €</p>
 
         <button
-          @click="addToCart(product)"
           class="mt-3 bg-blue-500 text-white px-4 py-2 rounded-lg"
+          @click="addToCart(product)"
         >
           Ajouter au panier
         </button>
+
       </div>
+
     </div>
+
   </div>
 </template>
 
@@ -33,7 +40,7 @@ import { onAuthStateChanged } from "firebase/auth"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 
 // =====================
-// PRODUCTS DEMO
+// PRODUCTS TEST
 // =====================
 const products = ref([
   { id: "1", name: "Produit 1", price: 29.99 },
@@ -42,39 +49,52 @@ const products = ref([
 ])
 
 // =====================
-// AUTH STATE (STABLE)
+// AUTH STATE
 // =====================
-const authReady = ref(false)
+const uid = ref(null)
 
 onMounted(() => {
-  onAuthStateChanged(auth, () => {
-    authReady.value = true
+  onAuthStateChanged(auth, (user) => {
+    console.log("AUTH USER =", user)
+
+    if (user) {
+      uid.value = user.uid
+    } else {
+      uid.value = null
+    }
   })
 })
 
 // =====================
-// SAFE UID (IMPORTANT FIX)
-// =====================
-const getUid = () => {
-  return auth.currentUser?.uid || null
-}
-
-// =====================
-// ADD TO CART
+// ADD TO CART (DEBUG + SAFE)
 // =====================
 const addToCart = async (product) => {
-  const uid = getUid()
 
-  if (!uid) {
-    alert("Vous devez être connecté")
+  console.log("CLICK PRODUCT =", product)
+
+  const user = auth.currentUser
+
+  console.log("CURRENT USER =", user)
+
+  if (!user) {
+    alert("❌ Vous devez être connecté")
     return
   }
 
-  const ref = doc(db, "users", uid)
+  const userId = user.uid
+  console.log("USER ID =", userId)
+
+  const ref = doc(db, "users", userId)
+
   const snap = await getDoc(ref)
 
-  const data = snap.exists() ? snap.data() : {}
-  let cart = data.cart || []
+  let cart = []
+
+  if (snap.exists()) {
+    cart = snap.data().cart || []
+  }
+
+  console.log("OLD CART =", cart)
 
   const index = cart.findIndex(p => p.id === product.id)
 
@@ -89,6 +109,10 @@ const addToCart = async (product) => {
     })
   }
 
+  console.log("NEW CART =", cart)
+
   await setDoc(ref, { cart }, { merge: true })
+
+  alert("✅ Produit ajouté au panier")
 }
 </script>

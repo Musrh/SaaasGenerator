@@ -3,28 +3,26 @@
 
     <h2>🛒 Mon panier</h2>
 
+    <p v-if="error" style="color:red">{{ error }}</p>
+
     <div v-if="cart.length === 0">
-      <p>Votre panier est vide</p>
+      <p>Panier vide</p>
     </div>
 
     <div v-for="(item, index) in cart" :key="index" class="cart-item">
 
-      <div class="info">
+      <div>
         <strong>{{ item.name }}</strong>
         <p>{{ item.price }} €</p>
       </div>
 
-      <div class="qty-controls">
+      <div>
         <button @click="updateQty(index, item.qty - 1)">-</button>
-
         <span>{{ item.qty }}</span>
-
         <button @click="updateQty(index, item.qty + 1)">+</button>
       </div>
 
-      <button class="delete" @click="removeItem(index)">
-        🗑
-      </button>
+      <button @click="removeItem(index)">🗑</button>
 
     </div>
 
@@ -32,7 +30,7 @@
 
     <h3>Total : {{ total }} €</h3>
 
-    <button class="pay-btn" @click="pay" :disabled="cart.length === 0">
+    <button @click="pay" :disabled="cart.length === 0">
       💳 Payer
     </button>
 
@@ -43,38 +41,58 @@
 import { ref, computed, onMounted } from "vue"
 import { onSnapshot, updateDoc } from "firebase/firestore"
 
-// ⚠️ cartRef doit être importé ou passé depuis ton firebase.js
-// import { cartRef } from "@/firebase"
+// ⚠️ IMPORT IMPORTANT (à adapter à ton projet)
+import { db } from "@/firebase"
+import { doc } from "firebase/firestore"
+import { getAuth } from "firebase/auth"
 
 const cart = ref([])
+const error = ref(null)
+
+let cartRef = null
+
+const auth = getAuth()
 
 /* =========================================================
-   1. ÉCOUTE FIRESTORE
+   INIT SAFE
 ========================================================= */
-onSnapshot(cartRef, (snap) => {
-  const data = snap.data()
-  console.log("🔥 SNAP =", data)
+onMounted(() => {
+  try {
+    const user = auth.currentUser
 
-  cart.value = data?.items || []
+    if (!user) {
+      error.value = "Utilisateur non connecté"
+      return
+    }
+
+    cartRef = doc(db, "carts", user.uid)
+
+    onSnapshot(cartRef, (snap) => {
+      const data = snap.data()
+      cart.value = data?.items || []
+    })
+
+  } catch (e) {
+    console.error(e)
+    error.value = "Erreur chargement panier"
+  }
 })
 
 /* =========================================================
-   2. TOTAL COMMANDE
+   TOTAL
 ========================================================= */
 const total = computed(() => {
-  return cart.value.reduce((sum, item) => {
-    return sum + item.price * item.qty
-  }, 0)
+  return cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 })
 
 /* =========================================================
-   3. MODIFIER QUANTITÉ
+   QTY
 ========================================================= */
-async function updateQty(index, newQty) {
-  if (newQty < 1) return
+async function updateQty(index, qty) {
+  if (qty < 1) return
 
   const updated = [...cart.value]
-  updated[index].qty = newQty
+  updated[index].qty = qty
 
   await updateDoc(cartRef, {
     items: updated
@@ -82,7 +100,7 @@ async function updateQty(index, newQty) {
 }
 
 /* =========================================================
-   4. SUPPRIMER PRODUIT
+   DELETE
 ========================================================= */
 async function removeItem(index) {
   const updated = [...cart.value]
@@ -94,15 +112,13 @@ async function removeItem(index) {
 }
 
 /* =========================================================
-   5. PAIEMENT
+   PAY
 ========================================================= */
 async function pay() {
   try {
     const res = await fetch("/api/create-checkout-session", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         items: cart.value,
         total: total.value
@@ -111,54 +127,11 @@ async function pay() {
 
     const data = await res.json()
 
-    if (data?.url) {
+    if (data.url) {
       window.location.href = data.url
-    } else {
-      alert("Erreur paiement")
     }
-
-  } catch (err) {
-    console.error("Erreur paiement:", err)
+  } catch (e) {
+    console.error(e)
   }
 }
 </script>
-
-<style scoped>
-.cart-container {
-  max-width: 600px;
-  margin: auto;
-  padding: 20px;
-}
-
-.cart-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-}
-
-.qty-controls button {
-  margin: 0 5px;
-}
-
-.delete {
-  background: red;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  cursor: pointer;
-}
-
-.pay-btn {
-  width: 100%;
-  padding: 10px;
-  background: green;
-  color: white;
-  border: none;
-  cursor: pointer;
-  margin-top: 10px;
-}
-</style>

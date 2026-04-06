@@ -5,24 +5,31 @@
 
     <p v-if="error" style="color:red">{{ error }}</p>
 
+    <!-- PANIER VIDE -->
     <div v-if="cart.length === 0">
       <p>Panier vide</p>
     </div>
 
     <!-- PRODUITS -->
-    <div v-for="(item, index) in cart" :key="item.id || index" style="margin-bottom:15px">
+    <div
+      v-for="(item, index) in cart"
+      :key="item.id || index"
+      style="margin-bottom:15px"
+    >
 
       <h3>{{ item.name }}</h3>
       <p>{{ item.price }} €</p>
 
       <div style="display:flex; gap:10px; align-items:center">
 
+        <!-- QUANTITY -->
         <button @click="updateQty(index, item.qty - 1)">-</button>
 
         <span>{{ item.qty }}</span>
 
         <button @click="updateQty(index, item.qty + 1)">+</button>
 
+        <!-- DELETE -->
         <button @click="removeItem(index)" style="color:red">
           🗑
         </button>
@@ -33,8 +40,10 @@
 
     <hr>
 
+    <!-- TOTAL -->
     <h2>Total : {{ total }} €</h2>
 
+    <!-- PAYER -->
     <button @click="pay" :disabled="cart.length === 0">
       💳 Payer
     </button>
@@ -44,9 +53,9 @@
 
 <script setup>
 import { ref, computed } from "vue"
-import { doc, onSnapshot, updateDoc } from "firebase/firestore"
+import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
-import { db } from "../firebase"
+import { db } from "@/firebase"
 
 const cart = ref([])
 const error = ref(null)
@@ -55,7 +64,7 @@ const auth = getAuth()
 let userRef = null
 
 /* =========================================================
-   🔥 AUTH SAFE + FIRESTORE LISTENER
+   🔐 AUTH + LIVE CART SESSION
 ========================================================= */
 onAuthStateChanged(auth, (user) => {
 
@@ -69,16 +78,12 @@ onAuthStateChanged(auth, (user) => {
 
   onSnapshot(userRef, (snap) => {
 
-    if (!snap.exists()) {
-      cart.value = []
-      return
-    }
-
     const data = snap.data()
 
-    console.log("🔥 CART LIVE =", data)
+    // 🔥 IMPORTANT : cartSession
+    cart.value = data?.cartSession || []
 
-    cart.value = data.cart || []   // ✅ IMPORTANT
+    console.log("🔥 CART SESSION =", cart.value)
   })
 })
 
@@ -92,7 +97,7 @@ const total = computed(() => {
 })
 
 /* =========================================================
-   ➕➖ QUANTITY
+   ➕➖ QUANTITY UPDATE
 ========================================================= */
 async function updateQty(index, qty) {
   if (qty < 1) return
@@ -101,7 +106,7 @@ async function updateQty(index, qty) {
   updated[index].qty = qty
 
   await updateDoc(userRef, {
-    cart: updated
+    cartSession: updated
   })
 }
 
@@ -113,34 +118,42 @@ async function removeItem(index) {
   updated.splice(index, 1)
 
   await updateDoc(userRef, {
-    cart: updated
+    cartSession: updated
   })
 }
 
 /* =========================================================
-   💳 PAY BUTTON
+   💳 PAY → MOVE TO ORDERS + CLEAR CART
 ========================================================= */
 async function pay() {
+
+  const user = auth.currentUser
+  if (!user) return
+
+  const order = {
+    items: cart.value,
+    total: total.value,
+    createdAt: Date.now(),
+    status: "paid"
+  }
+
   try {
-    const res = await fetch("/api/create-checkout-session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        cart: cart.value,
-        total: total.value
-      })
+
+    // 🔥 1. ADD TO ORDERS
+    await updateDoc(userRef, {
+      orders: arrayUnion(order)
     })
 
-    const data = await res.json()
+    // 🧹 2. CLEAR CART SESSION
+    await updateDoc(userRef, {
+      cartSession: []
+    })
 
-    if (data.url) {
-      window.location.href = data.url
-    } else {
-      alert("Erreur paiement")
-    }
+    alert("Paiement réussi 🎉")
 
   } catch (e) {
     console.error(e)
+    alert("Erreur paiement")
   }
 }
 </script>

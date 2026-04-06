@@ -1,26 +1,43 @@
 <template>
   <div style="padding:20px">
 
-    <h1>🛍 Produits</h1>
+    <h1>🛍 Gestion des produits</h1>
 
-    <!-- UID DEBUG -->
-    <p><b>UID:</b> {{ uid || "NON CONNECTÉ" }}</p>
-
-    <!-- BOUTON PANIER -->
-    <button @click="goToCart">
-      🛒 Voir le panier
-    </button>
+    <button @click="addProduct">➕ Ajouter produit</button>
 
     <hr><br>
 
-    <!-- LISTE PRODUITS -->
-    <div v-for="product in products" :key="product.id" style="margin-bottom:20px">
+    <div v-for="(product, index) in products" :key="product.id" style="margin-bottom:30px; border:1px solid #ddd; padding:15px">
 
-      <h2>{{ product.name }}</h2>
-      <p>{{ product.price }} €</p>
+      <!-- IMAGE -->
+      <div>
+        <img
+          v-if="product.image"
+          :src="product.image"
+          style="width:120px; height:120px; object-fit:cover"
+        />
 
-      <button @click="addToCart(product)">
-        Ajouter au panier
+        <input type="file" @change="onImageChange($event, index)" />
+
+        <!-- CAMERA MOBILE -->
+        <input type="file" accept="image/*" capture="environment" @change="onImageChange($event, index)" />
+      </div>
+
+      <!-- NOM -->
+      <input v-model="product.name" placeholder="Nom du produit" />
+
+      <!-- PRIX -->
+      <input v-model.number="product.price" type="number" placeholder="Prix" />
+
+      <!-- DESCRIPTION -->
+      <textarea v-model="product.description" placeholder="Description"></textarea>
+
+      <br><br>
+
+      <button @click="saveProducts">💾 Sauvegarder</button>
+
+      <button @click="removeProduct(index)" style="color:red">
+        🗑 Supprimer
       </button>
 
     </div>
@@ -30,87 +47,77 @@
 
 <script setup>
 import { ref, onMounted } from "vue"
-import { useRouter } from "vue-router"
-import { auth, db } from "../firebase"
+import { auth, db } from "@/firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 
-const router = useRouter()
-const uid = ref(null)
+const products = ref([])
+let userRef = null
 
 /* =========================================================
-   🔐 AUTH
+   🔐 AUTH + LOAD PRODUCTS
 ========================================================= */
 onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
-    uid.value = user ? user.uid : null
+  onAuthStateChanged(auth, async (user) => {
+
+    if (!user) return
+
+    userRef = doc(db, "users", user.uid)
+
+    const snap = await getDoc(userRef)
+
+    if (snap.exists()) {
+      products.value = snap.data().products || []
+    }
   })
 })
 
 /* =========================================================
-   🛍 PRODUITS (TEST)
+   ➕ ADD PRODUCT
 ========================================================= */
-const products = ref([
-  { id: "1", name: "Produit 1", price: 29.99 },
-  { id: "2", name: "Produit 2", price: 49.99 },
-  { id: "3", name: "Produit 3", price: 19.99 }
-])
-
-/* =========================================================
-   🛒 NAVIGATION
-========================================================= */
-const goToCart = () => {
-  router.push("/cart")
+function addProduct() {
+  products.value.push({
+    id: Date.now().toString(),
+    name: "",
+    price: 0,
+    description: "",
+    image: ""
+  })
 }
 
 /* =========================================================
-   🛒 AJOUT AU PANIER SESSION
+   🗑 REMOVE PRODUCT
 ========================================================= */
-const addToCart = async (product) => {
+function removeProduct(index) {
+  products.value.splice(index, 1)
+}
 
-  const user = auth.currentUser
+/* =========================================================
+   🖼 IMAGE UPLOAD (BASE64 SIMPLE)
+========================================================= */
+function onImageChange(e, index) {
+  const file = e.target.files[0]
+  if (!file) return
 
-  if (!user) {
-    alert("❌ Vous devez être connecté")
-    return
+  const reader = new FileReader()
+
+  reader.onload = () => {
+    products.value[index].image = reader.result
   }
 
-  const userRef = doc(db, "users", user.uid)
+  reader.readAsDataURL(file)
+}
 
-  try {
-    const snap = await getDoc(userRef)
+/* =========================================================
+   💾 SAVE PRODUCTS
+========================================================= */
+async function saveProducts() {
+  if (!userRef) return
 
-    let cartSession = []
+  await setDoc(userRef, {
+    products: products.value
+  }, { merge: true })
 
-    if (snap.exists()) {
-      cartSession = snap.data().cartSession || []
-    }
-
-    // 🔥 logique PRO : pas d'accumulation cachée
-    const index = cartSession.findIndex(p => p.id === product.id)
-
-    if (index >= 0) {
-      cartSession[index].qty = 1   // session = 1 seul achat actif
-    } else {
-      cartSession.push({
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        qty: 1
-      })
-    }
-
-    await setDoc(userRef, {
-      cartSession
-    }, { merge: true })
-
-    console.log("🛒 CART SESSION =", cartSession)
-
-    alert("Produit ajouté au panier ✅")
-
-  } catch (e) {
-    console.error(e)
-    alert("Erreur panier")
-  }
+  alert("Produits sauvegardés ✅")
 }
 </script>

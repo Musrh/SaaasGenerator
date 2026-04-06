@@ -1,7 +1,7 @@
 <template>
-  <div class="cart">
+  <div style="padding:20px">
 
-    <h2>🛒 Mon panier</h2>
+    <h1>🛒 Mon panier</h1>
 
     <p v-if="error" style="color:red">{{ error }}</p>
 
@@ -9,30 +9,33 @@
       <p>Panier vide</p>
     </div>
 
-    <div v-for="(item, index) in cart" :key="item.id || index" class="item">
+    <!-- PRODUITS -->
+    <div v-for="(item, index) in cart" :key="item.id || index" style="margin-bottom:15px">
 
-      <div class="info">
-        <strong>{{ item.name }}</strong>
-        <p>{{ item.price }} €</p>
-      </div>
+      <h3>{{ item.name }}</h3>
+      <p>{{ item.price }} €</p>
 
-      <div class="qty">
+      <div style="display:flex; gap:10px; align-items:center">
+
         <button @click="updateQty(index, item.qty - 1)">-</button>
-        <span>{{ item.qty }}</span>
-        <button @click="updateQty(index, item.qty + 1)">+</button>
-      </div>
 
-      <button class="delete" @click="removeItem(index)">
-        🗑
-      </button>
+        <span>{{ item.qty }}</span>
+
+        <button @click="updateQty(index, item.qty + 1)">+</button>
+
+        <button @click="removeItem(index)" style="color:red">
+          🗑
+        </button>
+
+      </div>
 
     </div>
 
-    <hr />
+    <hr>
 
-    <h3>Total : {{ total }} €</h3>
+    <h2>Total : {{ total }} €</h2>
 
-    <button class="pay" @click="pay" :disabled="cart.length === 0">
+    <button @click="pay" :disabled="cart.length === 0">
       💳 Payer
     </button>
 
@@ -40,39 +43,42 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
-import { onSnapshot, updateDoc, doc } from "firebase/firestore"
-import { getAuth } from "firebase/auth"
-import { db } from "../firebase"
+import { ref, computed } from "vue"
+import { doc, onSnapshot, updateDoc } from "firebase/firestore"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { db } from "@/firebase"
 
 const cart = ref([])
 const error = ref(null)
 
 const auth = getAuth()
-let cartRef = null
+let userRef = null
 
 /* =========================================================
-   🔥 FIRESTORE LISTENER (cart, PAS items)
+   🔥 AUTH SAFE + FIRESTORE LISTENER
 ========================================================= */
-onMounted(() => {
-  const user = auth.currentUser
+onAuthStateChanged(auth, (user) => {
 
   if (!user) {
+    cart.value = []
     error.value = "Utilisateur non connecté"
     return
   }
 
-  cartRef = doc(db, "carts", user.uid)
+  userRef = doc(db, "users", user.uid)
 
-  onSnapshot(cartRef, (snap) => {
-    console.log("🔥 SNAP =", snap.data())
+  onSnapshot(userRef, (snap) => {
 
     if (!snap.exists()) {
       cart.value = []
       return
     }
 
-    cart.value = snap.data().cart || []
+    const data = snap.data()
+
+    console.log("🔥 CART LIVE =", data)
+
+    cart.value = data.cart || []   // ✅ IMPORTANT
   })
 })
 
@@ -94,7 +100,7 @@ async function updateQty(index, qty) {
   const updated = [...cart.value]
   updated[index].qty = qty
 
-  await updateDoc(cartRef, {
+  await updateDoc(userRef, {
     cart: updated
   })
 }
@@ -106,7 +112,7 @@ async function removeItem(index) {
   const updated = [...cart.value]
   updated.splice(index, 1)
 
-  await updateDoc(cartRef, {
+  await updateDoc(userRef, {
     cart: updated
   })
 }
@@ -138,41 +144,3 @@ async function pay() {
   }
 }
 </script>
-
-<style scoped>
-.cart {
-  max-width: 600px;
-  margin: auto;
-  padding: 20px;
-}
-
-.item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-  border: 1px solid #ddd;
-  margin-bottom: 10px;
-  border-radius: 8px;
-}
-
-.qty button {
-  margin: 0 5px;
-}
-
-.delete {
-  background: red;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-}
-
-.pay {
-  width: 100%;
-  padding: 10px;
-  background: green;
-  color: white;
-  border: none;
-  margin-top: 10px;
-}
-</style>

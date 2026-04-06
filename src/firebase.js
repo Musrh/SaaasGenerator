@@ -1,10 +1,12 @@
+//SaaasGenerator/src/firebase.js
+//Dimanche 
 import { initializeApp } from "firebase/app"
-import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth"
+import { getAuth } from "firebase/auth"
 import { getFirestore } from "firebase/firestore"
 import { getStorage } from "firebase/storage"
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD-GbPIVkvx4Rv1IG2ae6i1Ki8ajui_7k",
+  apiKey: "AIzaSyD-GbPIVkvxq4Rv1IG2ae6i1Ki8ajui_7k",
   authDomain: "mrhsaas.firebaseapp.com",
   projectId: "mrhsaas",
   storageBucket: "mrhsaas.firebasestorage.app",
@@ -17,9 +19,4 @@ const app = initializeApp(firebaseConfig)
 
 export const auth = getAuth(app)
 export const db = getFirestore(app)
-export const storage = getStorage(app)
-
-// 🔥 PERSISTENCE SaaS (IMPORTANT)
-setPersistence(auth, browserLocalPersistence)
-
-export { app }
+export const storage = getStorage(app) // ✅ AJOUT IMPORTANT

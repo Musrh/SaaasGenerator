@@ -1,5 +1,5 @@
 <!-- ============================================================
-  ProductPage.vue — VERSION FINALE FIX NAV + CART
+  ProductPage.vue — VERSION FINALE CORRIGÉE
 ============================================================ -->
 
 <template>
@@ -10,14 +10,14 @@
     <!-- DEBUG UID -->
     <p><b>UID:</b> {{ uid || "NON CONNECTÉ" }}</p>
 
-    <!-- 🔥 BOUTON PANIER (FIX) -->
+    <!-- PANIER -->
     <button @click="goToCart">
       Voir le panier 🛒
     </button>
 
     <hr><br>
 
-    <!-- LISTE PRODUITS -->
+    <!-- PRODUITS -->
     <div v-for="product in products" :key="product.id" style="margin-bottom:20px">
 
       <h2>{{ product.name }}</h2>
@@ -35,21 +35,20 @@
 <script setup>
 import { ref, onMounted } from "vue"
 import { useRouter } from "vue-router"
+
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore"
+import { doc, getDoc, setDoc } from "firebase/firestore"
 
 // =====================
 const router = useRouter()
 const uid = ref(null)
 
 // =====================
-// AUTH
+// AUTH LISTENER SAFE
 // =====================
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
-    console.log("USER =", user)
-
     if (user) {
       uid.value = user.uid
     } else {
@@ -68,15 +67,14 @@ const products = ref([
 ])
 
 // =====================
-// NAVIGATION PANIER (FIX)
+// NAVIGATION CART
 // =====================
 const goToCart = () => {
-  console.log("➡️ NAVIGATION /cart")
   router.push("/cart")
 }
 
 // =====================
-// AJOUT PANIER (FIX TOTAL)
+// ADD TO CART FIX FINAL
 // =====================
 const addToCart = async (product) => {
 
@@ -96,11 +94,9 @@ const addToCart = async (product) => {
 
     if (snap.exists()) {
       cart = snap.data().cart || []
-    } else {
-      await setDoc(userRef, { cart: [] })
     }
 
-    // Vérifier si produit existe déjà
+    // vérifier produit existant
     const index = cart.findIndex(p => p.id === product.id)
 
     if (index >= 0) {
@@ -114,15 +110,16 @@ const addToCart = async (product) => {
       })
     }
 
-    await updateDoc(userRef, { cart })
+    // ✅ ÉCRITURE UNIQUE STABLE
+    await setDoc(userRef, { cart }, { merge: true })
 
     console.log("🛒 CART UPDATED =", cart)
 
     alert("✅ Produit ajouté au panier")
 
-  } catch (e) {
-    console.error("ERREUR FIRESTORE:", e)
-    alert("Erreur panier")
+  } catch (error) {
+    console.error("ERREUR FIRESTORE:", error)
+    alert("Erreur ajout panier")
   }
 }
 </script>

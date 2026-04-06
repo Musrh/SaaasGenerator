@@ -3,7 +3,7 @@
     <h1 class="text-2xl font-bold mb-6">Mon Panier</h1>
 
     <div v-if="!authReady" class="text-gray-500">
-      Chargement utilisateur...
+      Chargement...
     </div>
 
     <div v-else>
@@ -42,58 +42,44 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import {
-  doc,
-  onSnapshot,
-  updateDoc
-} from "firebase/firestore"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
+import { doc, onSnapshot, updateDoc } from "firebase/firestore"
 
 // =====================
 // STATE
 // =====================
 const cart = ref([])
 const authReady = ref(false)
-const user = ref(null)
 
 // =====================
-// AUTH STATE
+// AUTH STATE (SIMPLE & SAFE)
 // =====================
-onAuthStateChanged(auth, (u) => {
-  user.value = u
-  authReady.value = true
+onMounted(() => {
+  onAuthStateChanged(auth, () => {
+    authReady.value = true
+  })
 })
 
 // =====================
 // SAFE UID
 // =====================
-const getUid = async () => {
-  let u = auth.currentUser
-
-  if (u) return u.uid
-
-  return new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      unsub()
-      resolve(user?.uid || null)
-    })
-  })
+const getUid = () => {
+  return auth.currentUser?.uid || null
 }
 
 // =====================
 // LOAD CART
 // =====================
-onMounted(async () => {
-  const uid = await getUid()
+onMounted(() => {
+  const uid = getUid()
 
   if (!uid) return
 
   const ref = doc(db, "users", uid)
 
   onSnapshot(ref, (snap) => {
-    const data = snap.data()
-    cart.value = data?.cart || []
+    cart.value = snap.data()?.cart || []
   })
 })
 
@@ -110,7 +96,7 @@ const total = computed(() => {
 // REMOVE ITEM
 // =====================
 const removeItem = async (index) => {
-  const uid = await getUid()
+  const uid = getUid()
 
   if (!uid) return
 

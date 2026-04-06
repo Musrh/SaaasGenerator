@@ -9,6 +9,8 @@ import SiteViewer  from "./views/SiteViewer.vue"
 import NotFound    from "./views/NotFound.vue"
 
 import Orders from "./views/Orders.vue"
+
+import Cart from "./views/Cart.vue"
 const routes = [
 
   // ── Page d'accueil de SaaasGenerator ──────────────────────
@@ -16,6 +18,11 @@ const routes = [
     path: "/",
     name: "home",
     component: Home,
+  },
+
+  {
+    path: "/cart",
+    component: Cart
   },
 
   // ── Affichage d'un site publié ────────────────────────────

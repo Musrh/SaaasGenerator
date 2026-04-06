@@ -4,10 +4,19 @@
     <h1 class="text-2xl font-bold mb-4">Produits</h1>
 
     <!-- DEBUG USER -->
-    <div class="text-sm text-gray-500 mb-3">
+    <div class="text-sm text-gray-500 mb-4">
       UID: {{ uid || "NULL (non connecté)" }}
     </div>
 
+    <!-- BOUTON PANIER -->
+    <button
+      @click="goToCart"
+      class="mb-6 bg-green-500 text-white px-4 py-2 rounded-lg"
+    >
+      Voir le panier 🛒
+    </button>
+
+    <!-- PRODUITS -->
     <div class="grid md:grid-cols-3 gap-6">
 
       <div
@@ -15,7 +24,6 @@
         :key="product.id"
         class="border p-4 rounded-lg shadow"
       >
-
         <h2 class="font-bold text-lg">{{ product.name }}</h2>
         <p class="text-gray-500">{{ product.price }} €</p>
 
@@ -35,12 +43,22 @@
 
 <script setup>
 import { ref, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import { doc, getDoc, setDoc } from "firebase/firestore"
 
 // =====================
-// PRODUCTS TEST
+// ROUTER
+// =====================
+const router = useRouter()
+
+const goToCart = () => {
+  router.push("/cart")
+}
+
+// =====================
+// PRODUCTS DEMO
 // =====================
 const products = ref([
   { id: "1", name: "Produit 1", price: 29.99 },
@@ -66,7 +84,7 @@ onMounted(() => {
 })
 
 // =====================
-// ADD TO CART (DEBUG + SAFE)
+// ADD TO CART
 // =====================
 const addToCart = async (product) => {
 
@@ -82,7 +100,6 @@ const addToCart = async (product) => {
   }
 
   const userId = user.uid
-  console.log("USER ID =", userId)
 
   const ref = doc(db, "users", userId)
 
@@ -116,3 +133,6 @@ const addToCart = async (product) => {
   alert("✅ Produit ajouté au panier")
 }
 </script>
+
+<style scoped>
+</style>

@@ -43,7 +43,7 @@
 import { ref, computed, onMounted } from "vue"
 import { onSnapshot, updateDoc, doc } from "firebase/firestore"
 import { getAuth } from "firebase/auth"
-import { db } from "@/firebase"
+import { db } from "../firebase"
 
 const cart = ref([])
 const error = ref(null)

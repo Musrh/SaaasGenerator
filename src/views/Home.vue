@@ -2,7 +2,9 @@
   <div class="p-6">
     <h1 class="text-2xl font-bold mb-6">Produits</h1>
 
-    <div v-if="loading" class="text-gray-500">Chargement...</div>
+    <div v-if="!authReady" class="text-gray-500">
+      Vérification connexion...
+    </div>
 
     <div v-else class="grid md:grid-cols-3 gap-6">
       <div
@@ -14,8 +16,9 @@
         <p class="text-gray-500">{{ product.price }} €</p>
 
         <button
+          :disabled="!authReady"
           @click="addToCart(product)"
-          class="mt-3 bg-blue-500 text-white px-4 py-2 rounded-lg"
+          class="mt-3 bg-blue-500 text-white px-4 py-2 rounded-lg disabled:opacity-50"
         >
           Ajouter au panier
         </button>
@@ -34,33 +37,45 @@ import {
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
 
+// =====================
+// PRODUCTS DEMO
+// =====================
 const products = ref([
   { id: "1", name: "Produit 1", price: 29.99 },
   { id: "2", name: "Produit 2", price: 49.99 },
   { id: "3", name: "Produit 3", price: 19.99 }
 ])
 
-const loading = ref(true)
+// =====================
+// AUTH STATE
+// =====================
+const authReady = ref(false)
 const user = ref(null)
 
-// 🔥 AUTH SAFE
 onAuthStateChanged(auth, (u) => {
   user.value = u
-  loading.value = false
+  authReady.value = true
 })
 
-// 🔥 SAFE UID
-const getUid = () =>
-  new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+// =====================
+// SAFE UID (IMPORTANT)
+// =====================
+const getUid = async () => {
+  let u = auth.currentUser
+
+  if (u) return u.uid
+
+  return new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user) => {
       unsub()
-      resolve(u?.uid || null)
+      resolve(user?.uid || null)
     })
   })
+}
 
-// ==========================
+// =====================
 // ADD TO CART
-// ==========================
+// =====================
 const addToCart = async (product) => {
   const uid = await getUid()
 

@@ -1,42 +1,44 @@
 <template>
   <div class="p-6">
-    <h1 class="text-2xl font-bold mb-6">Mon Panier</h1>
 
-    <div v-if="!authReady" class="text-gray-500">
-      Chargement...
+    <h1 class="text-2xl font-bold mb-4">Mon Panier</h1>
+
+    <!-- DEBUG -->
+    <div class="text-sm text-gray-500 mb-2">
+      UID: {{ uid || "NULL" }}
+    </div>
+
+    <div v-if="!uid">
+      ❌ Vous n’êtes pas connecté
     </div>
 
     <div v-else>
+
       <div v-if="cart.length === 0">
-        Panier vide 🛒
+        🛒 Panier vide
       </div>
 
       <div v-else>
+
         <div
           v-for="(item, index) in cart"
           :key="item.id"
-          class="border p-4 mb-3 rounded-lg flex justify-between items-center"
+          class="border p-4 mb-3 flex justify-between"
         >
           <div>
             <h2 class="font-bold">{{ item.name }}</h2>
-            <p class="text-gray-500">
-              {{ item.price }} € x {{ item.qty }}
-            </p>
+            <p>{{ item.price }} € x {{ item.qty }}</p>
           </div>
-
-          <button
-            @click="removeItem(index)"
-            class="bg-red-500 text-white px-3 py-1 rounded"
-          >
-            Supprimer
-          </button>
         </div>
 
-        <div class="mt-6 text-xl font-bold">
-          Total : {{ total }} €
+        <div class="mt-4 text-xl font-bold">
+          Total: {{ total }} €
         </div>
+
       </div>
+
     </div>
+
   </div>
 </template>
 
@@ -44,42 +46,39 @@
 import { ref, computed, onMounted } from "vue"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, onSnapshot, updateDoc } from "firebase/firestore"
+import { doc, onSnapshot } from "firebase/firestore"
 
 // =====================
 // STATE
 // =====================
+const uid = ref(null)
 const cart = ref([])
-const authReady = ref(false)
 
 // =====================
-// AUTH STATE (SIMPLE & SAFE)
-// =====================
-onMounted(() => {
-  onAuthStateChanged(auth, () => {
-    authReady.value = true
-  })
-})
-
-// =====================
-// SAFE UID
-// =====================
-const getUid = () => {
-  return auth.currentUser?.uid || null
-}
-
-// =====================
-// LOAD CART
+// AUTH LISTENER (IMPORTANT)
 // =====================
 onMounted(() => {
-  const uid = getUid()
+  onAuthStateChanged(auth, (user) => {
 
-  if (!uid) return
+    console.log("CART AUTH USER =", user)
 
-  const ref = doc(db, "users", uid)
+    if (!user) {
+      uid.value = null
+      cart.value = []
+      return
+    }
 
-  onSnapshot(ref, (snap) => {
-    cart.value = snap.data()?.cart || []
+    uid.value = user.uid
+
+    // 🔥 FIRESTORE REALTIME LISTENER
+    const ref = doc(db, "users", user.uid)
+
+    onSnapshot(ref, (snap) => {
+
+      console.log("FIRESTORE CART =", snap.data())
+
+      cart.value = snap.data()?.cart || []
+    })
   })
 })
 
@@ -91,22 +90,4 @@ const total = computed(() => {
     return sum + item.price * item.qty
   }, 0)
 })
-
-// =====================
-// REMOVE ITEM
-// =====================
-const removeItem = async (index) => {
-  const uid = getUid()
-
-  if (!uid) return
-
-  const ref = doc(db, "users", uid)
-
-  const newCart = [...cart.value]
-  newCart.splice(index, 1)
-
-  await updateDoc(ref, {
-    cart: newCart
-  })
-}
 </script>

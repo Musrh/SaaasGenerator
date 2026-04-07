@@ -1,3 +1,58 @@
+<template>
+  <div class="cart-root">
+
+    <!-- HEADER -->
+    <header class="cart-header">
+      <button @click="$router.push('/')">← Retour</button>
+      <h2>🛒 Panier</h2>
+    </header>
+
+    <!-- NOT LOGGED -->
+    <div v-if="!uid && !loading">
+      <p>Connectez-vous</p>
+    </div>
+
+    <!-- LOADING -->
+    <div v-else-if="loading">
+      <p>Chargement...</p>
+    </div>
+
+    <!-- EMPTY -->
+    <div v-else-if="cart.length === 0">
+      <p>Panier vide</p>
+    </div>
+
+    <!-- CART -->
+    <div v-else>
+
+      <div v-for="(item, i) in cart" :key="i">
+        <p>{{ item.name }} - {{ item.qty }} x {{ item.price }}€</p>
+
+        <button @click="updateQty(i, item.qty - 1)">-</button>
+        <button @click="updateQty(i, item.qty + 1)">+</button>
+        <button @click="removeItem(i)">Supprimer</button>
+      </div>
+
+      <h3>Total : {{ total.toFixed(2) }} €</h3>
+
+      <!-- CUSTOMER -->
+      <input v-model="customerName" placeholder="Nom" />
+      <input v-model="customerEmail" placeholder="Email" />
+      <textarea v-model="shippingAddress" placeholder="Adresse livraison"></textarea>
+
+      <p style="color:red">{{ payError }}</p>
+
+      <button @click="payWithStripe" :disabled="paying">
+        {{ paying ? "Paiement..." : "Payer" }}
+      </button>
+
+      <button @click="clearCart">Vider panier</button>
+
+    </div>
+
+  </div>
+</template>
+
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue"
 import { useRouter } from "vue-router"
@@ -24,15 +79,20 @@ const shippingAddress = ref("")
 let userRef = null
 let unsubCart = null
 
-// COMPUTED
+// TOTAL
 const total = computed(() =>
-  cart.value.reduce((s, i) => s + i.price * i.qty, 0)
+  cart.value.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0)
 )
 
-// AUTH
+// AUTH + CART LISTENER (FIX écran blanc)
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
-    if (!user) return
+    if (!user) {
+      uid.value = null
+      cart.value = []
+      loading.value = false
+      return
+    }
 
     uid.value = user.uid
     userRef = doc(db, "users", user.uid)
@@ -44,10 +104,33 @@ onMounted(() => {
   })
 })
 
-onUnmounted(() => unsubCart?.())
+onUnmounted(() => {
+  unsubCart?.()
+})
 
-// PAIEMENT
+// UPDATE QTY
+const updateQty = async (i, qty) => {
+  if (qty < 1) return
+  const updated = [...cart.value]
+  updated[i].qty = qty
+  await updateDoc(userRef, { cartSession: updated })
+}
+
+// REMOVE ITEM
+const removeItem = async (i) => {
+  const updated = [...cart.value]
+  updated.splice(i, 1)
+  await updateDoc(userRef, { cartSession: updated })
+}
+
+// CLEAR CART
+const clearCart = async () => {
+  await updateDoc(userRef, { cartSession: [] })
+}
+
+// PAY STRIPE
 const payWithStripe = async () => {
+
   if (!customerName.value || !customerEmail.value || !shippingAddress.value) {
     payError.value = "Tous les champs sont obligatoires"
     return
@@ -82,6 +165,8 @@ const payWithStripe = async () => {
 
     const data = await res.json()
 
+    if (!data.url) throw new Error("Stripe error")
+
     window.location.href = data.url
 
   } catch (e) {
@@ -90,7 +175,7 @@ const payWithStripe = async () => {
   }
 }
 
-// SAVE ORDER (corrigé)
+// SAVE ORDER (FIX export bug)
 const saveOrder = async (orderData) => {
   if (!uid.value) return
 

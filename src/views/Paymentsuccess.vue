@@ -1,77 +1,77 @@
 <template>
-  <div class="success-root">
+  <div class="success">
     <h2>✅ Paiement réussi</h2>
-    <p v-if="loading">Votre commande est en cours de traitement...</p>
-    <p v-else>✔ Commande enregistrée</p>
+    <p>{{ message }}</p>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from "vue"
+import { useRouter } from "vue-router"
 import { db } from "../firebase"
 import { doc, addDoc, collection, updateDoc } from "firebase/firestore"
 
-const loading = ref(true)
-let done = false
+const router = useRouter()
+const message = ref("Traitement de la commande...")
+let executed = false
 
 onMounted(async () => {
-  if (done) return
-  done = true
+  if (executed) return
+  executed = true
 
   try {
     const raw = localStorage.getItem("pendingStripeOrder")
 
     if (!raw) {
-      loading.value = false
+      message.value = "Aucune commande trouvée"
       return
     }
 
     const order = JSON.parse(raw)
 
-    if (!order.ownerUid) {
-      console.error("❌ ownerUid manquant")
-      loading.value = false
-      return
-    }
+    const uid = order.ownerUid
+    if (!uid) throw new Error("UID manquant")
 
     const finalOrder = {
       items: order.items || [],
       total: order.total || 0,
-
       customerName: order.customerName || "",
       customerEmail: order.customerEmail || "",
       shippingAddress: order.shippingAddress || "",
-
-      ownerUid: order.ownerUid,
       status: "paid",
-      createdAt: new Date().toISOString()
+      createdAt: new Date()
     }
 
-    // 🔥 FIRESTORE USER ORDERS
+    // 🔥 1. SAVE USER ORDERS
     await addDoc(
-      collection(db, "users", finalOrder.ownerUid, "orders"),
+      collection(db, "users", uid, "orders"),
       finalOrder
     )
 
-    // 🔥 GLOBAL ORDERS
-    await addDoc(collection(db, "orders"), finalOrder)
+    // 🔥 2. GLOBAL ORDERS
+    await addDoc(collection(db, "orders"), {
+      ...finalOrder,
+      ownerUid: uid
+    })
 
-    // 🔥 CLEAR CART (IMPORTANT FIX)
-    await updateDoc(
-      doc(db, "users", finalOrder.ownerUid),
-      { cartSession: [] }
-    )
+    // 🔥 3. CLEAR CART SESSION (IMPORTANT)
+    await updateDoc(doc(db, "users", uid), {
+      cartSession: []
+    })
 
-    // 🔥 CLEAN STORAGE
+    // 🔥 4. CLEAN LOCAL STORAGE
     localStorage.removeItem("pendingStripeOrder")
 
-    loading.value = false
+    message.value = "Commande enregistrée ✔"
 
-    console.log("✅ ORDER SAVED + CART CLEARED")
+    // 🔥 5. AUTO REDIRECT (IMPORTANT FIX ÉCRAN BLOQUÉ)
+    setTimeout(() => {
+      router.push("/cart") // ou "/store"
+    }, 2000)
 
   } catch (e) {
-    console.error("❌ PaymentSuccess ERROR:", e)
-    loading.value = false
+    console.error("PAYMENT ERROR:", e)
+    message.value = "Erreur lors du traitement"
   }
 })
 </script>

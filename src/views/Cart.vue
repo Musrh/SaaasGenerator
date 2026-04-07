@@ -24,7 +24,7 @@
       <textarea v-model="customerAddress" placeholder="Adresse de livraison"></textarea>
     </div>
 
-    <!-- BOUTON PAYER -->
+    <!-- BOUTON -->
     <button v-if="cart.length" @click="checkout">
       💳 Payer
     </button>
@@ -42,7 +42,7 @@ const auth = getAuth()
 
 const cart = ref([])
 
-// 🔥 FORMULAIRE CLIENT
+// 🔥 INFOS CLIENT
 const customerName = ref("")
 const customerEmail = ref("")
 const customerAddress = ref("")
@@ -52,65 +52,78 @@ const total = computed(() =>
   cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
 )
 
-// 🔥 CHARGEMENT PANIER FIRESTORE
+// 🔥 SYNC PANIER FIRESTORE
 onMounted(() => {
   const user = auth.currentUser
   if (!user) return
 
-  const refUser = doc(db, "users", user.uid)
+  const userRef = doc(db, "users", user.uid)
 
-  onSnapshot(refUser, (snap) => {
+  onSnapshot(userRef, (snap) => {
     cart.value = snap.data()?.cartSession || []
   })
 })
 
-// 🔥 CHECKOUT
+// 🔥 CHECKOUT STRIPE
 const checkout = async () => {
   const user = auth.currentUser
-  if (!user) return alert("Non connecté")
+  if (!user) {
+    alert("Non connecté")
+    return
+  }
 
-  // ⚠️ validation simple
   if (!customerName.value || !customerEmail.value || !customerAddress.value) {
-    return alert("Remplis toutes les informations")
+    alert("Remplis toutes les infos")
+    return
   }
 
-  const orderData = {
-    items: cart.value,
-    total: total.value,
-    customerName: customerName.value,
-    customerEmail: customerEmail.value,
-    customerAddress: customerAddress.value
-  }
-
-  // 🔥 1. sauver dans Firestore (cartSession enrichi)
-  await updateDoc(doc(db, "users", user.uid), {
-    cartSession: cart.value
-  })
-
-  // 🔥 2. sauver temporairement pour PaymentSuccess
-  localStorage.setItem("pendingStripeOrder", JSON.stringify(orderData))
-
-  // 🔥 3. envoyer au backend Stripe
-  const res = await fetch("https://ton-backend-stripe.com/create-checkout-session", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      amount: total.value * 100,
-      currency: "eur",
+  try {
+    const orderData = {
       items: cart.value,
+      total: total.value,
       customerName: customerName.value,
       customerEmail: customerEmail.value,
-      customerAddress: customerAddress.value,
-      uid: user.uid
+      customerAddress: customerAddress.value
+    }
+
+    // ✅ sauvegarde temporaire
+    localStorage.setItem("pendingStripeOrder", JSON.stringify(orderData))
+
+    console.log("📦 Envoi backend =", orderData)
+
+    // 🔥 TON BACKEND RAILWAY
+    const res = await fetch("https://backend-master-production-cf50.up.railway.app/create-checkout-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        amount: Math.round(total.value * 100),
+        currency: "eur",
+        items: cart.value,
+        customerName: customerName.value,
+        customerEmail: customerEmail.value,
+        customerAddress: customerAddress.value,
+        uid: user.uid
+      })
     })
-  })
 
-  const data = await res.json()
+    const data = await res.json()
 
-  // 🔥 4. redirection Stripe
-  window.location.href = data.url
+    console.log("🔥 Réponse backend =", data)
+
+    if (!data.url) {
+      alert("Erreur Stripe : URL manquante")
+      return
+    }
+
+    // ✅ REDIRECTION STRIPE
+    window.location.href = data.url
+
+  } catch (err) {
+    console.error("❌ Erreur checkout:", err)
+    alert("Erreur paiement")
+  }
 }
 </script>
 
@@ -133,5 +146,15 @@ input, textarea {
   margin-bottom: 10px;
   width: 100%;
   padding: 10px;
+}
+
+button {
+  margin-top: 20px;
+  padding: 12px;
+  width: 100%;
+  background: black;
+  color: white;
+  border: none;
+  cursor: pointer;
 }
 </style>

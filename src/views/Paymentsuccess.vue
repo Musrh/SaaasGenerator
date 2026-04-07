@@ -1,17 +1,19 @@
 <template>
-  <div style="padding:20px">
-    <h2>✅ Paiement réussi</h2>
+  <div class="success">
 
-    <p>{{ message }}</p>
+    <div v-if="loading" class="box">
+      <div class="spinner"></div>
+      <p>Validation du paiement...</p>
+    </div>
 
-    <!-- 🔥 NOUVEAU BOUTON -->
-    <button
-      v-if="uid"
-      @click="clearCartManually"
-      style="margin-top:15px;padding:10px"
-    >
-      🧹 Vider le panier
-    </button>
+    <div v-else class="box">
+      <h1>✅ Paiement réussi</h1>
+      <p>Votre commande est confirmée.</p>
+
+      <button @click="goHome">🏠 Accueil</button>
+      <button @click="goCart">🛒 Voir panier</button>
+    </div>
+
   </div>
 </template>
 
@@ -19,59 +21,106 @@
 import { ref, onMounted } from "vue"
 import { useRouter } from "vue-router"
 import { db } from "../firebase"
-import { doc, updateDoc } from "firebase/firestore"
+import { doc, addDoc, collection, updateDoc } from "firebase/firestore"
 
 const router = useRouter()
-const message = ref("Traitement en cours...")
-const uid = ref(null)
+const loading = ref(true)
 
-let done = false
+let order = null
 
 onMounted(async () => {
-  if (done) return
-  done = true
-
   try {
+    // 1. récupérer commande stockée avant Stripe redirect
     const raw = localStorage.getItem("pendingStripeOrder")
 
     if (!raw) {
-      message.value = "Aucune commande trouvée"
+      loading.value = false
       return
     }
 
-    const order = JSON.parse(raw)
-    uid.value = order.ownerUid
+    order = JSON.parse(raw)
 
-    message.value = "Commande enregistrée ✔"
+    const uid = order.ownerUid
 
-    // (optionnel) auto redirect
-    setTimeout(() => {
-      router.push("/")
-    }, 2000)
+    if (!uid) throw new Error("UID manquant")
 
-  } catch (e) {
-    console.error(e)
-    message.value = "Erreur traitement commande"
-  }
-})
+    // 2. ref user
+    const userRef = doc(db, "users", uid)
 
-/**
- * 🔥 NOUVEAU : vider panier manuellement
- */
-const clearCartManually = async () => {
-  try {
-    if (!uid.value) return
+    // 3. ENRICHIR commande
+    const fullOrder = {
+      ...order,
+      status: "paid",
+      createdAt: new Date(),
+    }
 
-    await updateDoc(doc(db, "users", uid.value), {
+    // 4. sauvegarde Firestore (user orders)
+    await addDoc(collection(db, "users", uid, "orders"), fullOrder)
+
+    // 5. sauvegarde globale
+    await addDoc(collection(db, "orders"), fullOrder)
+
+    // 6. vider panier Firestore
+    await updateDoc(userRef, {
       cartSession: []
     })
 
-    message.value = "🧹 Panier vidé avec succès"
+    // 7. nettoyer localStorage
+    localStorage.removeItem("pendingStripeOrder")
+    localStorage.removeItem("stripeOwnerUid")
 
-    console.log("CART CLEARED MANUALLY")
+    loading.value = false
+
   } catch (e) {
-    console.error("CLEAR CART ERROR:", e)
-    message.value = "Erreur lors du vidage du panier"
+    console.error(e)
+    loading.value = false
   }
-}
+})
+
+// navigation
+const goHome = () => router.push("/")
+const goCart = () => router.push("/cart")
 </script>
+
+<style scoped>
+.success{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  background:#f8f9fa;
+  font-family:sans-serif;
+}
+
+.box{
+  text-align:center;
+  background:white;
+  padding:30px;
+  border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.1);
+}
+
+button{
+  margin:10px;
+  padding:10px 16px;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+  background:#6c63ff;
+  color:white;
+}
+
+.spinner{
+  width:30px;
+  height:30px;
+  border:3px solid #eee;
+  border-top-color:#6c63ff;
+  border-radius:50%;
+  margin:auto;
+  animation:spin 1s linear infinite;
+}
+
+@keyframes spin{
+  to{transform:rotate(360deg)}
+}
+</style>

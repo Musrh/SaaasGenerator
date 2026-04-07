@@ -8,6 +8,7 @@ import Home        from "./views/Home.vue"
 import SiteViewer  from "./views/SiteViewer.vue"
 import NotFound    from "./views/NotFound.vue"
 
+import Success from "./views/Paymentsuccess.vue"
 import Orders from "./views/Orders.vue"
 
 import Cart from "./views/Cart.vue"
@@ -23,6 +24,10 @@ const routes = [
   {
     path: "/cart",
     component: Cart
+  },
+  {
+    path: "/success",
+    component: Success 
   },
 
   // ── Affichage d'un site publié ────────────────────────────

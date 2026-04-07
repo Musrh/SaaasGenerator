@@ -1,71 +1,77 @@
 <template>
   <div class="success-root">
     <h2>✅ Paiement réussi</h2>
-    <p>Votre commande est en cours de traitement...</p>
+    <p v-if="loading">Votre commande est en cours de traitement...</p>
+    <p v-else>✔ Commande enregistrée</p>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from "vue"
-import { db, auth } from "../firebase"
+import { ref, onMounted } from "vue"
+import { db } from "../firebase"
 import { doc, addDoc, collection, updateDoc } from "firebase/firestore"
-import { onAuthStateChanged } from "firebase/auth"
 
-let uid = null
-let alreadySaved = false
+const loading = ref(true)
+let done = false
 
-onMounted(() => {
+onMounted(async () => {
+  if (done) return
+  done = true
 
-  onAuthStateChanged(auth, async (user) => {
-    if (!user || alreadySaved) return
-
-    uid = user.uid
-
+  try {
     const raw = localStorage.getItem("pendingStripeOrder")
-    if (!raw) return
+
+    if (!raw) {
+      loading.value = false
+      return
+    }
 
     const order = JSON.parse(raw)
 
-    try {
-      alreadySaved = true
-
-      const finalOrder = {
-        items: order.items || [],
-        total: order.total || 0,
-
-        customerName: order.customerName || "",
-        customerEmail: order.customerEmail || "",
-        shippingAddress: order.shippingAddress || "",
-
-        ownerUid: order.ownerUid || uid,
-        status: "paid",
-        createdAt: new Date().toISOString()
-      }
-
-      // 🔥 1. USER ORDERS
-      await addDoc(
-        collection(db, "users", finalOrder.ownerUid, "orders"),
-        finalOrder
-      )
-
-      // 🔥 2. GLOBAL ORDERS
-      await addDoc(collection(db, "orders"), finalOrder)
-
-      // 🔥 3. CLEAR CART
-      await updateDoc(
-        doc(db, "users", finalOrder.ownerUid),
-        { cartSession: [] }
-      )
-
-      // 🔥 4. CLEAN LOCAL STORAGE
-      localStorage.removeItem("pendingStripeOrder")
-
-      console.log("✅ Order saved successfully")
-
-    } catch (e) {
-      console.error("❌ PaymentSuccess error:", e)
-      alreadySaved = false
+    if (!order.ownerUid) {
+      console.error("❌ ownerUid manquant")
+      loading.value = false
+      return
     }
-  })
+
+    const finalOrder = {
+      items: order.items || [],
+      total: order.total || 0,
+
+      customerName: order.customerName || "",
+      customerEmail: order.customerEmail || "",
+      shippingAddress: order.shippingAddress || "",
+
+      ownerUid: order.ownerUid,
+      status: "paid",
+      createdAt: new Date().toISOString()
+    }
+
+    // 🔥 FIRESTORE USER ORDERS
+    await addDoc(
+      collection(db, "users", finalOrder.ownerUid, "orders"),
+      finalOrder
+    )
+
+    // 🔥 GLOBAL ORDERS
+    await addDoc(collection(db, "orders"), finalOrder)
+
+    // 🔥 CLEAR CART (IMPORTANT FIX)
+    await updateDoc(
+      doc(db, "users", finalOrder.ownerUid),
+      { cartSession: [] }
+    )
+
+    // 🔥 CLEAN STORAGE
+    localStorage.removeItem("pendingStripeOrder")
+
+    loading.value = false
+
+    console.log("✅ ORDER SAVED + CART CLEARED")
+
+  } catch (e) {
+    console.error("❌ PaymentSuccess ERROR:", e)
+    loading.value = false
+  }
 })
 </script>

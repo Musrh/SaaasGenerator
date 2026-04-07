@@ -4,4 +4,7 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   base: "/SaaasGenerator/", // 🔥 IMPORTANT
   plugins: [vue()],
+  css: {
+    transformer: "postcss", // 👈 désactive lightningcss
+  },
 });

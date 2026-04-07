@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
-import ListeProducts       from "../components/ListeProducts.vue"
+import ListeProducts       from "./views/ListeProducts.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"

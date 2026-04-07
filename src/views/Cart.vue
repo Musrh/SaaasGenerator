@@ -10,23 +10,9 @@
 
       <h3>👤 Informations client</h3>
 
-      <input
-        v-model="name"
-        placeholder="Nom complet"
-        style="display:block; margin-bottom:10px; padding:5px"
-      />
-
-      <input
-        v-model="email"
-        placeholder="Email"
-        style="display:block; margin-bottom:10px; padding:5px"
-      />
-
-      <input
-        v-model="address"
-        placeholder="Adresse de livraison"
-        style="display:block; margin-bottom:10px; padding:5px"
-      />
+      <input v-model="name" placeholder="Nom complet" />
+      <input v-model="email" placeholder="Email" />
+      <input v-model="address" placeholder="Adresse de livraison" />
 
     </div>
 
@@ -36,26 +22,23 @@
     </div>
 
     <!-- PRODUITS -->
-    <div
-      v-for="(item, index) in cart"
-      :key="item.id || index"
-      style="margin-bottom:15px"
-    >
+    <div v-for="(item, index) in cart" :key="item.id || index">
+
       <h3>{{ item.name }}</h3>
       <p>{{ item.price }} €</p>
 
-      <div style="display:flex; gap:10px; align-items:center">
+      <div>
         <button @click="updateQty(index, item.qty - 1)">-</button>
         <span>{{ item.qty }}</span>
         <button @click="updateQty(index, item.qty + 1)">+</button>
 
-        <button @click="removeItem(index)" style="color:red">🗑</button>
+        <button @click="removeItem(index)">🗑</button>
       </div>
+
     </div>
 
     <hr>
 
-    <!-- TOTAL -->
     <h2>Total : {{ total }} €</h2>
 
     <!-- PAYER -->
@@ -86,13 +69,8 @@ const address = ref("")
 const auth = getAuth()
 let userRef = null
 
-/* =========================
-   AUTH + CART
-========================= */
 onAuthStateChanged(auth, (user) => {
-
   if (!user) {
-    cart.value = []
     error.value = "Utilisateur non connecté"
     return
   }
@@ -101,27 +79,17 @@ onAuthStateChanged(auth, (user) => {
 
   onSnapshot(userRef, (snap) => {
     const data = snap.data()
-
     cart.value = data?.cartSession || []
-
-    // auto-fill email
     email.value = user.email || ""
   })
 })
 
-/* =========================
-   TOTAL
-========================= */
 const total = computed(() =>
-  cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
+  cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-/* =========================
-   UPDATE QTY
-========================= */
 async function updateQty(index, qty) {
   if (qty < 1) return
-
   const updated = [...cart.value]
   updated[index].qty = qty
 
@@ -130,9 +98,6 @@ async function updateQty(index, qty) {
   })
 }
 
-/* =========================
-   REMOVE ITEM
-========================= */
 async function removeItem(index) {
   const updated = [...cart.value]
   updated.splice(index, 1)
@@ -143,7 +108,7 @@ async function removeItem(index) {
 }
 
 /* =========================
-   💳 STRIPE PAY
+   💳 PAY STRIPE
 ========================= */
 async function pay() {
   const user = auth.currentUser
@@ -158,16 +123,16 @@ async function pay() {
         name: name.value,
         email: email.value,
         address: address.value
-      }
+      },
+      successUrl: window.location.origin + "/#/success",
+      cancelUrl: window.location.origin + "/#/cart"
     }
 
     const res = await fetch(
       "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       }
     )

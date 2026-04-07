@@ -1,175 +1,208 @@
+<template>
+  <div class="products-page">
+
+    <!-- HEADER -->
+    <div class="header">
+      <h2>📦 Produits</h2>
+
+      <div class="actions">
+        <!-- Recherche -->
+        <input
+          v-model="search"
+          type="text"
+          placeholder="Rechercher un produit..."
+        />
+
+        <!-- Bouton Ajouter -->
+        <button @click="showAddModal = true">
+          + Produit
+        </button>
+      </div>
+    </div>
+
+    <!-- LISTE PRODUITS -->
+    <div v-if="filteredProducts.length" class="products-grid">
+      <div
+        v-for="product in filteredProducts"
+        :key="product.id"
+        class="product-card"
+      >
+        <img v-if="product.image" :src="product.image" />
+
+        <h3>{{ product.name }}</h3>
+
+        <!-- ✅ DESCRIPTION AJOUTÉE -->
+        <p class="description">
+          {{ product.description || "Pas de description" }}
+        </p>
+
+        <p class="price">{{ product.price }} €</p>
+      </div>
+    </div>
+
+    <!-- AUCUN PRODUIT -->
+    <p v-else>📦 Aucun produit trouvé</p>
+
+    <!-- MODAL ADD PRODUCT -->
+    <div v-if="showAddModal" class="modal">
+      <div class="modal-content">
+
+        <button class="close" @click="closeModal">✖</button>
+
+        <!-- Appel du composant -->
+        <AddProduct @product-added="onProductAdded" />
+
+      </div>
+    </div>
+
+  </div>
+</template>
+
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue"
-import { useRouter } from "vue-router"
-import { auth, db } from "../firebase"
-import { onAuthStateChanged } from "firebase/auth"
+import { ref, onMounted, computed } from "vue"
+import { db } from "../firebase"
 import {
-  collection, doc, getDoc, setDoc,
-  onSnapshot, deleteDoc, query, orderBy
+  collection,
+  getDocs,
+  query,
+  where
 } from "firebase/firestore"
 
-import AddProduct from "./AddProduct.vue" // ✅ IMPORT
+import AddProduct from "./AddProduct.vue"
 
-const router = useRouter()
+// STATE
+const products = ref([])
+const search = ref("")
+const showAddModal = ref(false)
 
-const uid         = ref(null)
-const products    = ref([])
-const loading     = ref(true)
-const searchQuery = ref("")
-const cartCount   = ref(0)
+// USER (à adapter si auth différente)
+const uid = localStorage.getItem("uid")
 
-const showAddModal = ref(false) // ✅ MODAL
+// LOAD PRODUITS
+const loadProducts = async () => {
+  try {
+    const q = query(
+      collection(db, "products"),
+      where("createdBy", "==", uid)
+    )
 
-let unsubProducts = null
-let unsubCart     = null
+    const snap = await getDocs(q)
 
-// AUTH
-onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
-    uid.value = user ? user.uid : null
-    loadProducts()
-    if (user) listenCart(user.uid)
-  })
-})
-
-onUnmounted(() => {
-  unsubProducts?.()
-  unsubCart?.()
-})
-
-// LOAD PRODUCTS
-const loadProducts = () => {
-  const q = query(collection(db, "products"), orderBy("createdAt", "desc"))
-
-  unsubProducts = onSnapshot(q, (snap) => {
-    products.value = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
+    products.value = snap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
     }))
-    loading.value = false
-  })
+
+  } catch (err) {
+    console.error("Erreur chargement produits:", err)
+  }
 }
 
-// CART
-const listenCart = (userId) => {
-  const userRef = doc(db, "users", userId)
-
-  unsubCart = onSnapshot(userRef, (snap) => {
-    const session = snap.data()?.cartSession || []
-    cartCount.value = session.reduce((s, i) => s + (i.qty || 1), 0)
-  })
-}
-
-// FILTER
+// SEARCH + LISTE COMPLETE
 const filteredProducts = computed(() => {
-  if (!searchQuery.value.trim()) return products.value
-
-  const q = searchQuery.value.toLowerCase()
+  if (!search.value) return products.value
 
   return products.value.filter(p =>
-    (p.name || "").toLowerCase().includes(q) ||
-    (p.description || "").toLowerCase().includes(q)
+    p.name?.toLowerCase().includes(search.value.toLowerCase())
   )
 })
 
-// DELETE
-const deleteProduct = async (id) => {
-  await deleteDoc(doc(db, "products", id))
+// CALLBACK APRÈS AJOUT
+const onProductAdded = () => {
+  closeModal()
+  loadProducts()
 }
 
-// ADD TO CART
-const addToCart = async (product) => {
-  const user = auth.currentUser
-  if (!user) return
-
-  const userRef = doc(db, "users", user.uid)
-
-  const snap = await getDoc(userRef)
-
-  let cartSession = snap.exists() ? snap.data().cartSession || [] : []
-
-  const idx = cartSession.findIndex(p => p.id === product.id)
-
-  if (idx >= 0) {
-    cartSession[idx].qty = 1
-  } else {
-    cartSession.push({
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      qty: 1
-    })
-  }
-
-  await setDoc(userRef, { cartSession }, { merge: true })
+// CLOSE MODAL
+const closeModal = () => {
+  showAddModal.value = false
 }
 
-// NAV
-const goToCart = () => router.push("/cart")
+// INIT
+onMounted(loadProducts)
 </script>
 
-<template>
-<div class="home-root">
+<style scoped>
+.products-page {
+  padding: 20px;
+}
 
-  <!-- TOPBAR -->
-  <header class="topbar">
-    <h1>🛍 Catalogue</h1>
+/* HEADER */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-    <div>
-      <button @click="goToCart">
-        🛒 {{ cartCount }}
-      </button>
+.actions {
+  display: flex;
+  gap: 10px;
+}
 
-      <!-- ✅ OUVERTURE MODAL -->
-      <button @click="showAddModal = true">
-        ＋ Produit
-      </button>
-    </div>
-  </header>
+input {
+  padding: 8px;
+}
 
-  <!-- SEARCH -->
-  <div class="search-bar">
-    <input v-model="searchQuery" placeholder="🔍 Rechercher..." />
+/* GRID */
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
 
-    <button v-if="searchQuery" @click="searchQuery = ''">
-      ❌
-    </button>
-  </div>
+/* CARD */
+.product-card {
+  border: 1px solid #ddd;
+  padding: 10px;
+  border-radius: 10px;
+  background: white;
+}
 
-  <!-- MESSAGE RECHERCHE -->
-  <div v-if="searchQuery && filteredProducts.length === 0">
-    🔍 Aucun résultat pour "{{ searchQuery }}"
-  </div>
+.product-card img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+}
 
-  <!-- PRODUITS -->
-  <div class="products-grid">
+/* DESCRIPTION */
+.description {
+  font-size: 14px;
+  color: #555;
+  margin: 5px 0;
+}
 
-    <div
-      v-for="product in (searchQuery ? filteredProducts : products)"
-      :key="product.id"
-      class="product-card"
-    >
-      <img v-if="product.image" :src="product.image" />
+/* PRICE */
+.price {
+  font-weight: bold;
+}
 
-      <h3>{{ product.name }}</h3>
-      <p>{{ product.price }} €</p>
+/* MODAL */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
 
-      <button @click="addToCart(product)">
-        🛒 Ajouter
-      </button>
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 
-      <button v-if="uid" @click="deleteProduct(product.id)">
-        🗑
-      </button>
-    </div>
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  width: 400px;
+  position: relative;
+}
 
-  </div>
-
-  <!-- ✅ MODAL ADD PRODUCT -->
-  <AddProduct
-    v-if="showAddModal"
-    @close="showAddModal = false"
-  />
-
-</div>
-</template>
+.close {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  cursor: pointer;
+}
+</style>

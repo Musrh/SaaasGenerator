@@ -1,87 +1,47 @@
 <script setup>
-import { onMounted, ref } from "vue"
-import { useRouter } from "vue-router"
+import { onMounted } from "vue"
 import { getAuth } from "firebase/auth"
+import { doc, getDoc, updateDoc, arrayUnion } from "firebase/firestore"
 import { db } from "../firebase"
-import { doc, getDoc, updateDoc, addDoc, collection } from "firebase/firestore"
 
-const loading = ref(true)
-const success = ref(false)
-
-const router = useRouter()
 const auth = getAuth()
 
-async function processPayment() {
+onMounted(async () => {
   const user = auth.currentUser
+  if (!user) return
 
-  if (!user) {
-    loading.value = false
-    return
-  }
+  const ref = doc(db, "users", user.uid)
+  const snap = await getDoc(ref)
 
-  const refUser = doc(db, "users", user.uid)
-  const snap = await getDoc(refUser)
-
-  if (!snap.exists()) {
-    loading.value = false
-    return
-  }
+  if (!snap.exists()) return
 
   const data = snap.data()
   const cart = data.cartSession || []
 
-  if (cart.length === 0) {
-    loading.value = false
-    success.value = true
-    return
-  }
+  if (cart.length === 0) return
 
-  // 💾 1. Créer commande dans orders
-  await addDoc(collection(db, "orders"), {
-    userId: user.uid,
-    email: user.email,
-    items: cart,
-    createdAt: Date.now(),
-    status: "paid"
+  // ✅ 1. ADD ORDER
+  await updateDoc(ref, {
+    orders: arrayUnion({
+      items: cart,
+      total: cart.reduce((s, i) => s + i.price * i.qty, 0),
+      createdAt: Date.now(),
+      status: "paid"
+    })
   })
 
-  // 🧹 2. Vider panier
-  await updateDoc(refUser, {
+  // 🧹 2. CLEAR CART
+  await updateDoc(ref, {
     cartSession: []
   })
 
-  success.value = true
-  loading.value = false
-}
-
-function goHome() {
-  router.push("/")
-}
-
-onMounted(() => {
-  processPayment()
+  // optional redirect
+  window.location.href = "/#/success"
 })
 </script>
 
 <template>
-  <div style="text-align:center; padding:40px">
-
-    <div v-if="loading">
-      <h2>Traitement du paiement...</h2>
-    </div>
-
-    <div v-else-if="success">
-      <h2>✅ Paiement réussi</h2>
-      <p>Merci pour votre commande</p>
-
-      <button @click="goHome">
-        Retour accueil
-      </button>
-    </div>
-
-    <div v-else>
-      <h2>❌ Erreur de paiement</h2>
-    </div>
-
+  <div style="text-align:center;padding:40px">
+    <h2>Traitement paiement...</h2>
   </div>
 </template>

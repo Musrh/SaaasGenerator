@@ -35,7 +35,7 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 import { getAuth } from "firebase/auth"
-import { db } from "./firebase"
+import { db } from "../firebase"
 import { doc, onSnapshot, updateDoc } from "firebase/firestore"
 import { useRouter } from "vue-router"
 

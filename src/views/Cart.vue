@@ -18,20 +18,23 @@ const total = computed(() =>
   cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-// 🔥 LOAD SAFE (FIX BLOQUAGE)
+// 🔥 LOAD CART (FIX IMPORTANT)
 function loadCart(uid) {
   const refDoc = doc(db, "cartSession", uid)
 
   getDoc(refDoc)
     .then((snap) => {
       if (snap.exists()) {
-        cart.value = snap.data().items || []
+        const data = snap.data()
+
+        // ✅ FIX ICI : ton champ est "cartSession"
+        cart.value = data.cartSession || []
       } else {
         cart.value = []
       }
     })
     .catch((err) => {
-      console.error("LOAD CART ERROR:", err)
+      console.error("LOAD ERROR:", err)
       cart.value = []
     })
     .finally(() => {
@@ -39,14 +42,14 @@ function loadCart(uid) {
     })
 }
 
-// 🔥 SAVE SAFE
+// 💾 SAVE CART (CORRIGÉ)
 async function saveCart() {
   if (!userId) return
 
   const refDoc = doc(db, "cartSession", userId)
 
   await setDoc(refDoc, {
-    items: cart.value,
+    cartSession: cart.value, // ✅ FIX ICI
     updatedAt: Date.now()
   })
 }
@@ -105,10 +108,11 @@ async function pay() {
     window.location.href = data.url
   } else {
     alert("Erreur paiement")
+    console.log(data)
   }
 }
 
-// 🔥 FIX PRINCIPAL ICI
+// 🔥 AUTH SAFE LOAD
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
     if (user) {
@@ -124,7 +128,6 @@ onMounted(() => {
 
 <template>
   <div>
-
     <h2>Panier</h2>
 
     <div v-if="loading">Chargement...</div>

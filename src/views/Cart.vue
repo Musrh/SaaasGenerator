@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from "vue"
 import { db } from "../firebase"
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore"
-import { getAuth } from "firebase/auth"
+import { doc, getDoc, setDoc } from "firebase/firestore"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 
 const cart = ref([])
 const loading = ref(true)
@@ -12,34 +12,38 @@ const email = ref("")
 const address = ref("")
 
 const auth = getAuth()
+let userId = null
 
 const total = computed(() =>
   cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-// 🔥 CHARGER CART SESSION FIRESTORE
-async function loadCart() {
-  const user = auth.currentUser
-  if (!user) return
+// 🔥 LOAD SAFE (FIX BLOQUAGE)
+function loadCart(uid) {
+  const refDoc = doc(db, "cartSession", uid)
 
-  const refDoc = doc(db, "cartSession", user.uid)
-  const snap = await getDoc(refDoc)
-
-  if (snap.exists()) {
-    cart.value = snap.data().items || []
-  } else {
-    cart.value = []
-  }
-
-  loading.value = false
+  getDoc(refDoc)
+    .then((snap) => {
+      if (snap.exists()) {
+        cart.value = snap.data().items || []
+      } else {
+        cart.value = []
+      }
+    })
+    .catch((err) => {
+      console.error("LOAD CART ERROR:", err)
+      cart.value = []
+    })
+    .finally(() => {
+      loading.value = false
+    })
 }
 
-// 🔥 METTRE À JOUR FIRESTORE
+// 🔥 SAVE SAFE
 async function saveCart() {
-  const user = auth.currentUser
-  if (!user) return
+  if (!userId) return
 
-  const refDoc = doc(db, "cartSession", user.uid)
+  const refDoc = doc(db, "cartSession", userId)
 
   await setDoc(refDoc, {
     items: cart.value,
@@ -47,40 +51,39 @@ async function saveCart() {
   })
 }
 
-// ➕ QUANTITÉ
+// ➕
 function increase(item) {
   item.qty++
   saveCart()
 }
 
+// ➖
 function decrease(item) {
   if (item.qty > 1) item.qty--
   saveCart()
 }
 
-// ❌ REMOVE
+// ❌
 function remove(item) {
   cart.value = cart.value.filter(i => i.id !== item.id)
   saveCart()
 }
 
-// 🗑️ CLEAR CART
-async function clearCart() {
+// 🗑️
+function clearCart() {
   cart.value = []
-  await saveCart()
+  saveCart()
 }
 
-// 💳 PAYER (Stripe backend)
+// 💳 PAY
 async function pay() {
-  const user = auth.currentUser
-
-  if (!user) return alert("Login requis")
+  if (!userId) return alert("Utilisateur non connecté")
   if (cart.value.length === 0) return alert("Panier vide")
 
   const payload = {
     items: cart.value,
     customer: {
-      uid: user.uid,
+      uid: userId,
       name: name.value,
       email: email.value,
       address: address.value
@@ -105,7 +108,18 @@ async function pay() {
   }
 }
 
-onMounted(loadCart)
+// 🔥 FIX PRINCIPAL ICI
+onMounted(() => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      userId = user.uid
+      loadCart(user.uid)
+    } else {
+      loading.value = false
+      cart.value = []
+    }
+  })
+})
 </script>
 
 <template>
@@ -116,6 +130,7 @@ onMounted(loadCart)
     <div v-if="loading">Chargement...</div>
 
     <div v-else>
+
       <div v-if="cart.length === 0">
         Panier vide
       </div>
@@ -141,7 +156,7 @@ onMounted(loadCart)
       <input v-model="address" placeholder="Adresse" />
 
       <button @click="pay">Payer</button>
-    </div>
 
+    </div>
   </div>
 </template>

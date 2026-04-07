@@ -1,39 +1,60 @@
 <script setup>
 import { ref, computed, onMounted } from "vue"
 
-// 🛒 panier
+// 🛒 PANIER
 const cart = ref([])
 
-// 👤 infos client
+// 👤 CLIENT
 const name = ref("")
 const email = ref("")
-const address = ref("")
+const address = ref("")]
 
-// 💰 total
+// 💰 TOTAL
 const total = computed(() =>
   cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
 )
 
-// 📦 charger panier
+// 📦 LOAD PANIER
 onMounted(() => {
-  const saved = localStorage.getItem("cart")
-  if (saved) {
-    cart.value = JSON.parse(saved)
-  }
+  loadCart()
 })
 
-// 💾 sauvegarder panier
+function loadCart() {
+  const saved = localStorage.getItem("cart")
+  cart.value = saved ? JSON.parse(saved) : []
+}
+
+// 💾 SAVE
 function saveCart() {
   localStorage.setItem("cart", JSON.stringify(cart.value))
 }
 
-// ➕ quantité
+// ✅ AJOUT PRODUIT (IMPORTANT)
+function addToCart(product) {
+  const existing = cart.value.find(i => i.id === product.id)
+
+  if (existing) {
+    existing.qty++
+  } else {
+    cart.value.push({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      image: product.image || "",
+      qty: 1
+    })
+  }
+
+  saveCart()
+}
+
+// ➕
 function increase(item) {
   item.qty++
   saveCart()
 }
 
-// ➖ quantité
+// ➖
 function decrease(item) {
   if (item.qty > 1) {
     item.qty--
@@ -43,23 +64,23 @@ function decrease(item) {
   saveCart()
 }
 
-// ❌ supprimer
+// ❌
 function remove(item) {
   cart.value = cart.value.filter(i => i.id !== item.id)
   saveCart()
 }
 
-// 🗑️ vider panier
+// 🗑️
 function clearCart() {
   cart.value = []
   localStorage.removeItem("cart")
 }
 
-// 💳 PAIEMENT STRIPE
+// 💳 PAIEMENT
 async function pay() {
   try {
     if (!name.value || !email.value || !address.value) {
-      alert("Remplir toutes les informations client")
+      alert("Remplir les infos client")
       return
     }
 
@@ -81,7 +102,7 @@ async function pay() {
       }
     }
 
-    console.log("📦 Envoi backend :", payload)
+    console.log("📦 payload envoyé :", payload)
 
     const res = await fetch(
       "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
@@ -95,27 +116,24 @@ async function pay() {
     )
 
     if (!res.ok) {
-      const text = await res.text()
-      console.error("❌ ERREUR BACKEND :", text)
-      alert("Erreur paiement backend")
+      const err = await res.text()
+      console.error(err)
+      alert("Erreur backend paiement")
       return
     }
 
     const data = await res.json()
 
-    console.log("✅ Réponse backend :", data)
-
-    // ⚠️ IMPORTANT : vérifier clé retournée
     const url = data.url || data.checkoutUrl || data.sessionUrl
 
     if (url) {
       window.location.href = url
     } else {
-      alert("URL Stripe non reçue")
+      alert("Erreur URL Stripe")
     }
 
   } catch (err) {
-    console.error("❌ ERREUR :", err)
+    console.error(err)
     alert("Erreur paiement")
   }
 }
@@ -123,14 +141,19 @@ async function pay() {
 
 <template>
   <div class="cart">
+
     <h1>🛒 Panier</h1>
 
+    <!-- PANIER VIDE -->
     <div v-if="cart.length === 0">
-      Panier vide
+      <p>Panier vide</p>
     </div>
 
+    <!-- LISTE PRODUITS -->
     <div v-else>
       <div v-for="item in cart" :key="item.id" class="item">
+        <img v-if="item.image" :src="item.image" width="60" />
+
         <h3>{{ item.name }}</h3>
         <p>{{ item.price }} €</p>
 
@@ -141,7 +164,7 @@ async function pay() {
         <button @click="remove(item)">❌</button>
       </div>
 
-      <h2>Total: {{ total }} €</h2>
+      <h2>Total: {{ total.toFixed(2) }} €</h2>
 
       <button @click="clearCart">
         🗑️ Vider le panier
@@ -150,15 +173,18 @@ async function pay() {
 
     <hr />
 
+    <!-- INFOS CLIENT -->
     <h2>Informations client</h2>
 
     <input v-model="name" placeholder="Nom" />
     <input v-model="email" placeholder="Email" />
     <textarea v-model="address" placeholder="Adresse de livraison"></textarea>
 
+    <!-- PAYER -->
     <button @click="pay">
       💳 Payer
     </button>
+
   </div>
 </template>
 
@@ -167,13 +193,16 @@ async function pay() {
   max-width: 600px;
   margin: auto;
 }
+
 .item {
   border-bottom: 1px solid #ddd;
   padding: 10px;
 }
+
 button {
   margin: 5px;
 }
+
 input, textarea {
   display: block;
   width: 100%;

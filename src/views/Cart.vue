@@ -1,4 +1,3 @@
-//Cart.vue bon
 <template>
   <div style="padding:20px">
 
@@ -17,26 +16,20 @@
       :key="item.id || index"
       style="margin-bottom:15px"
     >
-
       <h3>{{ item.name }}</h3>
       <p>{{ item.price }} €</p>
 
       <div style="display:flex; gap:10px; align-items:center">
 
-        <!-- QUANTITY -->
         <button @click="updateQty(index, item.qty - 1)">-</button>
-
         <span>{{ item.qty }}</span>
-
         <button @click="updateQty(index, item.qty + 1)">+</button>
 
-        <!-- DELETE -->
         <button @click="removeItem(index)" style="color:red">
           🗑
         </button>
 
       </div>
-
     </div>
 
     <hr>
@@ -45,8 +38,12 @@
     <h2>Total : {{ total }} €</h2>
 
     <!-- PAYER -->
-    <button @click="pay" :disabled="cart.length === 0">
-      💳 Payer
+    <button
+      @click="pay"
+      :disabled="cart.length === 0"
+      style="background:green;color:white;padding:10px"
+    >
+      💳 Payer avec Stripe
     </button>
 
   </div>
@@ -54,7 +51,11 @@
 
 <script setup>
 import { ref, computed } from "vue"
-import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore"
+import {
+  doc,
+  onSnapshot,
+  updateDoc
+} from "firebase/firestore"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { db } from "../firebase"
 
@@ -78,13 +79,8 @@ onAuthStateChanged(auth, (user) => {
   userRef = doc(db, "users", user.uid)
 
   onSnapshot(userRef, (snap) => {
-
     const data = snap.data()
-
-    // 🔥 IMPORTANT : cartSession
     cart.value = data?.cartSession || []
-
-    console.log("🔥 CART SESSION =", cart.value)
   })
 })
 
@@ -124,37 +120,45 @@ async function removeItem(index) {
 }
 
 /* =========================================================
-   💳 PAY → MOVE TO ORDERS + CLEAR CART
+   💳 STRIPE PAYMENT ONLY
 ========================================================= */
 async function pay() {
-
   const user = auth.currentUser
   if (!user) return
 
-  const order = {
-    items: cart.value,
-    total: total.value,
-    createdAt: Date.now(),
-    status: "paid"
-  }
-
   try {
+    const payload = {
+      items: cart.value,
+      total: total.value,
+      customer: {
+        uid: user.uid,
+        email: user.email
+      }
+    }
 
-    // 🔥 1. ADD TO ORDERS
-    await updateDoc(userRef, {
-      orders: arrayUnion(order)
-    })
+    const res = await fetch(
+      "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      }
+    )
 
-    // 🧹 2. CLEAR CART SESSION
-    await updateDoc(userRef, {
-      cartSession: []
-    })
+    const data = await res.json()
 
-    alert("Paiement réussi 🎉")
+    if (data.url) {
+      window.location.href = data.url
+    } else {
+      console.error("Stripe error:", data)
+      alert("Erreur paiement Stripe")
+    }
 
   } catch (e) {
     console.error(e)
-    alert("Erreur paiement")
+    alert("Erreur serveur paiement")
   }
 }
 </script>

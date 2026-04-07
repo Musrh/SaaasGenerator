@@ -11,6 +11,10 @@
       </div>
 
       <h3>Total : {{ total }} €</h3>
+
+      <!-- ACTIONS -->
+      <button @click="checkout">💳 Payer</button>
+      <button @click="clearCart">🧹 Vider le panier</button>
     </div>
 
     <p v-else>Panier vide</p>
@@ -23,11 +27,6 @@
       <input v-model="customerEmail" placeholder="Email" />
       <textarea v-model="customerAddress" placeholder="Adresse de livraison"></textarea>
     </div>
-
-    <!-- BOUTON -->
-    <button v-if="cart.length" @click="checkout">
-      💳 Payer
-    </button>
 
   </div>
 </template>
@@ -42,17 +41,17 @@ const auth = getAuth()
 
 const cart = ref([])
 
-// 🔥 INFOS CLIENT
+// ✅ INFOS CLIENT
 const customerName = ref("")
 const customerEmail = ref("")
 const customerAddress = ref("")
 
-// 🔥 TOTAL
+// ✅ TOTAL
 const total = computed(() =>
   cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
 )
 
-// 🔥 SYNC PANIER FIRESTORE
+// ✅ SYNC FIRESTORE
 onMounted(() => {
   const user = auth.currentUser
   if (!user) return
@@ -64,7 +63,24 @@ onMounted(() => {
   })
 })
 
-// 🔥 CHECKOUT STRIPE
+// 🧹 VIDER PANIER
+const clearCart = async () => {
+  const user = auth.currentUser
+  if (!user) return
+
+  try {
+    await updateDoc(doc(db, "users", user.uid), {
+      cartSession: []
+    })
+
+    alert("Panier vidé ✅")
+  } catch (err) {
+    console.error(err)
+    alert("Erreur suppression panier")
+  }
+}
+
+// 💳 CHECKOUT STRIPE
 const checkout = async () => {
   const user = auth.currentUser
   if (!user) {
@@ -86,12 +102,11 @@ const checkout = async () => {
       customerAddress: customerAddress.value
     }
 
-    // ✅ sauvegarde temporaire
+    // 🔥 sauvegarde locale pour PaymentSuccess
     localStorage.setItem("pendingStripeOrder", JSON.stringify(orderData))
 
     console.log("📦 Envoi backend =", orderData)
 
-    // 🔥 TON BACKEND RAILWAY
     const res = await fetch("https://backend-master-production-cf50.up.railway.app/create-checkout-session", {
       method: "POST",
       headers: {
@@ -108,6 +123,14 @@ const checkout = async () => {
       })
     })
 
+    // 🔥 DEBUG BACKEND
+    if (!res.ok) {
+      const text = await res.text()
+      console.error("❌ Backend error:", text)
+      alert("Erreur backend Stripe")
+      return
+    }
+
     const data = await res.json()
 
     console.log("🔥 Réponse backend =", data)
@@ -122,7 +145,7 @@ const checkout = async () => {
 
   } catch (err) {
     console.error("❌ Erreur checkout:", err)
-    alert("Erreur paiement")
+    alert("Erreur paiement (voir console)")
   }
 }
 </script>
@@ -149,7 +172,7 @@ input, textarea {
 }
 
 button {
-  margin-top: 20px;
+  margin-top: 10px;
   padding: 12px;
   width: 100%;
   background: black;

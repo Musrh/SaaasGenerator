@@ -1,7 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
-import ListeProducts       from "./ListeProducts.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
@@ -395,21 +394,103 @@ const cartCount = computed(() => {
 const cartCurrency = computed(() => cart.value[0]?.currency || '€')
 
 const checkoutCart = () => {
-  showCart.value = false
-  // Ouvrir la modale de paiement avec les totaux du panier
-  paymentModalSection.value = {
-    title: t.value.cartCheckout || 'Finaliser la commande',
-    description: `${cartCount.value} article(s)`,
-    amount: cartTotal.value,
-    currency: cartCurrency.value,
+  // Passer à l'étape checkout dans la même modale panier
+  cartStep.value    = "checkout"
+  cartPayError.value = ""
+}
+
+const backToCart = () => { cartStep.value = "cart" }
+
+// Payer depuis le panier (Stripe Checkout → backend)
+const payCart = async () => {
+  cartPayError.value = ""
+  if (!cartCustomerName.value.trim())    { cartPayError.value = "Nom obligatoire.";    return }
+  if (!cartCustomerEmail.value.trim())   { cartPayError.value = "Email obligatoire.";  return }
+  if (!cartCustomerAddress.value.trim()) { cartPayError.value = "Adresse obligatoire."; return }
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cartCustomerEmail.value)
+  if (!emailOk) { cartPayError.value = "Email invalide."; return }
+
+  const cfg = liveStripeConfig.value
+  if (!cfg.backendUrl || cfg.backendUrl.includes("votre-backend")) {
+    notify("⚠️ Configurez votre backendUrl dans stripe.js", "error"); return
   }
-  paymentProvider.value = 'stripe'
-  paymentSuccess.value = false
-  paymentProcessing.value = false
-  showPaymentModal.value = true
+
+  paymentProcessing.value = true
+  try {
+    const adresseLivraison = `${cartCustomerAddress.value}, ${cartCustomerZip.value} ${cartCustomerCity.value}, ${cartCustomerCountry.value}`.trim()
+
+    // Sauvegarder en localStorage avant le redirect Stripe
+    const pendingOrder = {
+      items:            cart.value.map(i => ({
+        id: i.id, name: i.name, price: i.price,
+        currency: i.currency || "€", qty: i.qty, image: i.image || "",
+      })),
+      total:            cartTotal.value,
+      currency:         cartCurrency.value || "€",
+      itemCount:        cartCount.value,
+      customerName:     cartCustomerName.value.trim(),
+      customerEmail:    cartCustomerEmail.value.trim().toLowerCase(),
+      customerAddress:  adresseLivraison,
+      ownerUid:         currentUser.value?.uid,
+      siteSlug:         currentUser.value?.uid,
+      provider:         "stripe",
+      createdAt:        new Date().toISOString(),
+    }
+    localStorage.setItem("pendingStripeOrder", JSON.stringify(pendingOrder))
+    localStorage.setItem("stripeOwnerUid",     currentUser.value?.uid || "")
+
+    // Appel backend Stripe
+    const res = await fetch(cfg.backendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount:   Math.round(parseFloat(cartTotal.value) * 100),
+        currency: cfg.currency || "eur",
+        description: `Commande — ${cartCount.value} article(s)`,
+        items:    cart.value.map(i => ({
+          nom:         i.name,
+          prix:        parseFloat(i.price),
+          quantity:    i.qty,
+          description: i.description || "",
+          image:       i.image || "",
+        })),
+        email:            cartCustomerEmail.value.trim(),
+        clientId:         currentUser.value?.uid || "guest",
+        storeName:        cfg.storeName || siteName.value,
+        adresseLivraison,
+        customerName:     cartCustomerName.value.trim(),
+        successUrl:       `https://musrh.github.io/SaaasGenerator/`,
+        cancelUrl:        `https://musrh.github.io/SaaasGenerator/`,
+      }),
+    })
+
+    if (!res.ok) throw new Error("Erreur serveur " + res.status)
+    const data = await res.json()
+    if (!data.url) throw new Error(data.error || "Pas d'URL Stripe reçue")
+
+    // Fermer et rediriger
+    showCart.value = false
+    window.location.href = data.url
+
+  } catch(e) {
+    cartPayError.value = e.message
+    notify("Erreur paiement : " + e.message, "error")
+  } finally {
+    paymentProcessing.value = false
+  }
 }
 
 const emptyCart = () => { cart.value = [] }
+
+// ===== INFOS CLIENT PANIER =====
+const cartCustomerName    = ref("")
+const cartCustomerEmail   = ref("")
+const cartCustomerAddress = ref("")   // adresse de livraison
+const cartCustomerCity    = ref("")
+const cartCustomerZip     = ref("")
+const cartCustomerCountry = ref("France")
+const cartStep            = ref("cart")  // "cart" | "checkout" | "success"
+const cartPayError        = ref("")
 
 // ===== SITE NAME =====
 const siteName = ref("WellShoppings")
@@ -1159,53 +1240,144 @@ const setPageStyle = (type, value) => {
     <div v-if="showNotif" class="notif" :class="notifType">{{ notifMsg }}</div>
   </Transition>
 
-  <!-- CART MODAL -->
+  <!-- CART MODAL — Panier + Livraison + Paiement -->
   <Transition name="modal">
-    <div v-if="showCart" class="modal-overlay" @click.self="showCart=false" :dir="isRtl?'rtl':'ltr'">
+    <div v-if="showCart" class="modal-overlay cart-overlay" @click.self="showCart=false; cartStep='cart'" :dir="isRtl?'rtl':'ltr'">
       <div class="modal-box cart-modal">
-        <button class="modal-close" @click="showCart=false">✕</button>
-        <div class="modal-header">
-          <span class="modal-icon">🛒</span>
-          <h2>{{ t.cartTitle }}</h2>
+
+        <!-- HEADER -->
+        <div class="cart-modal-header">
+          <button v-if="cartStep==='checkout'" class="cart-back-btn" @click="backToCart">← Retour</button>
+          <div class="cart-header-title">
+            <span>{{ cartStep==='cart' ? '🛒' : cartStep==='checkout' ? '📋' : '✅' }}</span>
+            <div>
+              <h2>{{ cartStep==='cart' ? t.cartTitle : cartStep==='checkout' ? 'Livraison & Paiement' : 'Commande confirmée !' }}</h2>
+              <p v-if="cartStep==='cart' && cart.length > 0" class="cart-header-sub">{{ cartCount }} article{{ cartCount > 1 ? 's' : '' }}</p>
+            </div>
+          </div>
+          <button class="modal-close" @click="showCart=false; cartStep='cart'">✕</button>
         </div>
 
-        <div v-if="cart.length === 0" class="cart-empty">
-          <span>🛍️</span>
-          <p>{{ t.cartEmpty }}</p>
-        </div>
+        <!-- ÉTAPE 1 : PANIER -->
+        <template v-if="cartStep==='cart'">
+          <div v-if="cart.length === 0" class="cart-empty">
+            <span>🛍️</span>
+            <p>{{ t.cartEmpty }}</p>
+          </div>
 
-        <div v-else class="cart-items">
-          <div v-for="item in cart" :key="item.id" class="cart-item">
-            <div class="cart-item-img">
-              <img v-if="item.image" :src="item.image" :alt="item.name"/>
-              <span v-else>🛍️</span>
+          <div v-else class="cart-items">
+            <div v-for="item in cart" :key="item.id" class="cart-item">
+              <div class="cart-item-img">
+                <img v-if="item.image" :src="item.image" :alt="item.name"/>
+                <span v-else>🛍️</span>
+              </div>
+              <div class="cart-item-info">
+                <div class="cart-item-name">{{ item.name }}</div>
+                <div class="cart-item-price">{{ item.price }}{{ item.currency }}</div>
+              </div>
+              <div class="cart-item-qty">
+                <button class="qty-btn" @click="updateQty(item.id, -1)">−</button>
+                <span class="qty-val">{{ item.qty }}</span>
+                <button class="qty-btn" @click="updateQty(item.id, 1)">+</button>
+              </div>
+              <div class="cart-item-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
+              <button class="cart-item-del" @click="removeFromCart(item.id)">✕</button>
             </div>
-            <div class="cart-item-info">
-              <div class="cart-item-name">{{ item.name }}</div>
-              <div class="cart-item-price">{{ item.price }}{{ item.currency }}</div>
-            </div>
-            <div class="cart-item-qty">
-              <button class="qty-btn" @click="updateQty(item.id, -1)">−</button>
-              <span class="qty-val">{{ item.qty }}</span>
-              <button class="qty-btn" @click="updateQty(item.id, 1)">+</button>
-            </div>
-            <div class="cart-item-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
-            <button class="cart-item-del" @click="removeFromCart(item.id)">✕</button>
           </div>
-        </div>
 
-        <div v-if="cart.length > 0" class="cart-footer">
-          <div class="cart-total-row">
-            <span class="cart-total-label">{{ t.cartTotal }}</span>
-            <span class="cart-total-amount">{{ cartTotal }}{{ cartCurrency }}</span>
+          <div v-if="cart.length > 0" class="cart-footer">
+            <div class="cart-total-row">
+              <span class="cart-total-label">{{ t.cartTotal }}</span>
+              <span class="cart-total-amount">{{ cartTotal }}{{ cartCurrency }}</span>
+            </div>
+            <div class="cart-actions">
+              <button class="btn-action" @click="showCart=false">{{ t.cartContinue }}</button>
+              <button class="pay-submit stripe-submit cart-checkout-btn" @click="checkoutCart">
+                📋 Livraison & Paiement →
+              </button>
+            </div>
           </div>
-          <div class="cart-actions">
-            <button class="btn-action" @click="showCart=false">{{ t.cartContinue }}</button>
-            <button class="pay-submit stripe-submit cart-checkout-btn" @click="checkoutCart">
-              💳 {{ t.cartCheckout }}
-            </button>
+        </template>
+
+        <!-- ÉTAPE 2 : INFOS LIVRAISON + PAIEMENT -->
+        <template v-else-if="cartStep==='checkout'">
+
+          <!-- Résumé commande -->
+          <div class="checkout-summary">
+            <div v-for="item in cart" :key="item.id" class="checkout-item">
+              <div class="checkout-item-img">
+                <img v-if="item.image" :src="item.image" :alt="item.name"/>
+                <span v-else>🛍️</span>
+              </div>
+              <span class="checkout-item-name">{{ item.name }} ×{{ item.qty }}</span>
+              <span class="checkout-item-price">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</span>
+            </div>
+            <div class="checkout-total">
+              <span>Total</span>
+              <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
+            </div>
           </div>
-        </div>
+
+          <!-- Infos client -->
+          <div class="checkout-fields">
+            <div class="checkout-section-title">👤 Informations client</div>
+            <div class="checkout-row">
+              <div class="checkout-field">
+                <label>Nom complet *</label>
+                <input v-model="cartCustomerName" placeholder="Jean Dupont" class="checkout-input"/>
+              </div>
+              <div class="checkout-field">
+                <label>Email *</label>
+                <input v-model="cartCustomerEmail" placeholder="jean@email.com" type="email" class="checkout-input"/>
+              </div>
+            </div>
+
+            <div class="checkout-section-title" style="margin-top:14px">📦 Adresse de livraison</div>
+            <div class="checkout-field">
+              <label>Adresse *</label>
+              <input v-model="cartCustomerAddress" placeholder="123 rue de la Paix" class="checkout-input"/>
+            </div>
+            <div class="checkout-row">
+              <div class="checkout-field">
+                <label>Code postal</label>
+                <input v-model="cartCustomerZip" placeholder="75001" class="checkout-input"/>
+              </div>
+              <div class="checkout-field">
+                <label>Ville</label>
+                <input v-model="cartCustomerCity" placeholder="Paris" class="checkout-input"/>
+              </div>
+            </div>
+            <div class="checkout-field">
+              <label>Pays</label>
+              <select v-model="cartCustomerCountry" class="checkout-input checkout-select">
+                <option>France</option>
+                <option>Maroc</option>
+                <option>Belgique</option>
+                <option>Suisse</option>
+                <option>Canada</option>
+                <option>Algérie</option>
+                <option>Tunisie</option>
+                <option>Sénégal</option>
+                <option>Côte d'Ivoire</option>
+              </select>
+            </div>
+          </div>
+
+          <p v-if="cartPayError" class="cart-pay-error">⚠ {{ cartPayError }}</p>
+
+          <button
+            class="pay-submit stripe-submit cart-pay-final"
+            @click="payCart"
+            :disabled="paymentProcessing"
+          >
+            <span v-if="paymentProcessing" class="spinner"/>
+            <span v-else>💳</span>
+            {{ paymentProcessing ? "Redirection Stripe..." : `Payer ${cartTotal}${cartCurrency}` }}
+          </button>
+
+          <p class="cart-secure-note">🔒 Paiement sécurisé via Stripe</p>
+        </template>
+
       </div>
     </div>
   </Transition>
@@ -1468,26 +1640,50 @@ const setPageStyle = (type, value) => {
 
   <!-- PUBLIC PREVIEW (plein écran, sans barre d'outils) -->
   <Transition name="modal">
-    <div v-if="showPublicPreview" class="public-preview-overlay">
-      <button class="pub-preview-close" @click="showPublicPreview=false">✕ Fermer l'aperçu</button>
-      <!-- Navigation du site -->
-      <nav class="pub-preview-nav">
-        <div class="pub-preview-brand-wrap">
-          <img v-if="siteLogo" :src="siteLogo" class="pub-preview-logo" alt="logo"/>
-          <span v-else class="pub-preview-brand-icon">◈</span>
-          <span class="pub-preview-brand-name">{{ siteName }}</span>
+    <div v-if="showPublicPreview" class="public-preview-overlay" :dir="isRtl?'rtl':'ltr'">
+
+      <!-- Bandeau "Aperçu" discret en haut -->
+      <div class="pv-topband">
+        <span class="pv-topband-label">👁 Mode aperçu</span>
+        <button class="pv-topband-close" @click="showPublicPreview=false">✕ Fermer</button>
+      </div>
+
+      <!-- ── NAVIGATION DU STORE ───────────────────────── -->
+      <nav class="pv-nav">
+
+        <!-- Logo + Nom du site -->
+        <div class="pv-brand">
+          <img v-if="siteLogo" :src="siteLogo" class="pv-logo" alt="logo"/>
+          <span v-else class="pv-logo-placeholder">◈</span>
+          <span class="pv-site-name">{{ siteName }}</span>
         </div>
-        <div class="pub-preview-tabs">
+
+        <!-- Menu pages (visible et clair) -->
+        <div class="pv-menu">
           <button
-            v-for="(p,i) in site.pages" :key="p.id"
-            class="pub-preview-tab"
-            :class="{active: currentPageIndex===i}"
+            v-for="(p,i) in site.pages"
+            :key="p.id"
+            class="pv-menu-item"
+            :class="{ active: currentPageIndex===i }"
             @click="currentPageIndex=i"
           >{{ p.name }}</button>
         </div>
-        <button v-if="cartCount>0" class="pub-preview-cart" @click="showCart=true">
-          🛒 <span class="cart-badge">{{ cartCount }}</span>
-        </button>
+
+        <!-- Droite : Sélecteur de langue + Panier -->
+        <div class="pv-nav-right">
+          <!-- Sélecteur de langue -->
+          <select class="pv-lang-select" v-model="currentLang">
+            <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+
+          <!-- Panier — toujours visible (même vide) -->
+          <button class="pv-cart-btn" @click="showCart=true; cartStep='cart'">
+            <span class="pv-cart-icon">🛒</span>
+            <span v-if="cartCount > 0" class="pv-cart-badge">{{ cartCount }}</span>
+            <span class="pv-cart-label">{{ t.cartTitle }}</span>
+          </button>
+        </div>
+
       </nav>
       <!-- Contenu du site -->
       <div class="pub-preview-content" :style="currentPage?.style">
@@ -1510,9 +1706,24 @@ const setPageStyle = (type, value) => {
             <h3 v-if="s.title" class="prev-video-title">{{ s.title }}</h3>
             <div v-if="s.url" class="prev-video-wrap"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="prev-video-iframe"/></div>
           </div>
-          <!-- CATALOGUE → ListeProducts.vue (aperçu public) -->
-          <div v-else-if="s.type==='products'" class="sec-products-embed" :style="s.style">
-            <ListeProducts :embedded="true" :section-id="s.id" :preview-mode="true" />
+          <div v-else-if="s.type==='products'" class="prev-products" :style="s.style">
+            <div class="prev-products-grid">
+              <div v-for="p in s.items" :key="p.id" class="prev-product-card">
+                <div class="prev-product-img-wrap">
+                  <img v-if="p.image" :src="p.image" class="prev-product-img"/>
+                  <div v-else class="prev-product-img-ph">🛍️</div>
+                  <span v-if="p.badge" class="prev-product-badge">{{ p.badge }}</span>
+                </div>
+                <div class="prev-product-body">
+                  <div class="prev-product-name">{{ p.name }}</div>
+                  <div class="prev-product-desc">{{ p.description }}</div>
+                  <div class="prev-product-footer">
+                    <span class="prev-product-price">{{ p.price }}{{ p.currency }}</span>
+                    <button class="prev-product-btn" @click="addToCart(p)">🛒 {{ t.prevBuyBtn }}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div v-else-if="s.type==='features'" class="prev-features" :style="s.style">
             <div class="prev-features-grid">
@@ -1722,9 +1933,32 @@ const setPageStyle = (type, value) => {
               <div v-else class="video-placeholder"><span>▶</span><span>{{ t.videoHint }}</span></div>
             </div>
             <!-- PRODUCTS -->
-            <!-- CATALOGUE → ListeProducts.vue -->
-            <div v-else-if="s.type==='products'" class="sec-products-embed" :style="s.style">
-              <ListeProducts :embedded="true" :section-id="s.id" />
+            <div v-else-if="s.type==='products'" class="sec-products" :style="s.style">
+              <div class="products-toolbar">
+                <span class="sec-type-label">🛍️ {{ t.productsLabel }}</span>
+                <button class="btn-action small" @click.stop="addProduct(s)">{{ t.addProduct }}</button>
+              </div>
+              <div class="products-grid-edit">
+                <div v-for="(p,pi) in s.items" :key="p.id" class="product-card-edit">
+                  <button class="product-del" @click.stop="removeProduct(s,pi)">✕</button>
+                  <label class="product-img-upload">
+                    <input type="file" accept="image/*" @change="uploadProductImage($event,p)" hidden/>
+                    <img v-if="p.image" :src="p.image" class="product-img"/>
+                    <div v-else class="product-img-ph">🛍️<span>Photo</span></div>
+                  </label>
+                  <div class="product-fields">
+                    <input v-model="p.badge" class="product-badge-input" :placeholder="t.badgePh"/>
+                    <input v-model="p.name" class="product-name-input" :placeholder="t.productNamePh"/>
+                    <input v-model="p.description" class="product-desc-input" :placeholder="t.productDescPh"/>
+                    <div class="product-price-row">
+                      <input v-model="p.price" class="product-price-input" :placeholder="t.productPricePh"/>
+                      <select v-model="p.currency" class="product-currency-select">
+                        <option>€</option><option>$</option><option>£</option><option>MAD</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <!-- FEATURES -->
             <div v-else-if="s.type==='features'" class="sec-features" :style="s.style">
@@ -1805,9 +2039,24 @@ const setPageStyle = (type, value) => {
                 <div v-if="s.url" class="prev-video-wrap"><iframe :src="getEmbedUrl(s.url)" allowfullscreen class="prev-video-iframe"/></div>
                 <div v-else class="prev-img-placeholder">{{ t.prevVideoEmpty }}</div>
               </div>
-              <!-- CATALOGUE → ListeProducts.vue (mode preview) -->
-              <div v-else-if="s.type==='products'" class="sec-products-embed" :style="s.style">
-                <ListeProducts :embedded="true" :section-id="s.id" :preview-mode="true" />
+              <div v-else-if="s.type==='products'" class="prev-products" :style="s.style">
+                <div class="prev-products-grid">
+                  <div v-for="p in s.items" :key="p.id" class="prev-product-card">
+                    <div class="prev-product-img-wrap">
+                      <img v-if="p.image" :src="p.image" class="prev-product-img"/>
+                      <div v-else class="prev-product-img-ph">🛍️</div>
+                      <span v-if="p.badge" class="prev-product-badge">{{ p.badge }}</span>
+                    </div>
+                    <div class="prev-product-body">
+                      <div class="prev-product-name">{{ p.name }}</div>
+                      <div class="prev-product-desc">{{ p.description }}</div>
+                      <div class="prev-product-footer">
+                        <span class="prev-product-price">{{ p.price }}{{ p.currency }}</span>
+                        <button class="prev-product-btn" @click.stop="addToCart(p)">🛒 {{ t.prevBuyBtn }}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div v-else-if="s.type==='features'" class="prev-features" :style="s.style">
                 <div class="prev-features-grid">
@@ -2023,7 +2272,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .video-placeholder{border:2px dashed #d1d5db;border-radius:12px;padding:50px;text-align:center;color:#9ca3af;display:flex;flex-direction:column;align-items:center;gap:8px}
 .video-placeholder span:first-child{font-size:36px;opacity:.4}
 .sec-products{padding:20px 40px}
-.sec-products-embed{padding:0;background:#fafafa;min-height:120px;border-radius:8px;overflow:hidden}
 .products-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .products-grid-edit{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .product-card-edit{background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;position:relative;display:flex;flex-direction:column}
@@ -2134,7 +2382,186 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pub-url-wrap{display:flex;align-items:center;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);overflow:hidden}
 .pub-url-prefix{font-size:11px;color:var(--text3);padding:10px 8px;white-space:nowrap;border-right:1px solid var(--border2)}
 .pub-input{flex:1;background:transparent;border:none;color:var(--text);font-size:13px;padding:10px 12px;outline:none;font-family:'DM Sans',sans-serif}
-.pub-preview-url{font-size:12px;color:#10b981;margin-top:6px;font-weight:500;word-break:break-all}
+.pub-preview-url{font-size:12px;color:#10b981;
+
+/* ========================================================
+   MODE APERÇU PUBLIC — CSS COMPLET
+======================================================== */
+
+/* Overlay plein écran */
+.public-preview-overlay{
+  position:fixed;inset:0;z-index:9000;
+  background:#ffffff;
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  font-family:'DM Sans',sans-serif;
+}
+
+/* Bandeau "Mode aperçu" */
+.pv-topband{
+  background:#1a1a2e;
+  color:rgba(255,255,255,.7);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 16px;
+  font-size:11px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.5px;
+  flex-shrink:0;
+}
+.pv-topband-label{display:flex;align-items:center;gap:6px}
+.pv-topband-close{
+  background:rgba(255,255,255,.12);
+  border:1px solid rgba(255,255,255,.2);
+  color:white;
+  padding:4px 12px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:600;
+  font-family:'DM Sans',sans-serif;
+  transition:all .15s;
+}
+.pv-topband-close:hover{background:rgba(255,255,255,.22)}
+
+/* Navigation principale du store */
+.pv-nav{
+  display:flex;
+  align-items:center;
+  gap:0;
+  padding:0 32px;
+  height:60px;
+  background:#ffffff;
+  border-bottom:1px solid #e5e7eb;
+  box-shadow:0 1px 8px rgba(0,0,0,.06);
+  flex-shrink:0;
+  position:relative;
+  z-index:10;
+}
+
+/* Logo + nom du site */
+.pv-brand{
+  display:flex;align-items:center;gap:10px;
+  flex-shrink:0;
+  margin-right:32px;
+}
+.pv-logo{height:36px;width:auto;border-radius:6px;object-fit:contain}
+.pv-logo-placeholder{
+  font-size:26px;
+  width:36px;height:36px;
+  background:linear-gradient(135deg,#6c63ff,#a78bfa);
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  color:white;
+  font-size:18px;
+}
+.pv-site-name{
+  font-family:'Playfair Display',serif;
+  font-size:18px;
+  font-weight:600;
+  color:#1a1a2e;
+  white-space:nowrap;
+}
+
+/* Menu pages */
+.pv-menu{
+  display:flex;align-items:center;gap:4px;
+  flex:1;
+}
+.pv-menu-item{
+  background:none;
+  border:none;
+  padding:8px 16px;
+  border-radius:8px;
+  font-size:14px;
+  font-weight:500;
+  color:#374151;
+  cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  transition:all .15s;
+  white-space:nowrap;
+}
+.pv-menu-item:hover{background:#f3f4f6;color:#1a1a2e}
+.pv-menu-item.active{
+  background:#ede9fe;
+  color:#6c63ff;
+  font-weight:600;
+}
+
+/* Droite nav : langue + panier */
+.pv-nav-right{
+  display:flex;align-items:center;gap:10px;
+  flex-shrink:0;
+  margin-left:auto;
+}
+
+/* Sélecteur de langue */
+.pv-lang-select{
+  background:#f3f4f6;
+  border:1px solid #e5e7eb;
+  color:#374151;
+  padding:7px 12px;
+  border-radius:8px;
+  font-size:13px;
+  font-family:'DM Sans',sans-serif;
+  cursor:pointer;
+  outline:none;
+  transition:border-color .15s;
+}
+.pv-lang-select:focus{border-color:#6c63ff}
+
+/* Bouton Panier */
+.pv-cart-btn{
+  display:flex;align-items:center;gap:7px;
+  background:#6c63ff;
+  color:white;
+  border:none;
+  padding:9px 18px;
+  border-radius:10px;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  transition:all .2s;
+  position:relative;
+  white-space:nowrap;
+}
+.pv-cart-btn:hover{background:#5b52ee;transform:translateY(-1px);box-shadow:0 4px 14px rgba(108,99,255,.35)}
+.pv-cart-icon{font-size:16px;line-height:1}
+.pv-cart-badge{
+  position:absolute;
+  top:-7px;right:-7px;
+  background:#ef4444;
+  color:white;
+  font-size:10px;
+  font-weight:700;
+  width:18px;height:18px;
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  border:2px solid white;
+  animation:pv-badge-pop .2s ease;
+}
+@keyframes pv-badge-pop{from{transform:scale(0)}to{transform:scale(1)}}
+.pv-cart-label{font-size:13px}
+
+/* Contenu du site dans l'aperçu */
+.pub-preview-content{
+  flex:1;
+  overflow-y:auto;
+  background:#ffffff;
+}
+
+/* Responsive aperçu */
+@media(max-width:640px){
+  .pv-nav{padding:0 14px;gap:0}
+  .pv-brand{margin-right:12px}
+  .pv-site-name{font-size:15px}
+  .pv-menu-item{padding:7px 10px;font-size:13px}
+  .pv-cart-label{display:none}
+  .pv-lang-select{padding:7px 8px;font-size:12px}
+}
+
+margin-top:6px;font-weight:500;word-break:break-all}
 .pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:16px}
 .pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px}
 .pub-url-card label{display:block;font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
@@ -2196,6 +2623,39 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .cart-actions{display:flex;gap:10px}
 .cart-actions .btn-action{flex:1;justify-content:center}
 .cart-checkout-btn{flex:2;margin-top:0}
+.cart-overlay .cart-modal{max-width:560px;padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:90vh}
+.cart-modal-header{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface2);flex-shrink:0}
+.cart-back-btn{background:none;border:1px solid var(--border2);color:var(--text2);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;white-space:nowrap}
+.cart-back-btn:hover{background:var(--border2)}
+.cart-header-title{display:flex;align-items:center;gap:8px;flex:1}
+.cart-header-title span{font-size:22px}
+.cart-header-title h2{font-family:'Playfair Display',serif;font-size:18px;color:var(--text);margin:0}
+.cart-header-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.cart-modal .cart-empty,.cart-modal .cart-items,.cart-modal .cart-footer{padding:16px 20px}
+.cart-modal .cart-items{overflow-y:auto;flex:1}
+.cart-modal .cart-footer{border-top:1px solid var(--border);flex-shrink:0}
+/* CHECKOUT STEP */
+.checkout-summary{padding:12px 20px;background:var(--surface2);border-bottom:1px solid var(--border);max-height:160px;overflow-y:auto}
+.checkout-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.checkout-item:last-of-type{border-bottom:none}
+.checkout-item-img{width:36px;height:36px;border-radius:6px;background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:16px;overflow:hidden;flex-shrink:0}
+.checkout-item-img img{width:100%;height:100%;object-fit:cover}
+.checkout-item-name{flex:1;font-size:13px;color:var(--text2)}
+.checkout-item-price{font-size:13px;font-weight:600;color:var(--accent)}
+.checkout-total{display:flex;justify-content:space-between;padding-top:8px;margin-top:6px;border-top:1px solid var(--border2)}
+.checkout-total span{font-size:13px;color:var(--text2)}
+.checkout-total strong{font-size:16px;color:var(--accent)}
+.checkout-fields{padding:16px 20px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1}
+.checkout-section-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+.checkout-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.checkout-field{display:flex;flex-direction:column;gap:4px}
+.checkout-field label{font-size:11px;color:var(--text2);font-weight:500}
+.checkout-input{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:9px 12px;border-radius:var(--radius);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
+.checkout-input:focus{border-color:var(--accent)}
+.checkout-select{cursor:pointer}
+.cart-pay-error{margin:8px 20px 0;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);padding:8px 12px;border-radius:var(--radius);font-size:12px}
+.cart-pay-final{margin:12px 20px;width:calc(100% - 40px);display:flex;align-items:center;justify-content:center;gap:8px}
+.cart-secure-note{text-align:center;font-size:11px;color:var(--text3);padding-bottom:14px}
 
 /* CONTACT FORM — état fonctionnel */
 .prev-form-error{color:#ef4444;font-size:12px;margin-bottom:8px;width:100%;max-width:500px}

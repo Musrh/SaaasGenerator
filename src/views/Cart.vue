@@ -1,164 +1,127 @@
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, onMounted, computed } from "vue"
+import { db } from "../firebase"
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore"
+import { getAuth } from "firebase/auth"
 
-// 🛒 PANIER
 const cart = ref([])
+const loading = ref(true)
 
-// 👤 CLIENT
 const name = ref("")
 const email = ref("")
-const address = ref("") // ✅ FIX ICI (erreur corrigée)
+const address = ref("")
 
-// 💰 TOTAL
+const auth = getAuth()
+
 const total = computed(() =>
-  cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
+  cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-// 📦 LOAD PANIER
-onMounted(() => {
-  loadCart()
-})
+// 🔥 CHARGER CART SESSION FIRESTORE
+async function loadCart() {
+  const user = auth.currentUser
+  if (!user) return
 
-function loadCart() {
-  const saved = localStorage.getItem("cart")
-  cart.value = saved ? JSON.parse(saved) : []
-}
+  const refDoc = doc(db, "cartSession", user.uid)
+  const snap = await getDoc(refDoc)
 
-// 💾 SAVE PANIER
-function saveCart() {
-  localStorage.setItem("cart", JSON.stringify(cart.value))
-}
-
-// 🛒 AJOUT PRODUIT
-function addToCart(product) {
-  const existing = cart.value.find(i => i.id === product.id)
-
-  if (existing) {
-    existing.qty++
+  if (snap.exists()) {
+    cart.value = snap.data().items || []
   } else {
-    cart.value.push({
-      id: product.id,
-      name: product.name,
-      price: Number(product.price),
-      image: product.image || "",
-      qty: 1
-    })
+    cart.value = []
   }
 
-  saveCart()
+  loading.value = false
 }
 
-// ➕
+// 🔥 METTRE À JOUR FIRESTORE
+async function saveCart() {
+  const user = auth.currentUser
+  if (!user) return
+
+  const refDoc = doc(db, "cartSession", user.uid)
+
+  await setDoc(refDoc, {
+    items: cart.value,
+    updatedAt: Date.now()
+  })
+}
+
+// ➕ QUANTITÉ
 function increase(item) {
   item.qty++
   saveCart()
 }
 
-// ➖
 function decrease(item) {
-  if (item.qty > 1) {
-    item.qty--
-  } else {
-    remove(item)
-  }
+  if (item.qty > 1) item.qty--
   saveCart()
 }
 
-// ❌ SUPPRIMER
+// ❌ REMOVE
 function remove(item) {
   cart.value = cart.value.filter(i => i.id !== item.id)
   saveCart()
 }
 
-// 🗑️ VIDER PANIER
-function clearCart() {
+// 🗑️ CLEAR CART
+async function clearCart() {
   cart.value = []
-  localStorage.removeItem("cart")
+  await saveCart()
 }
 
-// 💳 PAIEMENT STRIPE
+// 💳 PAYER (Stripe backend)
 async function pay() {
-  try {
-    if (!name.value || !email.value || !address.value) {
-      alert("❌ Remplir toutes les informations client")
-      return
+  const user = auth.currentUser
+
+  if (!user) return alert("Login requis")
+  if (cart.value.length === 0) return alert("Panier vide")
+
+  const payload = {
+    items: cart.value,
+    customer: {
+      uid: user.uid,
+      name: name.value,
+      email: email.value,
+      address: address.value
     }
+  }
 
-    if (cart.value.length === 0) {
-      alert("❌ Panier vide")
-      return
+  const res = await fetch(
+    "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     }
+  )
 
-    const payload = {
-      items: cart.value.map(i => ({
-        name: i.name,
-        price: i.price,
-        quantity: i.qty
-      })),
-      customer: {
-        name: name.value,
-        email: email.value,
-        address: address.value
-      }
-    }
+  const data = await res.json()
 
-    console.log("📦 PAYLOAD :", payload)
-
-    const res = await fetch(
-      "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      }
-    )
-
-    if (!res.ok) {
-      const err = await res.text()
-      console.error("BACKEND ERROR:", err)
-      alert("❌ Erreur paiement backend")
-      return
-    }
-
-    const data = await res.json()
-
-    console.log("✅ STRIPE RESPONSE :", data)
-
-    const url = data.url || data.checkoutUrl || data.sessionUrl
-
-    if (url) {
-      window.location.href = url
-    } else {
-      alert("❌ URL Stripe introuvable")
-    }
-
-  } catch (error) {
-    console.error(error)
-    alert("❌ Erreur paiement")
+  if (data.url) {
+    window.location.href = data.url
+  } else {
+    alert("Erreur paiement")
   }
 }
+
+onMounted(loadCart)
 </script>
 
 <template>
-  <div class="cart">
+  <div>
 
-    <h1>🛒 Mon Panier</h1>
+    <h2>Panier</h2>
 
-    <!-- PANIER VIDE -->
-    <div v-if="cart.length === 0">
-      <p>Panier vide</p>
-    </div>
+    <div v-if="loading">Chargement...</div>
 
-    <!-- PRODUITS -->
     <div v-else>
-      <div v-for="item in cart" :key="item.id" class="item">
+      <div v-if="cart.length === 0">
+        Panier vide
+      </div>
 
-        <img v-if="item.image" :src="item.image" width="60" />
-
-        <h3>{{ item.name }}</h3>
-        <p>{{ item.price }} €</p>
+      <div v-for="item in cart" :key="item.id">
+        <p>{{ item.name }} - {{ item.price }} €</p>
 
         <button @click="decrease(item)">-</button>
         {{ item.qty }}
@@ -167,48 +130,18 @@ async function pay() {
         <button @click="remove(item)">❌</button>
       </div>
 
-      <h2>Total : {{ total.toFixed(2) }} €</h2>
+      <h3>Total: {{ total }} €</h3>
 
-      <button @click="clearCart">
-        🗑️ Vider le panier
-      </button>
+      <button @click="clearCart">Vider panier</button>
+
+      <hr />
+
+      <input v-model="name" placeholder="Nom" />
+      <input v-model="email" placeholder="Email" />
+      <input v-model="address" placeholder="Adresse" />
+
+      <button @click="pay">Payer</button>
     </div>
-
-    <hr />
-
-    <!-- CLIENT -->
-    <h2>Informations client</h2>
-
-    <input v-model="name" placeholder="Nom" />
-    <input v-model="email" placeholder="Email" />
-    <textarea v-model="address" placeholder="Adresse de livraison"></textarea>
-
-    <!-- PAIEMENT -->
-    <button @click="pay">
-      💳 Payer
-    </button>
 
   </div>
 </template>
-
-<style scoped>
-.cart {
-  max-width: 600px;
-  margin: auto;
-}
-
-.item {
-  border-bottom: 1px solid #ddd;
-  padding: 10px;
-}
-
-button {
-  margin: 5px;
-}
-
-input, textarea {
-  display: block;
-  width: 100%;
-  margin: 10px 0;
-}
-</style>

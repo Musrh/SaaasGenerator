@@ -5,6 +5,31 @@
 
     <p v-if="error" style="color:red">{{ error }}</p>
 
+    <!-- CLIENT INFOS -->
+    <div style="margin-bottom:20px; padding:10px; border:1px solid #ddd">
+
+      <h3>👤 Informations client</h3>
+
+      <input
+        v-model="name"
+        placeholder="Nom complet"
+        style="display:block; margin-bottom:10px; padding:5px"
+      />
+
+      <input
+        v-model="email"
+        placeholder="Email"
+        style="display:block; margin-bottom:10px; padding:5px"
+      />
+
+      <input
+        v-model="address"
+        placeholder="Adresse de livraison"
+        style="display:block; margin-bottom:10px; padding:5px"
+      />
+
+    </div>
+
     <!-- PANIER VIDE -->
     <div v-if="cart.length === 0">
       <p>Panier vide</p>
@@ -20,15 +45,11 @@
       <p>{{ item.price }} €</p>
 
       <div style="display:flex; gap:10px; align-items:center">
-
         <button @click="updateQty(index, item.qty - 1)">-</button>
         <span>{{ item.qty }}</span>
         <button @click="updateQty(index, item.qty + 1)">+</button>
 
-        <button @click="removeItem(index)" style="color:red">
-          🗑
-        </button>
-
+        <button @click="removeItem(index)" style="color:red">🗑</button>
       </div>
     </div>
 
@@ -51,23 +72,23 @@
 
 <script setup>
 import { ref, computed } from "vue"
-import {
-  doc,
-  onSnapshot,
-  updateDoc
-} from "firebase/firestore"
+import { doc, onSnapshot, updateDoc } from "firebase/firestore"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { db } from "../firebase"
 
 const cart = ref([])
 const error = ref(null)
 
+const name = ref("")
+const email = ref("")
+const address = ref("")
+
 const auth = getAuth()
 let userRef = null
 
-/* =========================================================
-   🔐 AUTH + LIVE CART SESSION
-========================================================= */
+/* =========================
+   AUTH + CART
+========================= */
 onAuthStateChanged(auth, (user) => {
 
   if (!user) {
@@ -80,22 +101,24 @@ onAuthStateChanged(auth, (user) => {
 
   onSnapshot(userRef, (snap) => {
     const data = snap.data()
+
     cart.value = data?.cartSession || []
+
+    // auto-fill email
+    email.value = user.email || ""
   })
 })
 
-/* =========================================================
-   🧮 TOTAL
-========================================================= */
-const total = computed(() => {
-  return cart.value.reduce((sum, item) => {
-    return sum + item.price * item.qty
-  }, 0)
-})
+/* =========================
+   TOTAL
+========================= */
+const total = computed(() =>
+  cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
+)
 
-/* =========================================================
-   ➕➖ QUANTITY UPDATE
-========================================================= */
+/* =========================
+   UPDATE QTY
+========================= */
 async function updateQty(index, qty) {
   if (qty < 1) return
 
@@ -107,9 +130,9 @@ async function updateQty(index, qty) {
   })
 }
 
-/* =========================================================
-   🗑 DELETE ITEM
-========================================================= */
+/* =========================
+   REMOVE ITEM
+========================= */
 async function removeItem(index) {
   const updated = [...cart.value]
   updated.splice(index, 1)
@@ -119,9 +142,9 @@ async function removeItem(index) {
   })
 }
 
-/* =========================================================
-   💳 STRIPE PAYMENT ONLY
-========================================================= */
+/* =========================
+   💳 STRIPE PAY
+========================= */
 async function pay() {
   const user = auth.currentUser
   if (!user) return
@@ -132,7 +155,9 @@ async function pay() {
       total: total.value,
       customer: {
         uid: user.uid,
-        email: user.email
+        name: name.value,
+        email: email.value,
+        address: address.value
       }
     }
 
@@ -152,7 +177,7 @@ async function pay() {
     if (data.url) {
       window.location.href = data.url
     } else {
-      console.error("Stripe error:", data)
+      console.error(data)
       alert("Erreur paiement Stripe")
     }
 

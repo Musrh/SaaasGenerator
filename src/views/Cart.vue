@@ -7,7 +7,7 @@ const cart = ref([])
 // 👤 CLIENT
 const name = ref("")
 const email = ref("")
-const address = ref("")]
+const address = ref("") // ✅ FIX ICI (erreur corrigée)
 
 // 💰 TOTAL
 const total = computed(() =>
@@ -24,12 +24,12 @@ function loadCart() {
   cart.value = saved ? JSON.parse(saved) : []
 }
 
-// 💾 SAVE
+// 💾 SAVE PANIER
 function saveCart() {
   localStorage.setItem("cart", JSON.stringify(cart.value))
 }
 
-// ✅ AJOUT PRODUIT (IMPORTANT)
+// 🛒 AJOUT PRODUIT
 function addToCart(product) {
   const existing = cart.value.find(i => i.id === product.id)
 
@@ -64,28 +64,28 @@ function decrease(item) {
   saveCart()
 }
 
-// ❌
+// ❌ SUPPRIMER
 function remove(item) {
   cart.value = cart.value.filter(i => i.id !== item.id)
   saveCart()
 }
 
-// 🗑️
+// 🗑️ VIDER PANIER
 function clearCart() {
   cart.value = []
   localStorage.removeItem("cart")
 }
 
-// 💳 PAIEMENT
+// 💳 PAIEMENT STRIPE
 async function pay() {
   try {
     if (!name.value || !email.value || !address.value) {
-      alert("Remplir les infos client")
+      alert("❌ Remplir toutes les informations client")
       return
     }
 
     if (cart.value.length === 0) {
-      alert("Panier vide")
+      alert("❌ Panier vide")
       return
     }
 
@@ -102,7 +102,7 @@ async function pay() {
       }
     }
 
-    console.log("📦 payload envoyé :", payload)
+    console.log("📦 PAYLOAD :", payload)
 
     const res = await fetch(
       "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
@@ -117,24 +117,26 @@ async function pay() {
 
     if (!res.ok) {
       const err = await res.text()
-      console.error(err)
-      alert("Erreur backend paiement")
+      console.error("BACKEND ERROR:", err)
+      alert("❌ Erreur paiement backend")
       return
     }
 
     const data = await res.json()
+
+    console.log("✅ STRIPE RESPONSE :", data)
 
     const url = data.url || data.checkoutUrl || data.sessionUrl
 
     if (url) {
       window.location.href = url
     } else {
-      alert("Erreur URL Stripe")
+      alert("❌ URL Stripe introuvable")
     }
 
-  } catch (err) {
-    console.error(err)
-    alert("Erreur paiement")
+  } catch (error) {
+    console.error(error)
+    alert("❌ Erreur paiement")
   }
 }
 </script>
@@ -142,16 +144,17 @@ async function pay() {
 <template>
   <div class="cart">
 
-    <h1>🛒 Panier</h1>
+    <h1>🛒 Mon Panier</h1>
 
     <!-- PANIER VIDE -->
     <div v-if="cart.length === 0">
       <p>Panier vide</p>
     </div>
 
-    <!-- LISTE PRODUITS -->
+    <!-- PRODUITS -->
     <div v-else>
       <div v-for="item in cart" :key="item.id" class="item">
+
         <img v-if="item.image" :src="item.image" width="60" />
 
         <h3>{{ item.name }}</h3>
@@ -164,7 +167,7 @@ async function pay() {
         <button @click="remove(item)">❌</button>
       </div>
 
-      <h2>Total: {{ total.toFixed(2) }} €</h2>
+      <h2>Total : {{ total.toFixed(2) }} €</h2>
 
       <button @click="clearCart">
         🗑️ Vider le panier
@@ -173,14 +176,14 @@ async function pay() {
 
     <hr />
 
-    <!-- INFOS CLIENT -->
+    <!-- CLIENT -->
     <h2>Informations client</h2>
 
     <input v-model="name" placeholder="Nom" />
     <input v-model="email" placeholder="Email" />
     <textarea v-model="address" placeholder="Adresse de livraison"></textarea>
 
-    <!-- PAYER -->
+    <!-- PAIEMENT -->
     <button @click="pay">
       💳 Payer
     </button>

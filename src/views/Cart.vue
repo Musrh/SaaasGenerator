@@ -18,20 +18,21 @@ const total = computed(() =>
   cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-// 🔥 LOAD CART (FIX IMPORTANT)
+// ✅ LOAD CART (users/{uid})
 function loadCart(uid) {
-  const refDoc = doc(db, "cartSession", uid)
+  const refDoc = doc(db, "users", uid)
 
   getDoc(refDoc)
     .then((snap) => {
-      if (snap.exists()) {
-        const data = snap.data()
-
-        // ✅ FIX ICI : ton champ est "cartSession"
-        cart.value = data.cartSession || []
-      } else {
+      if (!snap.exists()) {
         cart.value = []
+        return
       }
+
+      const data = snap.data()
+
+      // ✅ ICI: cartSession dans users
+      cart.value = data.cartSession || []
     })
     .catch((err) => {
       console.error("LOAD ERROR:", err)
@@ -42,16 +43,20 @@ function loadCart(uid) {
     })
 }
 
-// 💾 SAVE CART (CORRIGÉ)
+// ✅ SAVE CART
 async function saveCart() {
   if (!userId) return
 
-  const refDoc = doc(db, "cartSession", userId)
+  const refDoc = doc(db, "users", userId)
 
-  await setDoc(refDoc, {
-    cartSession: cart.value, // ✅ FIX ICI
-    updatedAt: Date.now()
-  })
+  await setDoc(
+    refDoc,
+    {
+      cartSession: cart.value,
+      updatedAt: Date.now()
+    },
+    { merge: true } // 🔥 IMPORTANT (évite écrasement user)
+  )
 }
 
 // ➕
@@ -78,7 +83,7 @@ function clearCart() {
   saveCart()
 }
 
-// 💳 PAY
+// 💳 PAY (Stripe backend)
 async function pay() {
   if (!userId) return alert("Utilisateur non connecté")
   if (cart.value.length === 0) return alert("Panier vide")
@@ -107,12 +112,12 @@ async function pay() {
   if (data.url) {
     window.location.href = data.url
   } else {
+    console.error(data)
     alert("Erreur paiement")
-    console.log(data)
   }
 }
 
-// 🔥 AUTH SAFE LOAD
+// 🔥 AUTH SAFE
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
     if (user) {

@@ -8,9 +8,7 @@
     </div>
 
     <div v-for="item in cart" :key="item.id" style="margin-bottom:10px">
-      <p>
-        {{ item.name }} - {{ item.price }} €
-      </p>
+      <p>{{ item.name }} - {{ item.price }} €</p>
 
       <div>
         <button @click="decrease(item.id)">-</button>
@@ -25,7 +23,15 @@
 
     <h3>Total : {{ total }} €</h3>
 
-    <button @click="pay" :disabled="cart.length === 0">
+    <!-- 🔥 NOUVEAU BOUTON -->
+    <button @click="clearCart" :disabled="cart.length === 0">
+      🧹 Vider le panier
+    </button>
+
+    <br><br>
+
+    <!-- 💳 PAYER -->
+    <button @click="pay" :disabled="cart.length === 0 || !uid">
       💳 Payer
     </button>
 
@@ -45,9 +51,9 @@ const router = useRouter()
 const cart = ref([])
 const uid = ref(null)
 
-let unsubscribe = null
+let unsub = null
 
-// 🔥 SNAPSHOT PROPRE
+// 🔥 SNAPSHOT
 onMounted(() => {
   auth.onAuthStateChanged((user) => {
     if (!user) return
@@ -56,7 +62,7 @@ onMounted(() => {
 
     const refDoc = doc(db, "users", user.uid)
 
-    unsubscribe = onSnapshot(refDoc, (snap) => {
+    unsub = onSnapshot(refDoc, (snap) => {
       if (!snap.exists()) {
         cart.value = []
         return
@@ -68,13 +74,12 @@ onMounted(() => {
   })
 })
 
-// 🧹 CLEAN LISTENER
 onBeforeUnmount(() => {
-  if (unsubscribe) unsubscribe()
+  if (unsub) unsub()
 })
 
-// 🔥 HELPERS SAFE UPDATE
-const updateCart = async (newCart) => {
+// 💾 SAVE
+const save = async (newCart) => {
   if (!uid.value) return
 
   cart.value = newCart
@@ -89,8 +94,7 @@ const increase = async (id) => {
   const newCart = cart.value.map(p =>
     p.id === id ? { ...p, qty: p.qty + 1 } : p
   )
-
-  await updateCart(newCart)
+  await save(newCart)
 }
 
 // ➖
@@ -101,13 +105,24 @@ const decrease = async (id) => {
 
   newCart = newCart.filter(p => p.qty > 0)
 
-  await updateCart(newCart)
+  await save(newCart)
 }
 
 // 🗑
 const remove = async (id) => {
   const newCart = cart.value.filter(p => p.id !== id)
-  await updateCart(newCart)
+  await save(newCart)
+}
+
+// 🧹 VIDER PANIER (NOUVEAU)
+const clearCart = async () => {
+  if (!uid.value) return
+
+  await updateDoc(doc(db, "users", uid.value), {
+    cartSession: []
+  })
+
+  cart.value = []
 }
 
 // 💰 TOTAL
@@ -115,8 +130,18 @@ const total = computed(() =>
   cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
 )
 
-// 💳 PAY
+// 💳 PAYER (FIX COMPLET)
 const pay = () => {
+  if (!uid.value) {
+    alert("Utilisateur non connecté")
+    return
+  }
+
+  if (cart.value.length === 0) {
+    alert("Panier vide")
+    return
+  }
+
   const order = {
     items: cart.value,
     total: total.value,
@@ -124,6 +149,8 @@ const pay = () => {
   }
 
   localStorage.setItem("pendingStripeOrder", JSON.stringify(order))
+
+  console.log("➡️ REDIRECT PAYMENT SUCCESS")
 
   router.push("/payment-success")
 }

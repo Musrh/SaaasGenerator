@@ -1,183 +1,182 @@
-<template>
-  <div class="cart">
-
-    <h2>🛒 Mon panier</h2>
-
-    <!-- PRODUITS -->
-    <div v-if="cart.length">
-      <div v-for="item in cart" :key="item.id" class="item">
-        <h3>{{ item.name }}</h3>
-        <p>{{ item.price }} € x {{ item.qty }}</p>
-      </div>
-
-      <h3>Total : {{ total }} €</h3>
-
-      <!-- ACTIONS -->
-      <button @click="checkout">💳 Payer</button>
-      <button @click="clearCart">🧹 Vider le panier</button>
-    </div>
-
-    <p v-else>Panier vide</p>
-
-    <!-- FORMULAIRE CLIENT -->
-    <div class="form" v-if="cart.length">
-      <h3>📦 Informations client</h3>
-
-      <input v-model="customerName" placeholder="Nom complet" />
-      <input v-model="customerEmail" placeholder="Email" />
-      <textarea v-model="customerAddress" placeholder="Adresse de livraison"></textarea>
-    </div>
-
-  </div>
-</template>
-
 <script setup>
 import { ref, computed, onMounted } from "vue"
-import { getAuth } from "firebase/auth"
-import { doc, onSnapshot, updateDoc } from "firebase/firestore"
-import { db } from "../firebase"
 
-const auth = getAuth()
-
+// 🛒 panier
 const cart = ref([])
 
-// ✅ INFOS CLIENT
-const customerName = ref("")
-const customerEmail = ref("")
-const customerAddress = ref("")
+// 👤 infos client
+const name = ref("")
+const email = ref("")
+const address = ref("")
 
-// ✅ TOTAL
+// 💰 total
 const total = computed(() =>
   cart.value.reduce((sum, item) => sum + item.price * item.qty, 0)
 )
 
-// ✅ SYNC FIRESTORE
+// 📦 charger panier
 onMounted(() => {
-  const user = auth.currentUser
-  if (!user) return
-
-  const userRef = doc(db, "users", user.uid)
-
-  onSnapshot(userRef, (snap) => {
-    cart.value = snap.data()?.cartSession || []
-  })
+  const saved = localStorage.getItem("cart")
+  if (saved) {
+    cart.value = JSON.parse(saved)
+  }
 })
 
-// 🧹 VIDER PANIER
-const clearCart = async () => {
-  const user = auth.currentUser
-  if (!user) return
-
-  try {
-    await updateDoc(doc(db, "users", user.uid), {
-      cartSession: []
-    })
-
-    alert("Panier vidé ✅")
-  } catch (err) {
-    console.error(err)
-    alert("Erreur suppression panier")
-  }
+// 💾 sauvegarder panier
+function saveCart() {
+  localStorage.setItem("cart", JSON.stringify(cart.value))
 }
 
-// 💳 CHECKOUT STRIPE
-const checkout = async () => {
-  const user = auth.currentUser
-  if (!user) {
-    alert("Non connecté")
-    return
-  }
+// ➕ quantité
+function increase(item) {
+  item.qty++
+  saveCart()
+}
 
-  if (!customerName.value || !customerEmail.value || !customerAddress.value) {
-    alert("Remplis toutes les infos")
-    return
+// ➖ quantité
+function decrease(item) {
+  if (item.qty > 1) {
+    item.qty--
+  } else {
+    remove(item)
   }
+  saveCart()
+}
 
+// ❌ supprimer
+function remove(item) {
+  cart.value = cart.value.filter(i => i.id !== item.id)
+  saveCart()
+}
+
+// 🗑️ vider panier
+function clearCart() {
+  cart.value = []
+  localStorage.removeItem("cart")
+}
+
+// 💳 PAIEMENT STRIPE
+async function pay() {
   try {
-    const orderData = {
-      items: cart.value,
-      total: total.value,
-      customerName: customerName.value,
-      customerEmail: customerEmail.value,
-      customerAddress: customerAddress.value
+    if (!name.value || !email.value || !address.value) {
+      alert("Remplir toutes les informations client")
+      return
     }
 
-    // 🔥 sauvegarde locale pour PaymentSuccess
-    localStorage.setItem("pendingStripeOrder", JSON.stringify(orderData))
+    if (cart.value.length === 0) {
+      alert("Panier vide")
+      return
+    }
 
-    console.log("📦 Envoi backend =", orderData)
+    const payload = {
+      items: cart.value.map(i => ({
+        name: i.name,
+        price: i.price,
+        quantity: i.qty
+      })),
+      customer: {
+        name: name.value,
+        email: email.value,
+        address: address.value
+      }
+    }
 
-    const res = await fetch("https://backend-master-production-cf50.up.railway.app/create-checkout-session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        amount: Math.round(total.value * 100),
-        currency: "eur",
-        items: cart.value,
-        customerName: customerName.value,
-        customerEmail: customerEmail.value,
-        customerAddress: customerAddress.value,
-        uid: user.uid
-      })
-    })
+    console.log("📦 Envoi backend :", payload)
 
-    // 🔥 DEBUG BACKEND
+    const res = await fetch(
+      "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      }
+    )
+
     if (!res.ok) {
       const text = await res.text()
-      console.error("❌ Backend error:", text)
-      alert("Erreur backend Stripe")
+      console.error("❌ ERREUR BACKEND :", text)
+      alert("Erreur paiement backend")
       return
     }
 
     const data = await res.json()
 
-    console.log("🔥 Réponse backend =", data)
+    console.log("✅ Réponse backend :", data)
 
-    if (!data.url) {
-      alert("Erreur Stripe : URL manquante")
-      return
+    // ⚠️ IMPORTANT : vérifier clé retournée
+    const url = data.url || data.checkoutUrl || data.sessionUrl
+
+    if (url) {
+      window.location.href = url
+    } else {
+      alert("URL Stripe non reçue")
     }
 
-    // ✅ REDIRECTION STRIPE
-    window.location.href = data.url
-
   } catch (err) {
-    console.error("❌ Erreur checkout:", err)
-    alert("Erreur paiement (voir console)")
+    console.error("❌ ERREUR :", err)
+    alert("Erreur paiement")
   }
 }
 </script>
 
+<template>
+  <div class="cart">
+    <h1>🛒 Panier</h1>
+
+    <div v-if="cart.length === 0">
+      Panier vide
+    </div>
+
+    <div v-else>
+      <div v-for="item in cart" :key="item.id" class="item">
+        <h3>{{ item.name }}</h3>
+        <p>{{ item.price }} €</p>
+
+        <button @click="decrease(item)">-</button>
+        {{ item.qty }}
+        <button @click="increase(item)">+</button>
+
+        <button @click="remove(item)">❌</button>
+      </div>
+
+      <h2>Total: {{ total }} €</h2>
+
+      <button @click="clearCart">
+        🗑️ Vider le panier
+      </button>
+    </div>
+
+    <hr />
+
+    <h2>Informations client</h2>
+
+    <input v-model="name" placeholder="Nom" />
+    <input v-model="email" placeholder="Email" />
+    <textarea v-model="address" placeholder="Adresse de livraison"></textarea>
+
+    <button @click="pay">
+      💳 Payer
+    </button>
+  </div>
+</template>
+
 <style scoped>
 .cart {
-  padding: 20px;
+  max-width: 600px;
+  margin: auto;
 }
-
 .item {
   border-bottom: 1px solid #ddd;
-  margin-bottom: 10px;
-}
-
-.form {
-  margin-top: 20px;
-}
-
-input, textarea {
-  display: block;
-  margin-bottom: 10px;
-  width: 100%;
   padding: 10px;
 }
-
 button {
-  margin-top: 10px;
-  padding: 12px;
+  margin: 5px;
+}
+input, textarea {
+  display: block;
   width: 100%;
-  background: black;
-  color: white;
-  border: none;
-  cursor: pointer;
+  margin: 10px 0;
 }
 </style>

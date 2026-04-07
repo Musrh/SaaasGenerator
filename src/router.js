@@ -9,6 +9,8 @@ import SiteViewer  from "./views/SiteViewer.vue"
 import NotFound    from "./views/NotFound.vue"
 
 import Success from "./views/Paymentsuccess.vue"
+import Cancel from "./views/Paymentcancel.vue"
+
 import Orders from "./views/Orders.vue"
 
 import Cart from "./views/Cart.vue"
@@ -28,6 +30,10 @@ const routes = [
   {
     path: "/paymentsuccess",
     component: Success 
+  },
+  {
+    path: "/paymentcancel",
+    component: Cancel 
   },
 
   // ── Affichage d'un site publié ────────────────────────────

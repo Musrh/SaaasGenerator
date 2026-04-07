@@ -1,170 +1,160 @@
+//Cart.vue bon
+<template>
+  <div style="padding:20px">
+
+    <h1>🛒 Mon panier</h1>
+
+    <p v-if="error" style="color:red">{{ error }}</p>
+
+    <!-- PANIER VIDE -->
+    <div v-if="cart.length === 0">
+      <p>Panier vide</p>
+    </div>
+
+    <!-- PRODUITS -->
+    <div
+      v-for="(item, index) in cart"
+      :key="item.id || index"
+      style="margin-bottom:15px"
+    >
+
+      <h3>{{ item.name }}</h3>
+      <p>{{ item.price }} €</p>
+
+      <div style="display:flex; gap:10px; align-items:center">
+
+        <!-- QUANTITY -->
+        <button @click="updateQty(index, item.qty - 1)">-</button>
+
+        <span>{{ item.qty }}</span>
+
+        <button @click="updateQty(index, item.qty + 1)">+</button>
+
+        <!-- DELETE -->
+        <button @click="removeItem(index)" style="color:red">
+          🗑
+        </button>
+
+      </div>
+
+    </div>
+
+    <hr>
+
+    <!-- TOTAL -->
+    <h2>Total : {{ total }} €</h2>
+
+    <!-- PAYER -->
+    <button @click="pay" :disabled="cart.length === 0">
+      💳 Payer
+    </button>
+
+  </div>
+</template>
+
 <script setup>
-import { ref, onMounted, computed } from "vue"
-import { db } from "../firebase"
-import { doc, getDoc, setDoc } from "firebase/firestore"
+import { ref, computed } from "vue"
+import { doc, onSnapshot, updateDoc, arrayUnion } from "firebase/firestore"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { db } from "../firebase"
 
 const cart = ref([])
-const loading = ref(true)
-
-const name = ref("")
-const email = ref("")
-const address = ref("")
+const error = ref(null)
 
 const auth = getAuth()
-let userId = null
+let userRef = null
 
-const total = computed(() =>
-  cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
-)
+/* =========================================================
+   🔐 AUTH + LIVE CART SESSION
+========================================================= */
+onAuthStateChanged(auth, (user) => {
 
-// ✅ LOAD CART (users/{uid})
-function loadCart(uid) {
-  const refDoc = doc(db, "users", uid)
-
-  getDoc(refDoc)
-    .then((snap) => {
-      if (!snap.exists()) {
-        cart.value = []
-        return
-      }
-
-      const data = snap.data()
-
-      // ✅ ICI: cartSession dans users
-      cart.value = data.cartSession || []
-    })
-    .catch((err) => {
-      console.error("LOAD ERROR:", err)
-      cart.value = []
-    })
-    .finally(() => {
-      loading.value = false
-    })
-}
-
-// ✅ SAVE CART
-async function saveCart() {
-  if (!userId) return
-
-  const refDoc = doc(db, "users", userId)
-
-  await setDoc(
-    refDoc,
-    {
-      cartSession: cart.value,
-      updatedAt: Date.now()
-    },
-    { merge: true } // 🔥 IMPORTANT (évite écrasement user)
-  )
-}
-
-// ➕
-function increase(item) {
-  item.qty++
-  saveCart()
-}
-
-// ➖
-function decrease(item) {
-  if (item.qty > 1) item.qty--
-  saveCart()
-}
-
-// ❌
-function remove(item) {
-  cart.value = cart.value.filter(i => i.id !== item.id)
-  saveCart()
-}
-
-// 🗑️
-function clearCart() {
-  cart.value = []
-  saveCart()
-}
-
-// 💳 PAY (Stripe backend)
-async function pay() {
-  if (!userId) return alert("Utilisateur non connecté")
-  if (cart.value.length === 0) return alert("Panier vide")
-
-  const payload = {
-    items: cart.value,
-    customer: {
-      uid: userId,
-      name: name.value,
-      email: email.value,
-      address: address.value
-    }
+  if (!user) {
+    cart.value = []
+    error.value = "Utilisateur non connecté"
+    return
   }
 
-  const res = await fetch(
-    "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    }
-  )
+  userRef = doc(db, "users", user.uid)
 
-  const data = await res.json()
+  onSnapshot(userRef, (snap) => {
 
-  if (data.url) {
-    window.location.href = data.url
-  } else {
-    console.error(data)
+    const data = snap.data()
+
+    // 🔥 IMPORTANT : cartSession
+    cart.value = data?.cartSession || []
+
+    console.log("🔥 CART SESSION =", cart.value)
+  })
+})
+
+/* =========================================================
+   🧮 TOTAL
+========================================================= */
+const total = computed(() => {
+  return cart.value.reduce((sum, item) => {
+    return sum + item.price * item.qty
+  }, 0)
+})
+
+/* =========================================================
+   ➕➖ QUANTITY UPDATE
+========================================================= */
+async function updateQty(index, qty) {
+  if (qty < 1) return
+
+  const updated = [...cart.value]
+  updated[index].qty = qty
+
+  await updateDoc(userRef, {
+    cartSession: updated
+  })
+}
+
+/* =========================================================
+   🗑 DELETE ITEM
+========================================================= */
+async function removeItem(index) {
+  const updated = [...cart.value]
+  updated.splice(index, 1)
+
+  await updateDoc(userRef, {
+    cartSession: updated
+  })
+}
+
+/* =========================================================
+   💳 PAY → MOVE TO ORDERS + CLEAR CART
+========================================================= */
+async function pay() {
+
+  const user = auth.currentUser
+  if (!user) return
+
+  const order = {
+    items: cart.value,
+    total: total.value,
+    createdAt: Date.now(),
+    status: "paid"
+  }
+
+  try {
+
+    // 🔥 1. ADD TO ORDERS
+    await updateDoc(userRef, {
+      orders: arrayUnion(order)
+    })
+
+    // 🧹 2. CLEAR CART SESSION
+    await updateDoc(userRef, {
+      cartSession: []
+    })
+
+    alert("Paiement réussi 🎉")
+
+  } catch (e) {
+    console.error(e)
     alert("Erreur paiement")
   }
 }
-
-// 🔥 AUTH SAFE
-onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      userId = user.uid
-      loadCart(user.uid)
-    } else {
-      loading.value = false
-      cart.value = []
-    }
-  })
-})
 </script>
-
-<template>
-  <div>
-    <h2>Panier</h2>
-
-    <div v-if="loading">Chargement...</div>
-
-    <div v-else>
-
-      <div v-if="cart.length === 0">
-        Panier vide
-      </div>
-
-      <div v-for="item in cart" :key="item.id">
-        <p>{{ item.name }} - {{ item.price }} €</p>
-
-        <button @click="decrease(item)">-</button>
-        {{ item.qty }}
-        <button @click="increase(item)">+</button>
-
-        <button @click="remove(item)">❌</button>
-      </div>
-
-      <h3>Total: {{ total }} €</h3>
-
-      <button @click="clearCart">Vider panier</button>
-
-      <hr />
-
-      <input v-model="name" placeholder="Nom" />
-      <input v-model="email" placeholder="Email" />
-      <input v-model="address" placeholder="Adresse" />
-
-      <button @click="pay">Payer</button>
-
-    </div>
-  </div>
-</template>

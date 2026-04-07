@@ -1,19 +1,13 @@
 <template>
   <div class="cart-root">
 
-    <!-- HEADER -->
     <header class="cart-header">
       <button @click="$router.push('/')">← Retour</button>
-      <h2>🛒 Panier</h2>
+      <h2>🛒 Mon panier</h2>
     </header>
 
-    <!-- NOT LOGGED -->
-    <div v-if="!uid && !loading">
-      <p>Connectez-vous</p>
-    </div>
-
     <!-- LOADING -->
-    <div v-else-if="loading">
+    <div v-if="loading">
       <p>Chargement...</p>
     </div>
 
@@ -35,10 +29,10 @@
 
       <h3>Total : {{ total.toFixed(2) }} €</h3>
 
-      <!-- CUSTOMER -->
-      <input v-model="customerName" placeholder="Nom" />
+      <!-- CLIENT INFOS -->
+      <input v-model="customerName" placeholder="Nom complet" />
       <input v-model="customerEmail" placeholder="Email" />
-      <textarea v-model="shippingAddress" placeholder="Adresse livraison"></textarea>
+      <textarea v-model="shippingAddress" placeholder="Adresse de livraison"></textarea>
 
       <p style="color:red">{{ payError }}</p>
 
@@ -55,15 +49,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue"
-import { useRouter } from "vue-router"
 import { auth, db } from "../firebase"
 import { onAuthStateChanged } from "firebase/auth"
 import {
-  doc, onSnapshot, updateDoc,
-  collection, addDoc
+  doc,
+  onSnapshot,
+  updateDoc,
+  collection,
+  addDoc
 } from "firebase/firestore"
-
-const router = useRouter()
 
 // STATE
 const uid = ref(null)
@@ -84,7 +78,7 @@ const total = computed(() =>
   cart.value.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0)
 )
 
-// AUTH + CART LISTENER (FIX écran blanc)
+// AUTH + CART
 onMounted(() => {
   onAuthStateChanged(auth, (user) => {
     if (!user) {
@@ -104,9 +98,7 @@ onMounted(() => {
   })
 })
 
-onUnmounted(() => {
-  unsubCart?.()
-})
+onUnmounted(() => unsubCart?.())
 
 // UPDATE QTY
 const updateQty = async (i, qty) => {
@@ -131,8 +123,9 @@ const clearCart = async () => {
 // PAY STRIPE
 const payWithStripe = async () => {
 
+  // VALIDATION
   if (!customerName.value || !customerEmail.value || !shippingAddress.value) {
-    payError.value = "Tous les champs sont obligatoires"
+    payError.value = "Nom, email et adresse obligatoires"
     return
   }
 
@@ -140,6 +133,8 @@ const payWithStripe = async () => {
   payError.value = ""
 
   try {
+
+    // 🔥 IMPORTANT: objet complet sauvegardé
     const pendingOrder = {
       items: cart.value,
       total: total.value,
@@ -152,20 +147,26 @@ const payWithStripe = async () => {
 
     localStorage.setItem("pendingStripeOrder", JSON.stringify(pendingOrder))
 
-    const res = await fetch("https://backend-master-production-cf50.up.railway.app/create-stripe-session", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        items: cart.value,
-        email: customerEmail.value
-      })
-    })
+    // 👉 ENVOI BACKEND (FIX IMPORTANT)
+    const res = await fetch(
+      "https://backend-master-production-cf50.up.railway.app/create-stripe-session",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: cart.value,
+          email: customerEmail.value,
+
+          // ✅ FIX BACKEND
+          customerName: customerName.value,
+          shippingAddress: shippingAddress.value
+        })
+      }
+    )
 
     const data = await res.json()
 
-    if (!data.url) throw new Error("Stripe error")
+    if (!data.url) throw new Error("Stripe session error")
 
     window.location.href = data.url
 
@@ -175,7 +176,7 @@ const payWithStripe = async () => {
   }
 }
 
-// SAVE ORDER (FIX export bug)
+// SAVE ORDER (CORRIGÉ SANS export)
 const saveOrder = async (orderData) => {
   if (!uid.value) return
 
@@ -188,11 +189,10 @@ const saveOrder = async (orderData) => {
   await addDoc(collection(db, "users", uid.value, "orders"), order)
   await addDoc(collection(db, "orders"), order)
 
-  // vider panier
   await updateDoc(userRef, { cartSession: [] })
 }
 
-// ✅ IMPORTANT (remplace export)
+// expose pour PaymentSuccess.vue
 defineExpose({ saveOrder })
 
 </script>

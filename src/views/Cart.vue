@@ -13,12 +13,12 @@
       </p>
 
       <div>
-        <button @click="decrease(item)">-</button>
+        <button @click="decrease(item.id)">-</button>
         {{ item.qty }}
-        <button @click="increase(item)">+</button>
+        <button @click="increase(item.id)">+</button>
       </div>
 
-      <button @click="remove(item)">🗑</button>
+      <button @click="remove(item.id)">🗑</button>
     </div>
 
     <hr>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue"
+import { ref, computed, onMounted, onBeforeUnmount } from "vue"
 import { getAuth } from "firebase/auth"
 import { db } from "../firebase"
 import { doc, onSnapshot, updateDoc } from "firebase/firestore"
@@ -45,6 +45,9 @@ const router = useRouter()
 const cart = ref([])
 const uid = ref(null)
 
+let unsubscribe = null
+
+// 🔥 SNAPSHOT PROPRE
 onMounted(() => {
   auth.onAuthStateChanged((user) => {
     if (!user) return
@@ -53,54 +56,64 @@ onMounted(() => {
 
     const refDoc = doc(db, "users", user.uid)
 
-    onSnapshot(refDoc, (snap) => {
+    unsubscribe = onSnapshot(refDoc, (snap) => {
       if (!snap.exists()) {
         cart.value = []
         return
       }
 
       const data = snap.data()
-
-      // 🔥 IMPORTANT: cartSession uniquement
       cart.value = data.cartSession || []
     })
   })
 })
 
-const total = computed(() =>
-  cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
-)
+// 🧹 CLEAN LISTENER
+onBeforeUnmount(() => {
+  if (unsubscribe) unsubscribe()
+})
+
+// 🔥 HELPERS SAFE UPDATE
+const updateCart = async (newCart) => {
+  if (!uid.value) return
+
+  cart.value = newCart
+
+  await updateDoc(doc(db, "users", uid.value), {
+    cartSession: newCart
+  })
+}
 
 // ➕
-const increase = async (item) => {
-  item.qty++
-  await save()
+const increase = async (id) => {
+  const newCart = cart.value.map(p =>
+    p.id === id ? { ...p, qty: p.qty + 1 } : p
+  )
+
+  await updateCart(newCart)
 }
 
 // ➖
-const decrease = async (item) => {
-  if (item.qty > 1) {
-    item.qty--
-  } else {
-    cart.value = cart.value.filter(i => i.id !== item.id)
-  }
-  await save()
+const decrease = async (id) => {
+  let newCart = cart.value.map(p =>
+    p.id === id ? { ...p, qty: p.qty - 1 } : p
+  )
+
+  newCart = newCart.filter(p => p.qty > 0)
+
+  await updateCart(newCart)
 }
 
 // 🗑
-const remove = async (item) => {
-  cart.value = cart.value.filter(i => i.id !== item.id)
-  await save()
+const remove = async (id) => {
+  const newCart = cart.value.filter(p => p.id !== id)
+  await updateCart(newCart)
 }
 
-// 💾
-const save = async () => {
-  if (!uid.value) return
-
-  await updateDoc(doc(db, "users", uid.value), {
-    cartSession: cart.value
-  })
-}
+// 💰 TOTAL
+const total = computed(() =>
+  cart.value.reduce((sum, i) => sum + i.price * i.qty, 0)
+)
 
 // 💳 PAY
 const pay = () => {

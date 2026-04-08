@@ -1033,6 +1033,15 @@ const livePaypalConfig = ref({
   brandName: "",
 })
 
+// Config Paddle
+const livePaddleConfig = ref({
+  vendorId: "",
+  productId: "",
+  environment: "sandbox",
+  currency: "EUR",
+  successCallback: "",
+})
+
 // Charger la config paiement du store depuis Firestore
 const loadSavedConfigs = async () => {
   if (!currentUser.value) return
@@ -1048,60 +1057,16 @@ const loadSavedConfigs = async () => {
       if (d.storePaymentConfig?.paypal) {
         livePaypalConfig.value = { ...livePaypalConfig.value, ...d.storePaymentConfig.paypal }
       }
+      if (d.storePaymentConfig?.paddle) {
+        livePaddleConfig.value = { ...livePaddleConfig.value, ...d.storePaymentConfig.paddle }
+      }
     }
   } catch(e) { console.warn("Config load error:", e) }
 }
 
 const openConfigEditor = (target) => {
   configEditorTarget.value = target
-  // Auto-générer les URLs selon le slug publié du store
-  const uid  = currentUser.value?.uid || ""
-  const slug = publishAddress.value?.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-") || uid
-  const base = "https://musrh.github.io/SaaasGenerator/#"
-
-  if (target === "stripe") {
-    const cfg = liveStripeConfig.value
-    // Si pas d'URLs configurées, générer automatiquement
-    // URLs correctes : paramètres AVANT le # (Stripe ignore tout après #)
-    const origin = "https://musrh.github.io/SaaasGenerator"
-    const successUrl = cfg.successUrl || `${origin}/?stripe=success&uid=${uid}#/payment-success`
-    const cancelUrl  = cfg.cancelUrl  || `${origin}/?stripe=cancel&uid=${uid}#/site/${slug || uid}`
-    configEditorContent.value =
-`// ============================================================
-//  Config Stripe de VOTRE STORE
-//  Ces paramètres permettent à vos CLIENTS de vous payer.
-//  Différent de stripe.js (qui sert pour les plans Sassbuilder)
-// ============================================================
-{
-  "publishableKey": "${cfg.publishableKey || "pk_test_VOTRE_CLE_PUBLIQUE"}",
-  "backendUrl": "${cfg.backendUrl || "https://votre-backend.com/create-payment-intent"}",
-  "currency": "${cfg.currency || "eur"}",
-  "storeName": "${cfg.storeName || siteName.value}",
-  "successUrl": "${successUrl}",
-  "cancelUrl": "${cancelUrl}",
-  "mode": "${cfg.mode || "test"}"
-}`
-  } else {
-    const cfg = livePaypalConfig.value
-    const origin2 = "https://musrh.github.io/SaaasGenerator"
-    const successUrl = cfg.successUrl || `${origin2}/?stripe=success&uid=${uid}#/payment-success`
-    configEditorContent.value =
-`// ============================================================
-//  Config PayPal de VOTRE STORE
-//  Vos clients vous paient via votre propre compte PayPal.
-// ============================================================
-{
-  "clientId": "${cfg.clientId || "VOTRE_CLIENT_ID_PAYPAL"}",
-  "mode": "${cfg.mode || "sandbox"}",
-  "currency": "${cfg.currency || "EUR"}",
-  "locale": "${cfg.locale || "fr_FR"}",
-  "createOrderUrl": "${cfg.createOrderUrl || "https://votre-backend.com/paypal/create-order"}",
-  "captureOrderUrl": "${cfg.captureOrderUrl || "https://votre-backend.com/paypal/capture-order"}",
-  "successUrl": "${successUrl}",
-  "brandName": "${cfg.brandName || siteName.value}"
-}`
-  }
-  showConfigEditor.value = true
+  showConfigEditor.value   = true
 }
 
 const saveConfigFile = async () => {
@@ -1119,14 +1084,17 @@ const saveConfigFile = async () => {
 
     if (configEditorTarget.value === "stripe") {
       liveStripeConfig.value = { ...liveStripeConfig.value, ...parsed }
-    } else {
+    } else if (configEditorTarget.value === "paypal") {
       livePaypalConfig.value = { ...livePaypalConfig.value, ...parsed }
+    } else if (configEditorTarget.value === "paddle") {
+      livePaddleConfig.value = { ...livePaddleConfig.value, ...parsed }
     }
 
     // Sauvegarder dans Firestore users/{uid}/storePaymentConfig
     const storePaymentConfig = {
       stripe: { ...liveStripeConfig.value },
       paypal: { ...livePaypalConfig.value },
+      paddle: { ...livePaddleConfig.value },
     }
     await setDoc(
       doc(db, "users", currentUser.value.uid),
@@ -1134,7 +1102,7 @@ const saveConfigFile = async () => {
       { merge: true }
     )
 
-    notify(`✓ Config ${configEditorTarget.value} sauvegardée dans Firestore`)
+    notify(`✓ Config paiement sauvegardée dans Firestore ✓`)
     showConfigEditor.value = false
   } catch(e) {
     notify("Erreur : " + e.message, "error")
@@ -1440,23 +1408,173 @@ const setPageStyle = (type, value) => {
     </div>
   </Transition>
 
-  <!-- CONFIG EDITOR MODAL -->
+  <!-- CONFIG PAIEMENT MODAL — Stripe / PayPal / Paddle -->
   <Transition name="modal">
     <div v-if="showConfigEditor" class="modal-overlay" @click.self="showConfigEditor=false">
-      <div class="modal-box config-modal">
+      <div class="modal-box config-modal pay-config-modal">
         <button class="modal-close" @click="showConfigEditor=false">✕</button>
+
         <div class="modal-header">
-          <span class="modal-icon">{{ configEditorTarget==='stripe'?'💳':'🅿' }}</span>
-          <h2>Config {{ configEditorTarget==='stripe'?'Stripe':'PayPal' }} de votre store</h2>
-          <p class="modal-desc">
-            Configurez vos clés pour recevoir les paiements de <strong>vos clients</strong>.
-            Sauvegardé dans Firestore — actif immédiatement.
-          </p>
+          <span class="modal-icon">⚙️</span>
+          <h2>Configuration Paiement</h2>
+          <p class="modal-desc">Configurez vos prestataires de paiement. Sauvegardé dans Firestore.</p>
         </div>
-        <textarea v-model="configEditorContent" class="config-editor-textarea" spellcheck="false"/>
+
+        <!-- Onglets prestataires -->
+        <div class="pay-tabs">
+          <button :class="['pay-tab-btn', { active: configEditorTarget==='stripe' }]"  @click="configEditorTarget='stripe'">💳 Stripe</button>
+          <button :class="['pay-tab-btn', { active: configEditorTarget==='paypal' }]"  @click="configEditorTarget='paypal'">🅿 PayPal</button>
+          <button :class="['pay-tab-btn', { active: configEditorTarget==='paddle' }]"  @click="configEditorTarget='paddle'">🏓 Paddle</button>
+        </div>
+
+        <!-- ── STRIPE ────────────────────────────────────── -->
+        <div v-if="configEditorTarget==='stripe'" class="pay-form-fields">
+          <div class="pcf-section-title">🔑 Clés API Stripe</div>
+          <div class="pcf-field">
+            <label>Publishable Key <span class="pcf-required">*</span></label>
+            <input v-model="liveStripeConfig.publishableKey" placeholder="pk_test_..." class="pcf-input" spellcheck="false"/>
+            <span class="pcf-hint">Clé publique depuis stripe.com → Developers → API Keys</span>
+          </div>
+          <div class="pcf-field">
+            <label>Backend URL <span class="pcf-required">*</span></label>
+            <input v-model="liveStripeConfig.backendUrl" placeholder="https://votre-backend.com/create-stripe-session" class="pcf-input" spellcheck="false"/>
+            <span class="pcf-hint">Endpoint de votre serveur qui crée la session Stripe</span>
+          </div>
+          <div class="pcf-row">
+            <div class="pcf-field">
+              <label>Devise</label>
+              <select v-model="liveStripeConfig.currency" class="pcf-input pcf-select">
+                <option value="eur">EUR €</option>
+                <option value="usd">USD $</option>
+                <option value="gbp">GBP £</option>
+                <option value="mad">MAD</option>
+                <option value="cad">CAD</option>
+              </select>
+            </div>
+            <div class="pcf-field">
+              <label>Mode</label>
+              <select v-model="liveStripeConfig.mode" class="pcf-input pcf-select">
+                <option value="test">Test</option>
+                <option value="live">Live</option>
+              </select>
+            </div>
+          </div>
+          <div class="pcf-field">
+            <label>Nom du store</label>
+            <input v-model="liveStripeConfig.storeName" :placeholder="siteName" class="pcf-input"/>
+          </div>
+          <div class="pcf-section-title" style="margin-top:14px">📦 Livraison (affiché au client)</div>
+          <div class="pcf-field">
+            <label>Pays de livraison disponibles</label>
+            <div class="pcf-checkbox-group">
+              <label v-for="pays in ['FR','MA','BE','CH','CA','DZ','TN','SN','CI']" :key="pays" class="pcf-checkbox">
+                <input type="checkbox" :value="pays" v-model="liveStripeConfig.shippingCountries"/> {{ pays }}
+              </label>
+            </div>
+            <span class="pcf-hint">Les clients pourront saisir leur adresse lors du paiement</span>
+          </div>
+          <div class="pcf-section-title" style="margin-top:14px">🔗 URLs de retour (auto-générées)</div>
+          <div class="pcf-field">
+            <label>URL Succès</label>
+            <input v-model="liveStripeConfig.successUrl" placeholder="Auto (recommandé : laisser vide)" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+          <div class="pcf-field">
+            <label>URL Annulation</label>
+            <input v-model="liveStripeConfig.cancelUrl" placeholder="Auto (recommandé : laisser vide)" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+        </div>
+
+        <!-- ── PAYPAL ─────────────────────────────────────── -->
+        <div v-else-if="configEditorTarget==='paypal'" class="pay-form-fields">
+          <div class="pcf-section-title">🔑 Clés API PayPal</div>
+          <div class="pcf-field">
+            <label>Client ID <span class="pcf-required">*</span></label>
+            <input v-model="livePaypalConfig.clientId" placeholder="AXxxxxxxxxxxxxxxx..." class="pcf-input" spellcheck="false"/>
+            <span class="pcf-hint">Depuis developer.paypal.com → Apps & Credentials</span>
+          </div>
+          <div class="pcf-row">
+            <div class="pcf-field">
+              <label>Mode</label>
+              <select v-model="livePaypalConfig.mode" class="pcf-input pcf-select">
+                <option value="sandbox">Sandbox (test)</option>
+                <option value="live">Live</option>
+              </select>
+            </div>
+            <div class="pcf-field">
+              <label>Devise</label>
+              <select v-model="livePaypalConfig.currency" class="pcf-input pcf-select">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+                <option value="CAD">CAD</option>
+              </select>
+            </div>
+          </div>
+          <div class="pcf-field">
+            <label>Nom de la marque</label>
+            <input v-model="livePaypalConfig.brandName" :placeholder="siteName" class="pcf-input"/>
+          </div>
+          <div class="pcf-section-title" style="margin-top:14px">🔗 Endpoints backend</div>
+          <div class="pcf-field">
+            <label>Create Order URL</label>
+            <input v-model="livePaypalConfig.createOrderUrl" placeholder="https://votre-backend.com/paypal/create-order" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+          <div class="pcf-field">
+            <label>Capture Order URL</label>
+            <input v-model="livePaypalConfig.captureOrderUrl" placeholder="https://votre-backend.com/paypal/capture-order" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+          <div class="pcf-field">
+            <label>URL Succès</label>
+            <input v-model="livePaypalConfig.successUrl" placeholder="Auto (laisser vide)" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+        </div>
+
+        <!-- ── PADDLE ─────────────────────────────────────── -->
+        <div v-else-if="configEditorTarget==='paddle'" class="pay-form-fields">
+          <div class="pcf-section-title">🏓 Configuration Paddle</div>
+          <div class="pcf-info-box">
+            Paddle est un Merchant of Record — il gère la TVA et la compliance automatiquement.
+            Créez votre compte sur <a href="https://paddle.com" target="_blank" class="pcf-link">paddle.com</a>
+          </div>
+          <div class="pcf-field">
+            <label>Vendor ID <span class="pcf-required">*</span></label>
+            <input v-model="livePaddleConfig.vendorId" placeholder="123456" class="pcf-input"/>
+            <span class="pcf-hint">Depuis Paddle Dashboard → Developer Tools → Authentication</span>
+          </div>
+          <div class="pcf-field">
+            <label>Product / Price ID <span class="pcf-required">*</span></label>
+            <input v-model="livePaddleConfig.productId" placeholder="pri_xxxxxxxx" class="pcf-input"/>
+            <span class="pcf-hint">ID du produit ou du prix dans Paddle Catalog</span>
+          </div>
+          <div class="pcf-row">
+            <div class="pcf-field">
+              <label>Environnement</label>
+              <select v-model="livePaddleConfig.environment" class="pcf-input pcf-select">
+                <option value="sandbox">Sandbox (test)</option>
+                <option value="production">Production</option>
+              </select>
+            </div>
+            <div class="pcf-field">
+              <label>Devise</label>
+              <select v-model="livePaddleConfig.currency" class="pcf-input pcf-select">
+                <option value="EUR">EUR</option>
+                <option value="USD">USD</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+          </div>
+          <div class="pcf-field">
+            <label>Success Callback URL</label>
+            <input v-model="livePaddleConfig.successCallback" placeholder="https://votre-site.com/merci" class="pcf-input pcf-url" spellcheck="false"/>
+          </div>
+        </div>
+
+        <!-- Actions -->
         <div class="config-modal-actions">
           <button class="btn-action" @click="showConfigEditor=false">Annuler</button>
-          <button class="btn-action primary" @click="saveConfigFile">💾 Sauvegarder dans Firestore</button>
+          <button class="btn-action primary" @click="saveConfigFile">
+            💾 Sauvegarder dans Firestore
+          </button>
         </div>
       </div>
     </div>
@@ -2647,5 +2765,26 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
   .pv-lang-select { padding:6px 8px; font-size:11px; max-width:90px }
   .pv-cart-btn { padding:7px 12px }
 }
+
+/* ── Config Paiement Modal ──────────────────────────────── */
+.pay-config-modal{max-width:560px;max-height:88vh;overflow-y:auto}
+.pay-form-fields{padding:0 4px;display:flex;flex-direction:column;gap:12px;max-height:440px;overflow-y:auto;padding-right:8px}
+.pcf-section-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.pcf-field{display:flex;flex-direction:column;gap:4px}
+.pcf-field label{font-size:12px;font-weight:600;color:var(--text2)}
+.pcf-required{color:#ef4444}
+.pcf-input{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:9px 12px;border-radius:var(--radius);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
+.pcf-input:focus{border-color:var(--accent)}
+.pcf-select{cursor:pointer}
+.pcf-url{font-family:monospace;font-size:11px}
+.pcf-hint{font-size:11px;color:var(--text3);line-height:1.4}
+.pcf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pcf-info-box{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text2);line-height:1.6}
+.pcf-link{color:var(--accent);text-decoration:none;font-weight:600}
+.pcf-link:hover{text-decoration:underline}
+.pcf-checkbox-group{display:flex;flex-wrap:wrap;gap:8px;padding:8px 0}
+.pcf-checkbox{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--surface2);border:1px solid var(--border2);padding:4px 10px;border-radius:6px;transition:all .15s}
+.pcf-checkbox:hover{border-color:var(--accent)}
+.pcf-checkbox input{accent-color:var(--accent)}
 
 </style>

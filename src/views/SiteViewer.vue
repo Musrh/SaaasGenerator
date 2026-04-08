@@ -21,12 +21,16 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from "vue"
+import { useRouter } from "vue-router"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
 import { doc, getDoc, collection, addDoc } from "firebase/firestore"
+import { getAuth } from "firebase/auth"
+const clientAuth = getAuth()
 
 // ── Props ─────────────────────────────────────────────────────
-const props = defineProps({ uid: { type: String, required: true } })
+const props  = defineProps({ uid: { type: String, required: true } })
+const router = useRouter()
 
 // ── État global ───────────────────────────────────────────────
 const site         = ref(null)
@@ -105,7 +109,14 @@ const cartCurrency = computed(() => cart.value[0]?.currency || "€")
 const currentPage  = computed(() => site.value?.pages?.[currentPageIndex.value] || site.value?.pages?.[0])
 
 // ── Panier — actions ──────────────────────────────────────────
+// Auth Firebase pour vérifier si le client est connecté
 const addToCart = (product) => {
+  // Connexion obligatoire pour acheter
+  if (!clientAuth.currentUser) {
+    // Rediriger vers la page auth du store avec retour prévu
+    router.push(`/auth?store=${props.uid}&redirect=/site/${props.uid}`)
+    return
+  }
   const ex = cart.value.find(i => i.id === product.id)
   ex ? ex.qty++ : cart.value.push({ ...product, qty: 1 })
   showCart.value = true

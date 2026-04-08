@@ -507,6 +507,7 @@ const uploadLogo = (e) => {
 // ===== PUBLISH =====
 const showPublishModal = ref(false)
 const showPublicPreview = ref(false)
+const showMobileSidebar = ref(false)  // sidebar visible sur mobile
 const publishAddress = ref("")
 const publishDomain = ref("")
 const publishStatus = ref("") // '' | 'published'
@@ -1780,6 +1781,10 @@ const setPageStyle = (type, value) => {
       <button class="page-tab add-tab" @click="addPage">+</button>
     </nav>
     <div class="topbar-actions" :dir="isRtl?'rtl':'ltr'">
+      <!-- Bouton sidebar mobile (visible seulement sur mobile via CSS) -->
+      <button class="sidebar-toggle-btn" @click="showMobileSidebar=!showMobileSidebar" :title="'Sections'">
+        {{ showMobileSidebar ? '✕' : '☰' }}
+      </button>
       <button class="btn-action cart-btn" @click="showCart=true" v-if="cartCount>0">
         🛒 <span class="cart-badge">{{ cartCount }}</span>
       </button>
@@ -1808,7 +1813,7 @@ const setPageStyle = (type, value) => {
   <div class="workspace">
 
     <!-- SIDEBAR -->
-    <aside v-if="mode==='edit'" class="sidebar" :dir="isRtl?'rtl':'ltr'">
+    <aside v-if="mode==='edit'" class="sidebar" :class="{'sidebar-open': showMobileSidebar}" :dir="isRtl?'rtl':'ltr'" @click.self="showMobileSidebar=false">
       <div class="sidebar-tabs">
         <button :class="{active:sidebarTab==='sections'}" @click="sidebarTab='sections'">{{ t.sections }}</button>
         <button :class="{active:sidebarTab==='style'}" @click="sidebarTab='style'">{{ t.style }}</button>
@@ -2407,6 +2412,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pv-cart-label{font-size:13px}
 .pub-preview-content{flex:1;overflow-y:auto;background:#fff}
 @media(max-width:640px){.pv-nav{padding:0 14px}.pv-brand{margin-right:12px}.pv-site-name{font-size:15px}.pv-menu-item{padding:7px 10px;font-size:13px}.pv-cart-label{display:none}.pv-lang-select{padding:7px 8px;font-size:12px}}
+margin-top:6px;font-weight:500;word-break:break-all}
 .pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:16px}
 .pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px}
 .pub-url-card label{display:block;font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
@@ -2468,6 +2474,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .cart-actions{display:flex;gap:10px}
 .cart-actions .btn-action{flex:1;justify-content:center}
 .cart-checkout-btn{flex:2;margin-top:0}
+.cart-overlay{z-index:9500 !important}
 .cart-overlay .cart-modal{max-width:560px;padding:0;overflow:hidden;display:flex;flex-direction:column;max-height:90vh}
 .cart-modal-header{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface2);flex-shrink:0}
 .cart-back-btn{background:none;border:1px solid var(--border2);color:var(--text2);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-family:'DM Sans',sans-serif;white-space:nowrap}
@@ -2506,4 +2513,126 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .prev-form-error{color:#ef4444;font-size:12px;margin-bottom:8px;width:100%;max-width:500px}
 .prev-form-success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;font-size:14px;font-weight:600;padding:10px 16px;border-radius:8px;width:100%;max-width:500px;margin-bottom:8px;text-align:center}
 .prev-form-btn:disabled{opacity:.6;cursor:not-allowed}
+
+/* ================================================================
+   RESPONSIVE BUILDER — Mobile vs Desktop
+   Mobile (<768px) : interface simplifiée, sidebar cachée
+   Desktop (>768px) : layout complet avec sidebar
+================================================================ */
+
+/* ── Desktop : tout normal ─────────────────────────────────── */
+@media (min-width: 769px) {
+  .topbar { flex-wrap:nowrap }
+  .page-tabs { display:flex }
+  .workspace { flex-direction:row }
+  .sidebar { display:flex }
+}
+
+/* ── Mobile (<768px) ────────────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* TOPBAR mobile : logo + save + toggle */
+  :root { --sidebar-w: 0px; --topbar-h: 52px }
+
+  .topbar {
+    padding: 0 10px;
+    gap: 6px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  /* Masquer les éléments secondaires de la topbar */
+  .page-tabs          { display:none }
+  .brand-badge        { display:none }
+  .save-status        { display:none }
+  .lang-select        { display:none }
+  .pub-btn-group      { flex-shrink:0 }
+
+  /* Brand compact */
+  .topbar-brand { gap:6px; min-width:0; flex-shrink:1 }
+  .brand-name-input { max-width:80px; font-size:12px }
+  .site-logo-img { height:28px }
+
+  /* Boutons topbar : plus petits */
+  .btn-action {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .btn-action.icon-btn { padding:5px 8px; font-size:14px }
+
+  /* WORKSPACE : sidebar cachée par défaut */
+  .workspace { flex-direction: column }
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+    width: 100%;
+    height: calc(100vh - var(--topbar-h));
+    overflow-y: auto;
+  }
+  .sidebar.sidebar-open { display: flex }
+
+  /* CANVAS mobile : pleine largeur */
+  .canvas {
+    padding: 12px;
+    min-height: calc(100vh - var(--topbar-h));
+  }
+  .canvas-frame {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  /* Bouton toggle sidebar mobile */
+  .sidebar-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  /* CART modal : plein écran sur mobile */
+  .cart-overlay .cart-modal {
+    max-width: 100%;
+    max-height: 95vh;
+    border-radius: 16px 16px 0 0;
+    margin-top: auto;
+  }
+  .cart-overlay {
+    align-items: flex-end !important;
+  }
+
+  /* Config modal : plein écran sur mobile */
+  .config-modal { max-width:100%; border-radius:16px 16px 0 0; margin:auto 0 0 }
+
+  /* SECTION edit : padding réduit */
+  .sec-hero, .sec-text, .sec-image, .sec-features, .sec-payment { padding:16px }
+}
+
+/* Bouton sidebar toggle — caché sur desktop */
+.sidebar-toggle-btn { display:none }
+
+/* ── Aperçu public : responsive nav ────────────────────────── */
+@media(max-width:640px) {
+  .pv-nav { padding:0 10px; height:54px }
+  .pv-brand { margin-right:8px }
+  .pv-site-name { font-size:14px }
+  .pv-menu { gap:0 }
+  .pv-menu-item { padding:6px 8px; font-size:12px }
+  .pv-cart-label { display:none }
+  .pv-lang-select { padding:6px 8px; font-size:11px; max-width:90px }
+  .pv-cart-btn { padding:7px 12px }
+}
+
 </style>

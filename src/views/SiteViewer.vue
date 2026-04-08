@@ -127,39 +127,97 @@ const getEmbedUrl = (url) => {
 }
 
 // ── Chargement site + config paiement ────────────────────────
+const debugInfo = ref("")   // infos de diagnostic affichées si erreur
+
 const loadSite = async () => {
-  loading.value = true
-  error.value   = ""
+  loading.value  = true
+  error.value    = ""
+  debugInfo.value = ""
+  const uid = props.uid?.trim()
+
+  if (!uid) {
+    error.value = "Aucun identifiant de site fourni."
+    loading.value = false
+    return
+  }
+
+  console.log("🔍 SiteViewer: chargement pour uid/slug =", uid)
+
   try {
-    // Étape 1 : UID direct
-    const userSnap = await getDoc(doc(db, "users", props.uid))
-    if (userSnap.exists() && userSnap.data().siteData) {
-      site.value       = userSnap.data().siteData
-      siteMeta.value   = { name: userSnap.data().siteName || "", logo: userSnap.data().siteLogo || "" }
-      resolvedUid.value = props.uid
-      await loadPayConfig(props.uid)
-      loading.value = false
-      return
+    // ── Étape 1 : essayer comme UID Firestore direct ──────
+    let userSnap = null
+    try {
+      userSnap = await getDoc(doc(db, "users", uid))
+      console.log("  Étape 1 (UID direct):", userSnap.exists() ? "document trouvé" : "non trouvé")
+    } catch(e) {
+      console.warn("  Étape 1 échouée:", e.message)
     }
-    // Étape 2 : Slug
-    const slugSnap = await getDoc(doc(db, "slugs", props.uid))
-    if (slugSnap.exists()) {
-      const realUid   = slugSnap.data().uid
-      const realSnap  = await getDoc(doc(db, "users", realUid))
-      if (realSnap.exists() && realSnap.data().siteData) {
+
+    if (userSnap?.exists()) {
+      const data = userSnap.data()
+      if (data.siteData) {
+        // ✅ UID direct avec siteData
+        site.value        = data.siteData
+        siteMeta.value    = { name: data.siteName || "", logo: data.siteLogo || "" }
+        resolvedUid.value = uid
+        await loadPayConfig(uid)
+        loading.value = false
+        console.log("  ✅ Site chargé via UID direct")
+        return
+      } else {
+        // Utilisateur existe mais pas encore publié
+        console.warn("  ⚠️ Utilisateur trouvé mais siteData manquant — site non publié ?")
+        debugInfo.value = `Compte trouvé (${uid}) mais le site n'a pas encore été publié.`
+      }
+    }
+
+    // ── Étape 2 : essayer comme slug dans collection slugs ─
+    console.log("  Étape 2: cherche slug 'slugs/" + uid + "'")
+    let slugSnap = null
+    try {
+      slugSnap = await getDoc(doc(db, "slugs", uid))
+      console.log("  Étape 2 (slug):", slugSnap.exists() ? "slug trouvé → uid=" + slugSnap.data().uid : "slug non trouvé")
+    } catch(e) {
+      console.warn("  Étape 2 échouée:", e.message)
+    }
+
+    if (slugSnap?.exists()) {
+      const realUid = slugSnap.data().uid
+      let realSnap  = null
+      try {
+        realSnap = await getDoc(doc(db, "users", realUid))
+      } catch(e) {
+        console.warn("  Étape 2b échouée:", e.message)
+      }
+
+      if (realSnap?.exists() && realSnap.data().siteData) {
+        // ✅ Slug résolu avec succès
         site.value        = realSnap.data().siteData
         siteMeta.value    = { name: realSnap.data().siteName || "", logo: realSnap.data().siteLogo || "" }
         resolvedUid.value = realUid
         await loadPayConfig(realUid)
         loading.value = false
+        console.log("  ✅ Site chargé via slug →", realUid)
         return
+      } else if (realSnap?.exists()) {
+        debugInfo.value = `Slug "${uid}" trouvé → UID ${realUid}, mais le site n'a pas de données publiées.`
+        console.warn("  ⚠️ Slug trouvé mais siteData manquant pour", realUid)
       }
     }
-    error.value   = "Site introuvable. Vérifiez l'adresse."
+
+    // ── Rien trouvé ───────────────────────────────────────
+    if (debugInfo.value) {
+      error.value = debugInfo.value
+    } else {
+      error.value = `Site "${uid}" introuvable.`
+      debugInfo.value = `Aucun document trouvé pour "${uid}" dans users/ ni dans slugs/.`
+    }
     loading.value = false
+
   } catch (e) {
-    error.value   = "Erreur de chargement : " + e.message
-    loading.value = false
+    error.value    = "Erreur de chargement : " + e.message
+    loading.value  = false
+    console.error("SiteViewer loadSite error:", e)
   }
 }
 
@@ -382,8 +440,21 @@ const saveOrder = async (provider, transactionId) => {
   <!-- ERREUR -->
   <div v-else-if="error" class="sv-error">
     <span>🔍</span>
-    <h2>{{ error }}</h2>
-    <p>L'adresse <code>{{ props.uid }}</code> ne correspond à aucun site publié.</p>
+    <h2>Site introuvable</h2>
+    <p class="sv-error-msg">{{ error }}</p>
+    <div class="sv-error-debug">
+      <p>Adresse demandée : <code>{{ uid }}</code></p>
+      <p v-if="debugInfo" class="sv-debug-info">{{ debugInfo }}</p>
+      <div class="sv-error-hints">
+        <p>Causes possibles :</p>
+        <ul>
+          <li>Le site n'a pas encore été publié (cliquez sur <strong>Publier</strong> dans le builder)</li>
+          <li>Le slug choisi est différent de <code>{{ uid }}</code></li>
+          <li>Essayez avec votre UID Firestore à la place du slug</li>
+        </ul>
+      </div>
+    </div>
+    <button class="sv-error-retry" @click="loadSite">🔄 Réessayer</button>
   </div>
 
   <!-- SITE -->

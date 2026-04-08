@@ -404,6 +404,17 @@ const backToCart = () => { cartStep.value = "cart" }
 // Payer depuis le panier (Stripe Checkout → backend)
 const payCart = async () => {
   cartPayError.value = ""
+  // Vérifier que le client est connecté avant de payer
+  if (!currentUser.value) {
+    cartPayError.value = "Connectez-vous pour finaliser votre commande."
+    // Fermer le panier et rediriger vers l'auth
+    setTimeout(() => {
+      showCart.value = false
+      cartStep.value = "cart"
+      window.location.hash = "#/auth"
+    }, 1200)
+    return
+  }
   if (!cartCustomerName.value.trim())    { cartPayError.value = "Nom obligatoire.";    return }
   if (!cartCustomerEmail.value.trim())   { cartPayError.value = "Email obligatoire.";  return }
   if (!cartCustomerAddress.value.trim()) { cartPayError.value = "Adresse obligatoire."; return }
@@ -508,6 +519,7 @@ const uploadLogo = (e) => {
 const showPublishModal = ref(false)
 const showPublicPreview = ref(false)
 const showMobileSidebar = ref(false)  // sidebar visible sur mobile
+const showUserProfile   = ref(false)  // popup profil utilisateur
 const publishAddress = ref("")
 const publishDomain = ref("")
 const publishStatus = ref("") // '' | 'published'
@@ -734,10 +746,13 @@ watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, 
   }
 })
 
+const signedOut = ref(false)  // afficher écran déconnexion
+
 const handleSignOut = async () => {
   try {
+    showUserProfile.value = false
     await signOut(auth)
-    notify("Déconnexion réussie")
+    signedOut.value = true
   } catch(e) {
     notify("Erreur déconnexion", "error")
   }
@@ -1916,16 +1931,33 @@ const setPageStyle = (type, value) => {
       <button class="page-tab add-tab" @click="addPage">+</button>
     </nav>
     <div class="topbar-actions" :dir="isRtl?'rtl':'ltr'">
-      <!-- Bouton sidebar mobile (visible seulement sur mobile via CSS) -->
-      <button class="sidebar-toggle-btn" @click="showMobileSidebar=!showMobileSidebar" :title="'Sections'">
+      <!-- Bouton sidebar mobile -->
+      <button class="sidebar-toggle-btn" @click="showMobileSidebar=!showMobileSidebar">
         {{ showMobileSidebar ? '✕' : '☰' }}
       </button>
       <button class="btn-action cart-btn" @click="showCart=true" v-if="cartCount>0">
         🛒 <span class="cart-badge">{{ cartCount }}</span>
       </button>
+
+      <!-- ① UTILISATEUR CONNECTÉ — avant le sélecteur de langue -->
+      <div v-if="currentUser" class="topbar-user" @click="showUserProfile=!showUserProfile">
+        <div class="topbar-user-avatar" title="Mon profil">
+          <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="topbar-avatar-img" alt="avatar"/>
+          <span v-else class="topbar-avatar-initials">
+            {{ (currentUser.displayName || currentUser.email || "?")[0].toUpperCase() }}
+          </span>
+        </div>
+        <div class="topbar-user-info">
+          <span class="topbar-user-name">{{ currentUser.displayName || currentUser.email?.split("@")[0] }}</span>
+          <span class="topbar-user-email">{{ currentUser.email }}</span>
+        </div>
+      </div>
+
+      <!-- ② SÉLECTEUR DE LANGUE -->
       <select class="lang-select" v-model="currentLang">
         <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
       </select>
+
       <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
       <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
       <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
@@ -1941,23 +1973,6 @@ const setPageStyle = (type, value) => {
       <button class="btn-action primary" @click="mode=mode==='preview'?'edit':'preview'">
         {{ mode==='preview' ? t.edit : t.preview }}
       </button>
-
-      <!-- Utilisateur connecté + déconnexion -->
-      <div v-if="currentUser" class="topbar-user">
-        <div class="topbar-user-avatar">
-          <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="topbar-avatar-img" alt="avatar"/>
-          <span v-else class="topbar-avatar-initials">
-            {{ (currentUser.displayName || currentUser.email || "?")[0].toUpperCase() }}
-          </span>
-        </div>
-        <div class="topbar-user-info">
-          <span class="topbar-user-name">{{ currentUser.displayName || currentUser.email?.split("@")[0] }}</span>
-          <span class="topbar-user-email">{{ currentUser.email }}</span>
-        </div>
-        <button class="topbar-signout-btn" @click="handleSignOut" title="Se déconnecter">
-          ⏻
-        </button>
-      </div>
     </div>
   </header>
 
@@ -2278,6 +2293,78 @@ const setPageStyle = (type, value) => {
     :lang="currentLang"
     :backend-url="'https://backend-master-production-cf50.up.railway.app'"
   />
+
+  <!-- ── PROFIL UTILISATEUR (popup) ─────────────────────── -->
+  <Transition name="modal">
+    <div v-if="showUserProfile && currentUser" class="modal-overlay user-profile-overlay" @click.self="showUserProfile=false">
+      <div class="modal-box user-profile-modal">
+        <button class="modal-close" @click="showUserProfile=false">✕</button>
+
+        <!-- Avatar + infos -->
+        <div class="up-avatar-section">
+          <div class="up-avatar-big">
+            <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="up-avatar-img" alt="avatar"/>
+            <span v-else class="up-avatar-initials">
+              {{ (currentUser.displayName || currentUser.email || "?")[0].toUpperCase() }}
+            </span>
+          </div>
+          <div class="up-user-details">
+            <div class="up-user-name">{{ currentUser.displayName || "Utilisateur" }}</div>
+            <div class="up-user-email">{{ currentUser.email }}</div>
+            <div class="up-user-badge">
+              <span class="up-badge-pro">✦ Propriétaire du store</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Infos du compte -->
+        <div class="up-info-grid">
+          <div class="up-info-item">
+            <span class="up-info-label">UID Firebase</span>
+            <code class="up-info-value">{{ currentUser.uid?.slice(0,16) }}...</code>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Email vérifié</span>
+            <span class="up-info-value" :class="currentUser.emailVerified ? 'up-verified' : 'up-unverified'">
+              {{ currentUser.emailVerified ? "✓ Oui" : "✗ Non" }}
+            </span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Site publié</span>
+            <span class="up-info-value">{{ publishAddress || "Non publié" }}</span>
+          </div>
+          <div class="up-info-item">
+            <span class="up-info-label">Plan</span>
+            <span class="up-info-value up-badge-pro">Pro</span>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="up-actions">
+          <button class="up-btn-orders" @click="showUserProfile=false; $router.push('/orders')">
+            📦 Voir mes commandes
+          </button>
+          <button class="up-btn-signout" @click="handleSignOut">
+            ⏻ Se déconnecter
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- ── ÉCRAN DÉCONNEXION ───────────────────────────────── -->
+  <Transition name="modal">
+    <div v-if="signedOut" class="signout-overlay">
+      <div class="signout-card">
+        <div class="signout-icon">👋</div>
+        <h2 class="signout-title">Vous êtes déconnecté</h2>
+        <p class="signout-sub">À bientôt sur votre store !</p>
+        <button class="signout-reload" @click="signedOut=false; currentUser=null">
+          🔑 Se reconnecter
+        </button>
+      </div>
+    </div>
+  </Transition>
 
 </div>
 </template>
@@ -2865,5 +2952,44 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .camera-btn:hover{background:#d1fae5}
 .remove-btn{background:#fef2f2;color:#ef4444}
 .remove-btn:hover{background:#fee2e2}
+
+/* ── Profil utilisateur popup ───────────────────────────── */
+.user-profile-overlay .modal-box{max-width:420px}
+.user-profile-modal{padding:28px}
+.up-avatar-section{display:flex;align-items:center;gap:16px;margin-bottom:24px}
+.up-avatar-big{width:64px;height:64px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,#6c63ff,#a78bfa);display:flex;align-items:center;justify-content:center}
+.up-avatar-img{width:100%;height:100%;object-fit:cover}
+.up-avatar-initials{color:white;font-size:26px;font-weight:700}
+.up-user-details{flex:1;min-width:0}
+.up-user-name{font-size:17px;font-weight:700;color:var(--text);margin-bottom:3px}
+.up-user-email{font-size:13px;color:var(--text3);word-break:break-all}
+.up-user-badge{margin-top:6px}
+.up-badge-pro{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;font-size:10px;font-weight:700;padding:3px 10px;border-radius:100px;display:inline-block}
+.up-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.up-info-item{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.up-info-label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.up-info-value{font-size:12px;font-weight:600;color:var(--text)}
+.up-info-value code{font-family:monospace;font-size:11px;color:var(--accent)}
+.up-verified{color:#10b981}
+.up-unverified{color:#ef4444}
+.up-actions{display:flex;flex-direction:column;gap:8px}
+.up-btn-orders{width:100%;padding:11px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;text-align:center}
+.up-btn-orders:hover{border-color:var(--accent);color:var(--accent)}
+.up-btn-signout{width:100%;padding:11px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#ef4444;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.up-btn-signout:hover{background:rgba(239,68,68,.2)}
+
+/* Curseur pointer sur l'avatar topbar */
+.topbar-user{cursor:pointer;user-select:none}
+.topbar-user:hover .topbar-user-avatar{box-shadow:0 0 0 2px var(--accent)}
+
+/* ── Écran déconnexion ───────────────────────────────────── */
+.signout-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0f0f11,#1a1a2e);display:flex;align-items:center;justify-content:center;font-family:'DM Sans',sans-serif}
+.signout-card{text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px;padding:48px 36px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:24px;max-width:360px;width:90%}
+.signout-icon{font-size:56px;animation:wave 1.2s ease-in-out}
+@keyframes wave{0%,100%{transform:rotate(0deg)}25%{transform:rotate(20deg)}75%{transform:rotate(-10deg)}}
+.signout-title{font-family:'Playfair Display',serif;font-size:28px;color:white}
+.signout-sub{font-size:15px;color:rgba(255,255,255,.5)}
+.signout-reload{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;margin-top:8px}
+.signout-reload:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
 
 </style>

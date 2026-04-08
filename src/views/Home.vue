@@ -3,9 +3,12 @@ import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
-import { onAuthStateChanged } from "firebase/auth"
+//import { onAuthStateChanged } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
+import Storeauth from "./Storeauth.vue"
+
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 
 const site = ref({
   pages: [{
@@ -687,6 +690,13 @@ const sendContact = async (sectionStyle) => {
 }
 
 onMounted(() => {
+
+const auth = getAuth()
+  onAuthStateChanged(auth, (u) => {
+    user.value = u
+  })
+
+  
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")
@@ -1202,6 +1212,17 @@ const setPageStyle = (type, value) => {
 </script>
 
 <template>
+
+<div>
+    <h1>Accueil</h1>
+
+    <StoreAuth v-if="!user" />
+    <div v-else>
+      <p>Bienvenue {{ user.email }}</p>
+    </div>
+
+  </div>
+  
 <div class="saas-root" :dir="isRtl?'rtl':'ltr'">
 
   <!-- NOTIFICATION -->

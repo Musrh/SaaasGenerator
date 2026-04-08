@@ -2407,7 +2407,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pv-cart-label{font-size:13px}
 .pub-preview-content{flex:1;overflow-y:auto;background:#fff}
 @media(max-width:640px){.pv-nav{padding:0 14px}.pv-brand{margin-right:12px}.pv-site-name{font-size:15px}.pv-menu-item{padding:7px 10px;font-size:13px}.pv-cart-label{display:none}.pv-lang-select{padding:7px 8px;font-size:12px}}
-margin-top:6px;font-weight:500;word-break:break-all}
 .pub-success-badge{background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 16px;text-align:center;font-weight:600;margin-bottom:16px}
 .pub-url-card{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:14px}
 .pub-url-card label{display:block;font-size:10px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}

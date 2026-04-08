@@ -36,6 +36,11 @@ const routes = [
     component: Cancel 
   },
 
+// ex: /#/auth?store=mjstore
+  // Connexion/inscription pour les clients (PAS le propriétaire)
+  { path: "/auth", name: "store-auth",
+    component: () => import("./views/Storeauth.vue") },
+
   // ── Affichage d'un site publié ────────────────────────────
   // :uid peut être :
   //   • un UID Firestore réel   → ex: n8xPVQ87HfYECHlIkAqB0vssCIp2

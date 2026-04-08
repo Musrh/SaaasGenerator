@@ -3,12 +3,9 @@ import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
-//import { onAuthStateChanged } from "firebase/auth"
+import { onAuthStateChanged, signOut } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
-import Storeauth from "./Storeauth.vue"
-
-import { getAuth, onAuthStateChanged } from "firebase/auth"
 
 const site = ref({
   pages: [{
@@ -690,13 +687,6 @@ const sendContact = async (sectionStyle) => {
 }
 
 onMounted(() => {
-
-const auth = getAuth()
-  onAuthStateChanged(auth, (u) => {
-    user.value = u
-  })
-
-  
   // Restaurer depuis localStorage immédiatement (avant Firestore)
   const sn = localStorage.getItem("siteName")
   const sl = localStorage.getItem("siteLogo")
@@ -743,6 +733,15 @@ watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, 
     setTimeout(() => initStripeElements(), 150)
   }
 })
+
+const handleSignOut = async () => {
+  try {
+    await signOut(auth)
+    notify("Déconnexion réussie")
+  } catch(e) {
+    notify("Erreur déconnexion", "error")
+  }
+}
 
 const notify = (msg, type = "success") => {
   notifMsg.value = msg; notifType.value = type; showNotif.value = true
@@ -1082,41 +1081,49 @@ const openConfigEditor = (target) => {
 const saveConfigFile = async () => {
   if (!currentUser.value) { notify("Connectez-vous d'abord.", "error"); return }
   try {
-    // Parser le JSON depuis le textarea
-    const txt = configEditorContent.value
-      .replace(/\/\/.*$/gm, "")      // supprimer commentaires
-      .replace(/\/\*[\s\S]*?\*\//g, "") // commentaires bloc
-      .trim()
-    // Extraire le JSON entre { }
-    const jsonMatch = txt.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error("Format invalide — doit contenir { ... }")
-    const parsed = JSON.parse(jsonMatch[0])
-
-    if (configEditorTarget.value === "stripe") {
-      liveStripeConfig.value = { ...liveStripeConfig.value, ...parsed }
-    } else if (configEditorTarget.value === "paypal") {
-      livePaypalConfig.value = { ...livePaypalConfig.value, ...parsed }
-    } else if (configEditorTarget.value === "paddle") {
-      livePaddleConfig.value = { ...livePaddleConfig.value, ...parsed }
-    }
-
-    // Sauvegarder dans Firestore users/{uid}/storePaymentConfig
+    // Les champs sont déjà liés via v-model sur liveStripeConfig / livePaypalConfig / livePaddleConfig
+    // On sauvegarde directement les refs dans Firestore — pas de parsing JSON nécessaire
     const storePaymentConfig = {
-      stripe: { ...liveStripeConfig.value },
-      paypal: { ...livePaypalConfig.value },
-      paddle: { ...livePaddleConfig.value },
+      stripe: {
+        publishableKey:    liveStripeConfig.value.publishableKey    || "",
+        backendUrl:        liveStripeConfig.value.backendUrl        || "",
+        currency:          liveStripeConfig.value.currency          || "eur",
+        storeName:         liveStripeConfig.value.storeName         || siteName.value,
+        mode:              liveStripeConfig.value.mode              || "test",
+        successUrl:        liveStripeConfig.value.successUrl        || "",
+        cancelUrl:         liveStripeConfig.value.cancelUrl         || "",
+        shippingCountries: liveStripeConfig.value.shippingCountries || [],
+      },
+      paypal: {
+        clientId:        livePaypalConfig.value.clientId        || "",
+        mode:            livePaypalConfig.value.mode            || "sandbox",
+        currency:        livePaypalConfig.value.currency        || "EUR",
+        locale:          livePaypalConfig.value.locale          || "fr_FR",
+        createOrderUrl:  livePaypalConfig.value.createOrderUrl  || "",
+        captureOrderUrl: livePaypalConfig.value.captureOrderUrl || "",
+        successUrl:      livePaypalConfig.value.successUrl      || "",
+        brandName:       livePaypalConfig.value.brandName       || siteName.value,
+      },
+      paddle: {
+        vendorId:        livePaddleConfig.value.vendorId        || "",
+        productId:       livePaddleConfig.value.productId       || "",
+        environment:     livePaddleConfig.value.environment     || "sandbox",
+        currency:        livePaddleConfig.value.currency        || "EUR",
+        successCallback: livePaddleConfig.value.successCallback || "",
+      },
     }
+
     await setDoc(
       doc(db, "users", currentUser.value.uid),
       { storePaymentConfig },
       { merge: true }
     )
 
-    notify(`✓ Config paiement sauvegardée dans Firestore ✓`)
+    notify("✓ Config paiement sauvegardée dans Firestore")
     showConfigEditor.value = false
   } catch(e) {
-    notify("Erreur : " + e.message, "error")
-    console.error(e)
+    notify("Erreur sauvegarde : " + e.message, "error")
+    console.error("saveConfigFile error:", e)
   }
 }
 
@@ -1212,17 +1219,6 @@ const setPageStyle = (type, value) => {
 </script>
 
 <template>
-
-<div>
-    <h1>Accueil</h1>
-
-    <StoreAuth v-if="!user" />
-    <div v-else>
-      <p>Bienvenue {{ user.email }}</p>
-    </div>
-
-  </div>
-  
 <div class="saas-root" :dir="isRtl?'rtl':'ltr'">
 
   <!-- NOTIFICATION -->
@@ -1945,6 +1941,23 @@ const setPageStyle = (type, value) => {
       <button class="btn-action primary" @click="mode=mode==='preview'?'edit':'preview'">
         {{ mode==='preview' ? t.edit : t.preview }}
       </button>
+
+      <!-- Utilisateur connecté + déconnexion -->
+      <div v-if="currentUser" class="topbar-user">
+        <div class="topbar-user-avatar">
+          <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="topbar-avatar-img" alt="avatar"/>
+          <span v-else class="topbar-avatar-initials">
+            {{ (currentUser.displayName || currentUser.email || "?")[0].toUpperCase() }}
+          </span>
+        </div>
+        <div class="topbar-user-info">
+          <span class="topbar-user-name">{{ currentUser.displayName || currentUser.email?.split("@")[0] }}</span>
+          <span class="topbar-user-email">{{ currentUser.email }}</span>
+        </div>
+        <button class="topbar-signout-btn" @click="handleSignOut" title="Se déconnecter">
+          ⏻
+        </button>
+      </div>
     </div>
   </header>
 
@@ -2085,11 +2098,27 @@ const setPageStyle = (type, value) => {
               <div class="products-grid-edit">
                 <div v-for="(p,pi) in s.items" :key="p.id" class="product-card-edit">
                   <button class="product-del" @click.stop="removeProduct(s,pi)">✕</button>
-                  <label class="product-img-upload">
-                    <input type="file" accept="image/*" @change="uploadProductImage($event,p)" hidden/>
-                    <img v-if="p.image" :src="p.image" class="product-img"/>
-                    <div v-else class="product-img-ph">🛍️<span>Photo</span></div>
-                  </label>
+                  <!-- Image produit : Upload OU Caméra -->
+                  <div class="product-img-area">
+                    <label class="product-img-upload" title="Choisir une image">
+                      <input type="file" accept="image/*" @change="uploadProductImage($event,p)" hidden/>
+                      <img v-if="p.image" :src="p.image" class="product-img"/>
+                      <div v-else class="product-img-ph">🛍️<span>Photo</span></div>
+                    </label>
+                    <div class="product-img-actions">
+                      <label class="product-img-btn upload-btn" title="Importer fichier">
+                        <input type="file" accept="image/*" @change="uploadProductImage($event,p)" hidden/>
+                        📁
+                      </label>
+                      <label class="product-img-btn camera-btn" title="Prendre une photo">
+                        <input type="file" accept="image/*" capture="environment" @change="uploadProductImage($event,p)" hidden/>
+                        📷
+                      </label>
+                      <button v-if="p.image" class="product-img-btn remove-btn" @click.stop="p.image=''" title="Supprimer">
+                        🗑
+                      </button>
+                    </div>
+                  </div>
                   <div class="product-fields">
                     <input v-model="p.badge" class="product-badge-input" :placeholder="t.badgePh"/>
                     <input v-model="p.name" class="product-name-input" :placeholder="t.productNamePh"/>
@@ -2807,5 +2836,34 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pcf-checkbox{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2);cursor:pointer;background:var(--surface2);border:1px solid var(--border2);padding:4px 10px;border-radius:6px;transition:all .15s}
 .pcf-checkbox:hover{border-color:var(--accent)}
 .pcf-checkbox input{accent-color:var(--accent)}
+
+/* ── Topbar User Info ───────────────────────────────────── */
+.topbar-user{display:flex;align-items:center;gap:8px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;flex-shrink:0}
+.topbar-user-avatar{width:30px;height:30px;border-radius:50%;overflow:hidden;flex-shrink:0;background:linear-gradient(135deg,#6c63ff,#a78bfa);display:flex;align-items:center;justify-content:center}
+.topbar-avatar-img{width:100%;height:100%;object-fit:cover}
+.topbar-avatar-initials{color:white;font-size:13px;font-weight:700}
+.topbar-user-info{display:flex;flex-direction:column;min-width:0}
+.topbar-user-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+.topbar-user-email{font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
+.topbar-signout-btn{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;padding:4px;border-radius:6px;transition:all .15s;flex-shrink:0}
+.topbar-signout-btn:hover{background:rgba(239,68,68,.15);color:#ef4444}
+
+/* Mobile : masquer les détails user, garder juste l'avatar + logout */
+@media(max-width:768px){
+  .topbar-user-info{display:none}
+  .topbar-user{padding:4px 6px;gap:4px}
+  .topbar-user-name,.topbar-user-email{display:none}
+}
+
+/* ── Product image area + camera ────────────────────────── */
+.product-img-area{display:flex;flex-direction:column;gap:4px}
+.product-img-actions{display:flex;gap:4px;justify-content:center;padding:4px 0}
+.product-img-btn{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;font-size:14px;transition:all .15s}
+.upload-btn{background:#ede9fe;color:#6c63ff}
+.upload-btn:hover{background:#ddd6fe}
+.camera-btn{background:#ecfdf5;color:#059669}
+.camera-btn:hover{background:#d1fae5}
+.remove-btn{background:#fef2f2;color:#ef4444}
+.remove-btn:hover{background:#fee2e2}
 
 </style>

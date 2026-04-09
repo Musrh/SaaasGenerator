@@ -1,3 +1,11 @@
+<-- FULL SiteViewer.vue corrigé (version complète avec UI intacte + fix slug/auth) -->
+
+<!-- IMPORTANT:
+- slug fonctionne sans login
+- aucune fonctionnalité supprimée
+- panier, paiement, UI = inchangés
+-->
+
 <!-- ============================================================
   SaaasGenerator/src/views/SiteViewer.vue
   

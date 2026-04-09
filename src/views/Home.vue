@@ -11,7 +11,7 @@ const site = ref({
   pages: [{
     id: 1, name: "Accueil", style: {},
     sections: [
-      { id: 1, type: "hero", content: "Créez votre site web\nen quelques minutes.", subtitle: "Une plateforme puissante, simple et élégante.", cta: "Commencer", style: {} },
+      { id: 1, type: "hero", content: "", subtitle: "", cta: "", style: {} },
       { id: 2, type: "text", content: "Bienvenue sur notre plateforme.", style: {} }
     ]
   }]
@@ -805,18 +805,18 @@ const soRegister = async () => {
   soLoading.value = true
   try {
     const cred = await createUserWithEmailAndPassword(auth, soEmail.value.trim(), soPassword.value)
-    // Mettre à jour le profil Firebase Auth
     await updateProfile(cred.user, { displayName: soDisplayName.value.trim() })
-    // Enregistrer dans Firestore collection "customers"
-    // Lié au store du propriétaire connecté (currentUser = le propriétaire)
-    const ownerUid = currentUser.value?.uid || ""
+    // storeUid = UID du propriétaire du store
+    // On le lit depuis publishInfo (déjà chargé) ou currentUser si c'est le builder
+    const storeUid = publishInfo.value?.uid || currentUser.value?.uid || ""
+    // Écrire dans customers/{clientUid} — règle Firestore : allow create: if request.auth != null
     await setDoc(
       doc(db, "customers", cred.user.uid),
       {
         uid:         cred.user.uid,
         email:       soEmail.value.trim().toLowerCase(),
         displayName: soDisplayName.value.trim(),
-        storeUid:    ownerUid,
+        storeUid,
         role:        "customer",
         createdAt:   new Date().toISOString(),
       },
@@ -825,6 +825,7 @@ const soRegister = async () => {
     soSuccess.value = "Compte créé avec succès ! Bienvenue 🎉"
     signedOut.value = false
     soEmail.value = ""; soPassword.value = ""; soConfirm.value = ""; soDisplayName.value = ""
+    soMode.value = "login" ""
   } catch(e) { soError.value = authErrMsg(e.code) }
   finally { soLoading.value = false }
 }
@@ -847,7 +848,7 @@ const soGoogleLogin = async () => {
   try {
     const provider = new GoogleAuthProvider()
     const result   = await signInWithPopup(auth, provider)
-    const ownerUid = currentUser.value?.uid || ""
+    const storeUid = publishInfo.value?.uid || currentUser.value?.uid || ""
     await setDoc(
       doc(db, "customers", result.user.uid),
       {
@@ -855,7 +856,7 @@ const soGoogleLogin = async () => {
         email:       result.user.email,
         displayName: result.user.displayName || "",
         photoURL:    result.user.photoURL    || "",
-        storeUid:    ownerUid,
+        storeUid,
         role:        "customer",
         createdAt:   new Date().toISOString(),
       },
@@ -2061,15 +2062,15 @@ const setPageStyle = (type, value) => {
       <button class="page-tab add-tab" @click="addPage">+</button>
     </nav>
     <div class="topbar-actions" :dir="isRtl?'rtl':'ltr'">
-      <!-- Bouton sidebar mobile -->
-      <button class="sidebar-toggle-btn" @click="showMobileSidebar=!showMobileSidebar">
+      <!-- Bouton sidebar mobile (uniquement si connecté) -->
+      <button v-if="currentUser" class="sidebar-toggle-btn" @click="showMobileSidebar=!showMobileSidebar">
         {{ showMobileSidebar ? '✕' : '☰' }}
       </button>
-      <button class="btn-action cart-btn" @click="showCart=true" v-if="cartCount>0">
+      <button v-if="currentUser && cartCount>0" class="btn-action cart-btn" @click="showCart=true">
         🛒 <span class="cart-badge">{{ cartCount }}</span>
       </button>
 
-      <!-- ① UTILISATEUR CONNECTÉ — avant le sélecteur de langue -->
+      <!-- ① UTILISATEUR CONNECTÉ -->
       <div v-if="currentUser" class="topbar-user" @click="showUserProfile=!showUserProfile">
         <div class="topbar-user-avatar" title="Mon profil">
           <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="topbar-avatar-img" alt="avatar"/>
@@ -2083,26 +2084,32 @@ const setPageStyle = (type, value) => {
         </div>
       </div>
 
-      <!-- ② SÉLECTEUR DE LANGUE -->
-      <select class="lang-select" v-model="currentLang">
-        <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
-      </select>
+      <!-- ② BOUTON CONNEXION si non connecté (minimal) -->
+      <button v-if="!currentUser" class="btn-action topbar-login-btn" @click="signedOut=true; soMode='login'">
+        🔑 Se connecter
+      </button>
 
-      <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
-      <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
-      <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
-      <div class="pub-btn-group">
-        <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
-        <button class="btn-action preview-pub-btn" @click="showPublicPreview=true" title="Aperçu public">👁</button>
-      </div>
-      <span class="save-status" :class="{saved:isSaved}">{{ isSaved ? t.saved : t.unsaved }}</span>
-      <button class="btn-action" @click="saveSite" :disabled="isSaving||!currentUser" :class="{saving:isSaving}">
-        <span v-if="isSaving" class="spinner"/>
-        <span>{{ isSaving ? t.saving : !currentUser ? t.notConnected : t.save }}</span>
-      </button>
-      <button class="btn-action primary" @click="mode=mode==='preview'?'edit':'preview'">
-        {{ mode==='preview' ? t.edit : t.preview }}
-      </button>
+      <!-- ③ Le reste — visible SEULEMENT si connecté -->
+      <template v-if="currentUser">
+        <select class="lang-select" v-model="currentLang">
+          <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
+        </select>
+        <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
+        <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
+        <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
+        <div class="pub-btn-group">
+          <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
+          <button class="btn-action preview-pub-btn" @click="showPublicPreview=true" title="Aperçu public">👁</button>
+        </div>
+        <span class="save-status" :class="{saved:isSaved}">{{ isSaved ? t.saved : t.unsaved }}</span>
+        <button class="btn-action" @click="saveSite" :disabled="isSaving" :class="{saving:isSaving}">
+          <span v-if="isSaving" class="spinner"/>
+          <span>{{ isSaving ? t.saving : t.save }}</span>
+        </button>
+        <button class="btn-action primary" @click="mode=mode==='preview'?'edit':'preview'">
+          {{ mode==='preview' ? t.edit : t.preview }}
+        </button>
+      </template>
     </div>
   </header>
 
@@ -3256,5 +3263,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
   .pv-user-name{display:none}
   .pv-login-btn span:last-child{display:none}
 }
+
+.topbar-login-btn{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:9px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;white-space:nowrap}
+.topbar-login-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(108,99,255,.4)}
 
 </style>

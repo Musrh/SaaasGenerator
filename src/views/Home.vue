@@ -23,6 +23,13 @@ const activeSectionIndex = ref(null)
 const isSaved = ref(true)
 const isSaving = ref(false)
 const currentUser = ref(null)
+const userRole    = ref("")      // "owner" | "customer" | ""
+const userOrders  = ref([])      // commandes du client connecté
+const loadingOrders = ref(false)
+
+// Détecter si l'utilisateur est propriétaire du store ou client
+const isOwner  = computed(() => userRole.value === "owner")
+const isClient = computed(() => userRole.value === "customer")
 const showPageMenu = ref(false)
 const sidebarTab = ref("sections")
 const showNotif = ref(false)
@@ -705,9 +712,26 @@ onMounted(() => {
   if (sn) siteName.value = sn
   if (sl) siteLogo.value = sl
   onAuthStateChanged(auth, async (user) => {
-    if (!user) return
+    if (!user) { userRole.value = ""; userOrders.value = []; return }
     currentUser.value = user
     await loadSavedConfigs()
+
+    // Détecter le rôle : chercher d'abord dans users/ (propriétaire)
+    // puis dans customers/ (client du store)
+    try {
+      const ownerSnap = await getDoc(doc(db, "users", user.uid))
+      if (ownerSnap.exists()) {
+        userRole.value = "owner"
+      } else {
+        const custSnap = await getDoc(doc(db, "customers", user.uid))
+        userRole.value = custSnap.exists() ? "customer" : "owner"
+        // Charger les commandes du client
+        if (userRole.value === "customer") {
+          await loadClientOrders(user.uid, custSnap.data()?.storeUid || "")
+        }
+      }
+    } catch(e) { userRole.value = "owner" }  // fallback : considérer comme propriétaire
+
     try {
       const docRef = doc(db, "users", user.uid)
       const snap = await getDoc(docRef)
@@ -1186,6 +1210,24 @@ const livePaddleConfig = ref({
 })
 
 // Charger la config paiement du store depuis Firestore
+// Charger les commandes du client depuis orders/ (collection globale)
+const loadClientOrders = async (clientUid, storeUid) => {
+  loadingOrders.value = true
+  try {
+    const { query: q, where, orderBy: ob, getDocs } = await import("firebase/firestore")
+    // Chercher les commandes par email du client dans users/{storeUid}/orders
+    if (storeUid) {
+      const snap = await getDocs(
+        q(collection(db, "users", storeUid, "orders"),
+          where("customerEmail", "==", (currentUser.value?.email || "").toLowerCase()),
+          ob("createdAt", "desc"))
+      )
+      userOrders.value = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    }
+  } catch(e) { console.warn("loadClientOrders:", e.message) }
+  finally { loadingOrders.value = false }
+}
+
 const loadSavedConfigs = async () => {
   if (!currentUser.value) return
   try {
@@ -1954,7 +1996,7 @@ const setPageStyle = (type, value) => {
             </div>
             <span class="pv-user-name">{{ currentUser.displayName || currentUser.email?.split("@")[0] }}</span>
           </div>
-          <button v-else class="pv-login-btn" @click="showPublicPreview=false; window.location.hash='#/auth'">
+          <button v-else class="pv-login-btn" @click="showPublicPreview=false; signedOut=true; soMode='login'">
             🔑 Se connecter
           </button>
 
@@ -2094,13 +2136,16 @@ const setPageStyle = (type, value) => {
         <select class="lang-select" v-model="currentLang">
           <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
         </select>
-        <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
-        <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
-        <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
-        <div class="pub-btn-group">
-          <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
-          <button class="btn-action preview-pub-btn" @click="showPublicPreview=true" title="Aperçu public">👁</button>
-        </div>
+        <!-- Visible seulement pour le propriétaire du store -->
+        <template v-if="isOwner">
+          <button class="btn-action icon-btn" @click="openConfigEditor('stripe')" :title="t.configureStripe">💳</button>
+          <button class="btn-action icon-btn" @click="openConfigEditor('paypal')" :title="t.configurePaypal">🅿</button>
+          <button class="btn-action icon-btn" @click="showExportModal=true" :title="t.export">⬇</button>
+          <div class="pub-btn-group">
+            <button class="btn-action publish-btn" @click="showPublishModal=true">🌐 {{ t.publish }}</button>
+            <button class="btn-action preview-pub-btn" @click="showPublicPreview=true" title="Aperçu public">👁</button>
+          </div>
+        </template>
         <span class="save-status" :class="{saved:isSaved}">{{ isSaved ? t.saved : t.unsaved }}</span>
         <button class="btn-action" @click="saveSite" :disabled="isSaving" :class="{saving:isSaving}">
           <span v-if="isSaving" class="spinner"/>
@@ -2449,13 +2494,15 @@ const setPageStyle = (type, value) => {
             <div class="up-user-name">{{ currentUser.displayName || "Utilisateur" }}</div>
             <div class="up-user-email">{{ currentUser.email }}</div>
             <div class="up-user-badge">
-              <span class="up-badge-pro">✦ Propriétaire du store</span>
+              <!-- Badge dynamique selon le rôle -->
+              <span v-if="isOwner"  class="up-badge-pro">✦ Propriétaire du store</span>
+              <span v-else class="up-badge-customer">🛍 Client du store</span>
             </div>
           </div>
         </div>
 
-        <!-- Infos du compte -->
-        <div class="up-info-grid">
+        <!-- ── INFOS PROPRIÉTAIRE ─────────────────────── -->
+        <div v-if="isOwner" class="up-info-grid">
           <div class="up-info-item">
             <span class="up-info-label">UID Firebase</span>
             <code class="up-info-value">{{ currentUser.uid?.slice(0,16) }}...</code>
@@ -2473,6 +2520,32 @@ const setPageStyle = (type, value) => {
           <div class="up-info-item">
             <span class="up-info-label">Plan</span>
             <span class="up-info-value up-badge-pro">Pro</span>
+          </div>
+        </div>
+
+        <!-- ── INFOS CLIENT : ses commandes ──────────── -->
+        <div v-if="isClient" class="up-orders-section">
+          <div class="up-orders-title">
+            📦 Mes commandes
+            <span v-if="loadingOrders" class="up-orders-loading">...</span>
+            <span v-else class="up-orders-count">{{ userOrders.length }}</span>
+          </div>
+          <div v-if="userOrders.length === 0 && !loadingOrders" class="up-orders-empty">
+            Aucune commande pour le moment.
+          </div>
+          <div v-else class="up-orders-list">
+            <div v-for="order in userOrders.slice(0,5)" :key="order.id" class="up-order-item">
+              <div class="up-order-left">
+                <span class="up-order-id">#{{ order.id?.slice(0,8).toUpperCase() }}</span>
+                <span class="up-order-date">{{ order.createdAt?.slice(0,10) }}</span>
+              </div>
+              <div class="up-order-right">
+                <span class="up-order-total">{{ order.total }}{{ order.currency }}</span>
+                <span class="up-order-status" :class="'status-'+order.status">
+                  {{ { paid:'Payée', pending:'En attente', shipped:'Expédiée', delivered:'Livrée', cancelled:'Annulée' }[order.status] || order.status }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3266,5 +3339,28 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 
 .topbar-login-btn{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:9px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;white-space:nowrap}
 .topbar-login-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(108,99,255,.4)}
+
+/* ── Badge client ───────────────────────────────────────── */
+.up-badge-customer{background:linear-gradient(135deg,#10b981,#059669);color:white;font-size:10px;font-weight:700;padding:3px 10px;border-radius:100px;display:inline-block}
+
+/* ── Section commandes client dans le profil ────────────── */
+.up-orders-section{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:4px}
+.up-orders-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.up-orders-count{background:var(--accent);color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;margin-left:auto}
+.up-orders-loading{color:var(--text3);font-size:11px;margin-left:auto}
+.up-orders-empty{font-size:13px;color:var(--text3);text-align:center;padding:12px 0}
+.up-orders-list{display:flex;flex-direction:column;gap:8px}
+.up-order-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.up-order-left{display:flex;flex-direction:column;gap:2px}
+.up-order-id{font-size:12px;font-weight:700;color:var(--text);font-family:monospace}
+.up-order-date{font-size:10px;color:var(--text3)}
+.up-order-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.up-order-total{font-size:13px;font-weight:700;color:var(--accent)}
+.up-order-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;text-transform:uppercase;letter-spacing:.3px}
+.status-paid{background:rgba(16,185,129,.15);color:#10b981}
+.status-pending{background:rgba(245,158,11,.15);color:#f59e0b}
+.status-shipped{background:rgba(108,99,255,.15);color:#6c63ff}
+.status-delivered{background:rgba(16,185,129,.2);color:#059669}
+.status-cancelled{background:rgba(239,68,68,.15);color:#ef4444}
 
 </style>

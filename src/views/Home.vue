@@ -825,7 +825,7 @@ const soRegister = async () => {
     soSuccess.value = "Compte créé avec succès ! Bienvenue 🎉"
     signedOut.value = false
     soEmail.value = ""; soPassword.value = ""; soConfirm.value = ""; soDisplayName.value = ""
-    soMode.value = "login" ""
+    soMode.value = "login"
   } catch(e) { soError.value = authErrMsg(e.code) }
   finally { soLoading.value = false }
 }

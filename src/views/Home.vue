@@ -716,6 +716,19 @@ onMounted(() => {
         if (d.siteData)   site.value     = d.siteData
         if (d.siteName)   siteName.value = d.siteName
         if (d.siteLogo)   siteLogo.value = d.siteLogo
+        // ── Recharger le slug publié ──────────────────────
+        if (d.publishedSlug) {
+          publishAddress.value = d.publishedSlug
+          publishStatus.value  = "published"
+          const base = "https://musrh.github.io/SaaasGenerator"
+          publishInfo.value = {
+            slug:    d.publishedSlug,
+            uid:     user.uid,
+            urlSlug: `${base}/#/site/${d.publishedSlug}`,
+            urlUid:  `${base}/#/site/${user.uid}`,
+            domain:  d.customDomain || null,
+          }
+        }
         if (!d.siteData) {
           const saved = localStorage.getItem("siteDataPro")
           if (saved) site.value = JSON.parse(saved)
@@ -746,7 +759,34 @@ watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, 
   }
 })
 
-const signedOut = ref(false)  // afficher écran déconnexion
+const signedOut  = ref(false)  // afficher écran déconnexion
+const soEmail    = ref("")
+const soPassword = ref("")
+const soError    = ref("")
+const soLoading  = ref(false)
+
+const soLogin = async () => {
+  soError.value = ""
+  if (!soEmail.value || !soPassword.value) {
+    soError.value = "Email et mot de passe requis."; return
+  }
+  soLoading.value = true
+  try {
+    const { signInWithEmailAndPassword } = await import("firebase/auth")
+    await signInWithEmailAndPassword(auth, soEmail.value.trim(), soPassword.value)
+    signedOut.value  = false
+    soEmail.value    = ""
+    soPassword.value = ""
+  } catch(e) {
+    const msgs = {
+      "auth/user-not-found":  "Aucun compte avec cet email.",
+      "auth/wrong-password":  "Mot de passe incorrect.",
+      "auth/invalid-email":   "Email invalide.",
+      "auth/too-many-requests": "Trop de tentatives, réessayez plus tard.",
+    }
+    soError.value = msgs[e.code] || "Erreur de connexion."
+  } finally { soLoading.value = false }
+}
 
 const handleSignOut = async () => {
   try {
@@ -1827,6 +1867,18 @@ const setPageStyle = (type, value) => {
             <option v-for="l in langs" :key="l.code" :value="l.code">{{ l.label }}</option>
           </select>
 
+          <!-- Connexion / Déconnexion dans l'aperçu -->
+          <div v-if="currentUser" class="pv-user-btn" @click="showUserProfile=true; showPublicPreview=false" title="Mon profil">
+            <div class="pv-user-avatar">
+              <img v-if="currentUser.photoURL" :src="currentUser.photoURL" class="pv-user-avatar-img"/>
+              <span v-else>{{ (currentUser.email||"?")[0].toUpperCase() }}</span>
+            </div>
+            <span class="pv-user-name">{{ currentUser.displayName || currentUser.email?.split("@")[0] }}</span>
+          </div>
+          <button v-else class="pv-login-btn" @click="showPublicPreview=false; window.location.hash='#/auth'">
+            🔑 Se connecter
+          </button>
+
           <!-- Panier — toujours visible (même vide) -->
           <button class="pv-cart-btn" @click="showCart=true; cartStep='cart'">
             <span class="pv-cart-icon">🛒</span>
@@ -2341,9 +2393,6 @@ const setPageStyle = (type, value) => {
 
         <!-- Actions -->
         <div class="up-actions">
-          <button class="up-btn-orders" @click="showUserProfile=false; $router.push('/orders')">
-            📦 Voir mes commandes
-          </button>
           <button class="up-btn-signout" @click="handleSignOut">
             ⏻ Se déconnecter
           </button>
@@ -2352,16 +2401,33 @@ const setPageStyle = (type, value) => {
     </div>
   </Transition>
 
-  <!-- ── ÉCRAN DÉCONNEXION ───────────────────────────────── -->
+  <!-- ── ÉCRAN DÉCONNEXION + RECONNEXION ─────────────────── -->
   <Transition name="modal">
     <div v-if="signedOut" class="signout-overlay">
       <div class="signout-card">
+        <!-- Message déconnexion -->
         <div class="signout-icon">👋</div>
         <h2 class="signout-title">Vous êtes déconnecté</h2>
-        <p class="signout-sub">À bientôt sur votre store !</p>
-        <button class="signout-reload" @click="signedOut=false; currentUser=null">
-          🔑 Se reconnecter
-        </button>
+        <p class="signout-sub">Reconnectez-vous pour accéder à votre store.</p>
+
+        <!-- Formulaire reconnexion -->
+        <div class="so-form">
+          <div class="so-field">
+            <label>Email</label>
+            <input v-model="soEmail" type="email" placeholder="votre@email.com"
+                   class="so-input" @keydown.enter="soLogin"/>
+          </div>
+          <div class="so-field">
+            <label>Mot de passe</label>
+            <input v-model="soPassword" type="password" placeholder="••••••••"
+                   class="so-input" @keydown.enter="soLogin"/>
+          </div>
+          <p v-if="soError" class="so-error">{{ soError }}</p>
+          <button class="so-submit" @click="soLogin" :disabled="soLoading">
+            <span v-if="soLoading" class="so-spinner"></span>
+            <span v-else>🔑 Se connecter</span>
+          </button>
+        </div>
       </div>
     </div>
   </Transition>
@@ -2991,5 +3057,34 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .signout-sub{font-size:15px;color:rgba(255,255,255,.5)}
 .signout-reload{background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:12px;padding:14px 32px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;margin-top:8px}
 .signout-reload:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
+
+/* ── Aperçu : bouton connexion/déconnexion ──────────────── */
+.pv-user-btn{display:flex;align-items:center;gap:7px;padding:6px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
+.pv-user-btn:hover{background:#ede9fe;border-color:#6c63ff}
+.pv-user-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#6c63ff,#a78bfa);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;overflow:hidden;flex-shrink:0}
+.pv-user-avatar-img{width:100%;height:100%;object-fit:cover}
+.pv-user-name{font-size:12px;font-weight:600;color:#374151;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-login-btn{display:flex;align-items:center;gap:6px;padding:8px 14px;background:#6c63ff;color:white;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
+.pv-login-btn:hover{background:#5b52ee;transform:translateY(-1px)}
+
+/* ── Écran déconnexion + formulaire reconnexion ─────────── */
+.so-form{display:flex;flex-direction:column;gap:12px;width:100%;margin-top:8px}
+.so-field{display:flex;flex-direction:column;gap:5px;text-align:left}
+.so-field label{font-size:12px;font-weight:600;color:rgba(255,255,255,.6)}
+.so-input{padding:11px 14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:white;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
+.so-input:focus{border-color:#6c63ff}
+.so-input::placeholder{color:rgba(255,255,255,.3)}
+.so-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:9px 12px;border-radius:8px;font-size:13px;text-align:center}
+.so-submit{width:100%;padding:13px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+.so-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
+.so-submit:disabled{opacity:.6;cursor:not-allowed}
+.so-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:so-spin .6s linear infinite}
+@keyframes so-spin{to{transform:rotate(360deg)}}
+
+/* Responsive aperçu mobile */
+@media(max-width:640px){
+  .pv-user-name{display:none}
+  .pv-login-btn span:last-child{display:none}
+}
 
 </style>

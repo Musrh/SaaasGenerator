@@ -53,6 +53,13 @@ const routes = [
     props: true,          // passe uid comme prop au composant
   },
 
+  {
+  path: "/site/:slug",
+  name: "SiteViewer",
+  component: SiteViewer,
+  props: true
+},
+  
   // ── Pages résultat paiement client du store ───────────────
   { path: "/payment-success", name: "payment-success",
     component: () => import("./views/Paymentsuccess.vue") },

@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db, auth } from "../firebase.js"
 import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
-import { onAuthStateChanged, signOut } from "firebase/auth"
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
 
@@ -759,33 +759,111 @@ watch([() => showPaymentModal.value, () => paymentProvider.value], ([modalOpen, 
   }
 })
 
-const signedOut  = ref(false)  // afficher écran déconnexion
-const soEmail    = ref("")
-const soPassword = ref("")
-const soError    = ref("")
-const soLoading  = ref(false)
+const signedOut      = ref(false)   // afficher écran déconnexion
+const soMode         = ref("login") // "login" | "register" | "forgot"
+const soEmail        = ref("")
+const soPassword     = ref("")
+const soConfirm      = ref("")
+const soDisplayName  = ref("")
+const soError        = ref("")
+const soSuccess      = ref("")
+const soLoading      = ref(false)
 
+// Messages d'erreur Firebase → français
+const authErrMsg = (code) => ({
+  "auth/user-not-found":       "Aucun compte avec cet email.",
+  "auth/wrong-password":       "Mot de passe incorrect.",
+  "auth/invalid-email":        "Format d'email invalide.",
+  "auth/email-already-in-use": "Un compte existe déjà avec cet email.",
+  "auth/weak-password":        "Mot de passe trop court (min. 6 caractères).",
+  "auth/too-many-requests":    "Trop de tentatives. Réessayez plus tard.",
+  "auth/invalid-credential":   "Email ou mot de passe incorrect.",
+}[code] || "Erreur : " + code)
+
+// Connexion
 const soLogin = async () => {
-  soError.value = ""
-  if (!soEmail.value || !soPassword.value) {
+  soError.value = ""; soSuccess.value = ""
+  if (!soEmail.value.trim() || !soPassword.value) {
     soError.value = "Email et mot de passe requis."; return
   }
   soLoading.value = true
   try {
-    const { signInWithEmailAndPassword } = await import("firebase/auth")
     await signInWithEmailAndPassword(auth, soEmail.value.trim(), soPassword.value)
-    signedOut.value  = false
-    soEmail.value    = ""
-    soPassword.value = ""
-  } catch(e) {
-    const msgs = {
-      "auth/user-not-found":  "Aucun compte avec cet email.",
-      "auth/wrong-password":  "Mot de passe incorrect.",
-      "auth/invalid-email":   "Email invalide.",
-      "auth/too-many-requests": "Trop de tentatives, réessayez plus tard.",
-    }
-    soError.value = msgs[e.code] || "Erreur de connexion."
-  } finally { soLoading.value = false }
+    signedOut.value = false
+    soEmail.value = ""; soPassword.value = ""
+  } catch(e) { soError.value = authErrMsg(e.code) }
+  finally { soLoading.value = false }
+}
+
+// Inscription nouveau client du store
+const soRegister = async () => {
+  soError.value = ""; soSuccess.value = ""
+  if (!soDisplayName.value.trim()) { soError.value = "Votre nom est requis."; return }
+  if (!soEmail.value.trim())       { soError.value = "Email requis."; return }
+  if (soPassword.value.length < 6) { soError.value = "Mot de passe : min. 6 caractères."; return }
+  if (soPassword.value !== soConfirm.value) { soError.value = "Les mots de passe ne correspondent pas."; return }
+  soLoading.value = true
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, soEmail.value.trim(), soPassword.value)
+    // Mettre à jour le profil Firebase Auth
+    await updateProfile(cred.user, { displayName: soDisplayName.value.trim() })
+    // Enregistrer dans Firestore collection "customers"
+    // Lié au store du propriétaire connecté (currentUser = le propriétaire)
+    const ownerUid = currentUser.value?.uid || ""
+    await setDoc(
+      doc(db, "customers", cred.user.uid),
+      {
+        uid:         cred.user.uid,
+        email:       soEmail.value.trim().toLowerCase(),
+        displayName: soDisplayName.value.trim(),
+        storeUid:    ownerUid,
+        role:        "customer",
+        createdAt:   new Date().toISOString(),
+      },
+      { merge: true }
+    )
+    soSuccess.value = "Compte créé avec succès ! Bienvenue 🎉"
+    signedOut.value = false
+    soEmail.value = ""; soPassword.value = ""; soConfirm.value = ""; soDisplayName.value = ""
+  } catch(e) { soError.value = authErrMsg(e.code) }
+  finally { soLoading.value = false }
+}
+
+// Récupération mot de passe
+const soForgot = async () => {
+  soError.value = ""; soSuccess.value = ""
+  if (!soEmail.value.trim()) { soError.value = "Entrez votre email d'abord."; return }
+  soLoading.value = true
+  try {
+    await sendPasswordResetEmail(auth, soEmail.value.trim())
+    soSuccess.value = "Email de réinitialisation envoyé ! Vérifiez votre boîte mail."
+  } catch(e) { soError.value = authErrMsg(e.code) }
+  finally { soLoading.value = false }
+}
+
+// Connexion Google
+const soGoogleLogin = async () => {
+  soError.value = ""; soLoading.value = true
+  try {
+    const provider = new GoogleAuthProvider()
+    const result   = await signInWithPopup(auth, provider)
+    const ownerUid = currentUser.value?.uid || ""
+    await setDoc(
+      doc(db, "customers", result.user.uid),
+      {
+        uid:         result.user.uid,
+        email:       result.user.email,
+        displayName: result.user.displayName || "",
+        photoURL:    result.user.photoURL    || "",
+        storeUid:    ownerUid,
+        role:        "customer",
+        createdAt:   new Date().toISOString(),
+      },
+      { merge: true }
+    )
+    signedOut.value = false
+  } catch(e) { soError.value = authErrMsg(e.code) }
+  finally { soLoading.value = false }
 }
 
 const handleSignOut = async () => {
@@ -2410,8 +2488,18 @@ const setPageStyle = (type, value) => {
         <h2 class="signout-title">Vous êtes déconnecté</h2>
         <p class="signout-sub">Reconnectez-vous pour accéder à votre store.</p>
 
-        <!-- Formulaire reconnexion -->
-        <div class="so-form">
+        <!-- Onglets Connexion / Inscription -->
+        <div class="so-tabs">
+          <button :class="['so-tab', { active: soMode==='login' }]"    @click="soMode='login';    soError=''; soSuccess=''">Connexion</button>
+          <button :class="['so-tab', { active: soMode==='register' }]" @click="soMode='register'; soError=''; soSuccess=''">Inscription</button>
+        </div>
+
+        <!-- Messages -->
+        <p v-if="soError"   class="so-error">⚠ {{ soError }}</p>
+        <p v-if="soSuccess" class="so-success">✓ {{ soSuccess }}</p>
+
+        <!-- ── CONNEXION ──────────────────── -->
+        <div v-if="soMode==='login'" class="so-form">
           <div class="so-field">
             <label>Email</label>
             <input v-model="soEmail" type="email" placeholder="votre@email.com"
@@ -2422,10 +2510,67 @@ const setPageStyle = (type, value) => {
             <input v-model="soPassword" type="password" placeholder="••••••••"
                    class="so-input" @keydown.enter="soLogin"/>
           </div>
-          <p v-if="soError" class="so-error">{{ soError }}</p>
+          <button class="so-forgot-btn" @click="soMode='forgot'; soError=''; soSuccess=''">
+            Mot de passe oublié ?
+          </button>
           <button class="so-submit" @click="soLogin" :disabled="soLoading">
             <span v-if="soLoading" class="so-spinner"></span>
             <span v-else>🔑 Se connecter</span>
+          </button>
+          <div class="so-separator"><span>ou</span></div>
+          <button class="so-google" @click="soGoogleLogin" :disabled="soLoading">
+            <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Continuer avec Google
+          </button>
+        </div>
+
+        <!-- ── INSCRIPTION ────────────────── -->
+        <div v-else-if="soMode==='register'" class="so-form">
+          <div class="so-field">
+            <label>Nom complet *</label>
+            <input v-model="soDisplayName" type="text" placeholder="Jean Dupont"
+                   class="so-input"/>
+          </div>
+          <div class="so-field">
+            <label>Email *</label>
+            <input v-model="soEmail" type="email" placeholder="votre@email.com"
+                   class="so-input"/>
+          </div>
+          <div class="so-field">
+            <label>Mot de passe * <span class="so-hint">(min. 6 caractères)</span></label>
+            <input v-model="soPassword" type="password" placeholder="••••••••"
+                   class="so-input"/>
+          </div>
+          <div class="so-field">
+            <label>Confirmer le mot de passe *</label>
+            <input v-model="soConfirm" type="password" placeholder="••••••••"
+                   class="so-input" @keydown.enter="soRegister"/>
+          </div>
+          <button class="so-submit" @click="soRegister" :disabled="soLoading">
+            <span v-if="soLoading" class="so-spinner"></span>
+            <span v-else>✨ Créer mon compte</span>
+          </button>
+          <div class="so-separator"><span>ou</span></div>
+          <button class="so-google" @click="soGoogleLogin" :disabled="soLoading">
+            <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            S'inscrire avec Google
+          </button>
+        </div>
+
+        <!-- ── MOT DE PASSE OUBLIÉ ─────────── -->
+        <div v-else-if="soMode==='forgot'" class="so-form">
+          <p class="so-forgot-desc">Entrez votre email pour recevoir un lien de réinitialisation.</p>
+          <div class="so-field">
+            <label>Email</label>
+            <input v-model="soEmail" type="email" placeholder="votre@email.com"
+                   class="so-input" @keydown.enter="soForgot"/>
+          </div>
+          <button class="so-submit" @click="soForgot" :disabled="soLoading">
+            <span v-if="soLoading" class="so-spinner"></span>
+            <span v-else>📧 Envoyer le lien</span>
+          </button>
+          <button class="so-back-link" @click="soMode='login'; soError=''; soSuccess=''">
+            ← Retour à la connexion
           </button>
         </div>
       </div>
@@ -3067,19 +3212,44 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
 .pv-login-btn{display:flex;align-items:center;gap:6px;padding:8px 14px;background:#6c63ff;color:white;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
 .pv-login-btn:hover{background:#5b52ee;transform:translateY(-1px)}
 
-/* ── Écran déconnexion + formulaire reconnexion ─────────── */
-.so-form{display:flex;flex-direction:column;gap:12px;width:100%;margin-top:8px}
-.so-field{display:flex;flex-direction:column;gap:5px;text-align:left}
-.so-field label{font-size:12px;font-weight:600;color:rgba(255,255,255,.6)}
-.so-input{padding:11px 14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:white;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
-.so-input:focus{border-color:#6c63ff}
-.so-input::placeholder{color:rgba(255,255,255,.3)}
-.so-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:9px 12px;border-radius:8px;font-size:13px;text-align:center}
-.so-submit{width:100%;padding:13px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+/* ── Écran déconnexion + formulaire auth complet ────────── */
+.signout-card{max-height:90vh;overflow-y:auto;scrollbar-width:none}
+.signout-card::-webkit-scrollbar{display:none}
+/* Onglets */
+.so-tabs{display:flex;background:rgba(255,255,255,.06);border-radius:10px;padding:3px;gap:3px;width:100%}
+.so-tab{flex:1;padding:8px;background:none;border:none;border-radius:8px;font-size:13px;font-weight:500;color:rgba(255,255,255,.45);cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.so-tab.active{background:rgba(108,99,255,.4);color:white;font-weight:700}
+/* Messages */
+.so-error{background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:9px 12px;border-radius:8px;font-size:13px;text-align:center;width:100%}
+.so-success{background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:#6ee7b7;padding:9px 12px;border-radius:8px;font-size:13px;text-align:center;width:100%}
+/* Form */
+.so-form{display:flex;flex-direction:column;gap:10px;width:100%}
+.so-field{display:flex;flex-direction:column;gap:4px;text-align:left}
+.so-field label{font-size:12px;font-weight:600;color:rgba(255,255,255,.5);display:flex;align-items:center;gap:4px}
+.so-hint{font-size:10px;color:rgba(255,255,255,.3);font-weight:400}
+.so-input{padding:11px 14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:white;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;width:100%}
+.so-input:focus{border-color:#6c63ff;background:rgba(108,99,255,.08)}
+.so-input::placeholder{color:rgba(255,255,255,.25)}
+/* Bouton principal */
+.so-submit{width:100%;padding:13px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
 .so-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.4)}
 .so-submit:disabled{opacity:.6;cursor:not-allowed}
-.so-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:so-spin .6s linear infinite}
+/* Spinner */
+.so-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:so-spin .6s linear infinite}
 @keyframes so-spin{to{transform:rotate(360deg)}}
+/* Séparateur */
+.so-separator{display:flex;align-items:center;gap:10px;color:rgba(255,255,255,.3);font-size:11px;width:100%}
+.so-separator::before,.so-separator::after{content:'';flex:1;border-top:1px solid rgba(255,255,255,.1)}
+/* Google */
+.so-google{width:100%;padding:11px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.8);border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.so-google:hover:not(:disabled){background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.2)}
+.so-google:disabled{opacity:.5;cursor:not-allowed}
+/* Mot de passe oublié */
+.so-forgot-btn{background:none;border:none;color:rgba(108,99,255,.8);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:right;padding:2px 0;transition:color .15s;align-self:flex-end}
+.so-forgot-btn:hover{color:#a78bfa}
+.so-forgot-desc{font-size:13px;color:rgba(255,255,255,.5);line-height:1.6;text-align:center}
+.so-back-link{background:none;border:none;color:rgba(255,255,255,.4);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:center;padding:4px;transition:color .15s}
+.so-back-link:hover{color:rgba(255,255,255,.7)}
 
 /* Responsive aperçu mobile */
 @media(max-width:640px){

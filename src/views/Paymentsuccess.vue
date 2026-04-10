@@ -10,6 +10,7 @@
   4. Vide cartSession dans users/{uid}
   5. Nettoie localStorage
   6. Affiche récapitulatif commande
+  7. Redirige vers le store via slug (au lieu de /)
 ============================================================ -->
 
 <template>
@@ -78,9 +79,9 @@
           <p class="ps-no-data">Commande enregistrée. Vous recevrez une confirmation par email.</p>
         </div>
 
+        <!-- MODIFIÉ : suppression du bouton "Mes commandes" -->
         <div class="ps-actions">
           <button class="ps-btn-primary" @click="goBack">← Continuer mes achats</button>
-          <button class="ps-btn-sec"     @click="goOrders">📦 Mes commandes</button>
         </div>
       </template>
 
@@ -90,16 +91,18 @@
 
 <script setup>
 import { ref, onMounted } from "vue"
-import { useRouter } from "vue-router"
+import { useRouter, useRoute } from "vue-router"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { doc, collection, addDoc, updateDoc, getDoc } from "firebase/firestore"
 import { db } from "../firebase"
 
 const router    = useRouter()
+const route     = useRoute()
 const auth      = getAuth()
 const orderData = ref(null)
 const saving    = ref(true)
 const saved     = ref(false)
+const storeSlug = ref("")   // ← slug du store pour la redirection
 
 onMounted(() => {
   // ── 1. Lire pendingStripeOrder immédiatement (avant auth) ──
@@ -108,12 +111,17 @@ onMounted(() => {
     try { orderData.value = JSON.parse(raw) } catch(e) {}
   }
 
+  // ── 1b. Récupérer le slug depuis query, localStorage ou orderData ──
+  storeSlug.value =
+    route.query.slug ||
+    localStorage.getItem("stripeSiteSlug") ||
+    orderData.value?.slug ||
+    orderData.value?.storeSlug ||
+    ""
+
   // ── 2. Attendre que Firebase Auth soit prêt ────────────────
-  // IMPORTANT : après un redirect cross-domain, auth.currentUser
-  // est null synchroniquement. Il faut attendre onAuthStateChanged.
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      // Pas connecté → on essaie quand même avec ownerUid depuis localStorage
       const ownerUid = localStorage.getItem("stripeOwnerUid")
         || orderData.value?.ownerUid
 
@@ -146,7 +154,7 @@ async function saveOrder(ownerUid, user) {
       createdAt: orderData.value?.createdAt || new Date().toISOString(),
     }
 
-    // a. users/{uid}/orders/  → visible dans Orders.vue
+    // a. users/{uid}/orders/
     try {
       await addDoc(collection(db, "users", ownerUid, "orders"), order)
       console.log("✅ Commande sauvegardée dans users/" + ownerUid + "/orders")
@@ -176,18 +184,20 @@ async function saveOrder(ownerUid, user) {
   } catch(e) {
     console.error("Erreur sauvegarde commande:", e)
   } finally {
-    // d. Nettoyer localStorage dans TOUS les cas
     localStorage.removeItem("pendingStripeOrder")
     localStorage.removeItem("stripeOwnerUid")
-    localStorage.removeItem("stripeSiteSlug")
+    // On garde stripeSiteSlug jusqu'à la redirection, puis on le nettoie dans goBack
   }
 }
 
+// ── MODIFIÉ : redirection vers le store via slug ────────────
 function goBack() {
-  router.push("/")
-}
-function goOrders() {
-  router.push("/orders")
+  localStorage.removeItem("stripeSiteSlug")
+  if (storeSlug.value) {
+    router.push(`/site/${storeSlug.value}`)
+  } else {
+    router.push("/")
+  }
 }
 </script>
 
@@ -230,10 +240,8 @@ function goOrders() {
 .ps-item-price{font-size:12px;font-weight:700;color:#10b981;white-space:nowrap}
 .ps-no-data{font-size:13px;color:#6b7280;text-align:center;padding:8px 0;line-height:1.6}
 
-/* Actions */
+/* Actions — un seul bouton pleine largeur */
 .ps-actions{display:flex;gap:10px}
-.ps-btn-primary{flex:2;background:#10b981;color:white;border:none;border-radius:11px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.ps-btn-primary{flex:1;background:#10b981;color:white;border:none;border-radius:11px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
 .ps-btn-primary:hover{background:#059669;transform:translateY(-1px)}
-.ps-btn-sec{flex:1;background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;border-radius:11px;padding:13px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
-.ps-btn-sec:hover{background:#e5e7eb}
 </style>

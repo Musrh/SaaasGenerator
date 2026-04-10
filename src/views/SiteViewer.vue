@@ -1,11 +1,3 @@
-<-- FULL SiteViewer.vue corrigé (version complète avec UI intacte + fix slug/auth) -->
-
-<!-- IMPORTANT:
-- slug fonctionne sans login
-- aucune fonctionnalité supprimée
-- panier, paiement, UI = inchangés
--->
-
 <!-- ============================================================
   SaaasGenerator/src/views/SiteViewer.vue
   
@@ -98,6 +90,11 @@ const sendContact = async () => {
 }
 
 // ── Panier ────────────────────────────────────────────────────
+const svCartStep = ref("cart")   // "cart" | "checkout"
+const svAddress  = ref("")
+const svZip      = ref("")
+const svCity     = ref("")
+const svCountry  = ref("France")
 const cart         = ref([])
 const showCart     = ref(false)
 const showPayModal = ref(false)
@@ -378,7 +375,7 @@ const payWithStripe = async () => {
         clientId:         resolvedUid.value,
         plan:             "store-order",
         storeName:        cfg.storeName || "Store",
-        adresseLivraison: "",
+        adresseLivraison: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
         successUrl,
         cancelUrl,
       }),
@@ -628,124 +625,140 @@ const saveOrder = async (provider, transactionId) => {
       </template>
     </main>
 
-    <!-- ── MODAL PANIER ─────────────────────────────────────── -->
+    <!-- ── MODAL PANIER 2 ÉTAPES (panier → livraison → paiement) -->
     <Transition name="sv-modal">
-      <div v-if="showCart" class="sv-modal-overlay" @click.self="showCart=false">
-        <div class="sv-modal-box">
-          <button class="sv-modal-close" @click="showCart=false">✕</button>
-          <div class="sv-modal-header">
-            <span>🛒</span><h2>Mon panier</h2>
-          </div>
+      <div v-if="showCart" class="sv-modal-overlay sv-cart-overlay"
+           @click.self="showCart=false; svCartStep='cart'">
+        <div class="sv-modal-box sv-cart-box">
 
-          <div v-if="cart.length === 0" class="sv-cart-empty">
-            <span>🛍️</span><p>Votre panier est vide</p>
-          </div>
-
-          <div v-else class="sv-cart-items">
-            <div v-for="item in cart" :key="item.id" class="sv-cart-item">
-              <div class="sv-ci-img">
-                <img v-if="item.image" :src="item.image" :alt="item.name"/>
-                <span v-else>🛍️</span>
-              </div>
-              <div class="sv-ci-info">
-                <div class="sv-ci-name">{{ item.name }}</div>
-                <div class="sv-ci-price">{{ item.price }}{{ item.currency }}</div>
-              </div>
-              <div class="sv-ci-qty">
-                <button @click="updateQty(item.id,-1)">−</button>
-                <span>{{ item.qty }}</span>
-                <button @click="updateQty(item.id,1)">+</button>
-              </div>
-              <div class="sv-ci-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
-              <button class="sv-ci-del" @click="removeFromCart(item.id)">✕</button>
-            </div>
-          </div>
-
-          <div v-if="cart.length > 0" class="sv-cart-footer">
-            <div class="sv-cart-total">
-              <span>Total</span>
-              <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
-            </div>
-            <div class="sv-cart-actions">
-              <button class="sv-btn-sec" @click="showCart=false">Continuer</button>
-              <button class="sv-btn-primary" @click="showCart=false; showPayModal=true">
-                💳 Finaliser la commande
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- ── MODAL PAIEMENT ───────────────────────────────────── -->
-    <Transition name="sv-modal">
-      <div v-if="showPayModal" class="sv-modal-overlay" @click.self="showPayModal=false">
-        <div class="sv-modal-box sv-pay-box">
-          <button class="sv-modal-close" @click="showPayModal=false">✕</button>
-
-          <!-- Succès -->
-          <div v-if="paySuccess" class="sv-pay-success">
-            <div class="sv-success-icon">✓</div>
-            <h2>Commande confirmée !</h2>
-            <p>Merci pour votre achat. Un email de confirmation vous sera envoyé à <strong>{{ customerEmail }}</strong>.</p>
-            <button class="sv-btn-primary" style="margin-top:20px;width:100%" @click="showPayModal=false; paySuccess=false">
-              Fermer
+          <!-- HEADER -->
+          <div class="sv-cart-header">
+            <button v-if="svCartStep==='checkout'" class="sv-back-btn" @click="svCartStep='cart'">
+              ← Retour
             </button>
+            <div class="sv-cart-header-title">
+              <span>{{ svCartStep==='cart' ? '🛒' : '📋' }}</span>
+              <h2>{{ svCartStep==='cart' ? 'Mon panier' : 'Livraison & Paiement' }}</h2>
+              <span v-if="svCartStep==='cart' && cart.length>0" class="sv-cart-count">
+                {{ cartCount }} article{{ cartCount>1?'s':'' }}
+              </span>
+            </div>
+            <button class="sv-modal-close" @click="showCart=false; svCartStep='cart'">✕</button>
           </div>
 
-          <template v-else>
-            <div class="sv-modal-header">
-              <span>💳</span>
-              <h2>Paiement</h2>
-              <div class="sv-pay-amount">{{ cartTotal }}{{ cartCurrency }}</div>
+          <!-- ÉTAPE 1 : ARTICLES -->
+          <template v-if="svCartStep==='cart'">
+            <div v-if="cart.length===0" class="sv-cart-empty">
+              <span>🛍️</span><p>Votre panier est vide</p>
             </div>
-
-            <!-- Infos client -->
-            <div class="sv-customer-fields">
-              <input v-model="customerName"  class="sv-cust-input" placeholder="Votre nom complet *"/>
-              <input v-model="customerEmail" class="sv-cust-input" placeholder="Votre email *" type="email"/>
-            </div>
-
-            <!-- Erreur -->
-            <div v-if="payError" class="sv-pay-error">⚠️ {{ payError }}</div>
-
-            <!-- Tabs -->
-            <div class="sv-pay-tabs">
-              <button :class="{active:payProvider==='stripe'}"
-                @click="payProvider='stripe'">💳 Stripe</button>
-              <button :class="{active:payProvider==='paypal'}"
-                @click="payProvider='paypal'">🅿 PayPal</button>
-            </div>
-
-            <!-- Stripe Checkout (redirect) -->
-            <div v-if="payProvider==='stripe'" class="sv-pay-form">
-              <div class="sv-stripe-checkout-info">
-                <div class="sv-stripe-logo">
-                  <span>stripe</span>
+            <div v-else class="sv-cart-items">
+              <div v-for="item in cart" :key="item.id" class="sv-cart-item">
+                <div class="sv-ci-img">
+                  <img v-if="item.image" :src="item.image" :alt="item.name"/>
+                  <span v-else>🛍️</span>
                 </div>
-                <p class="sv-stripe-checkout-desc">
-                  Vous allez être redirigé vers la page de paiement sécurisée Stripe.
-                  Vos données bancaires sont traitées directement par Stripe.
-                </p>
-                <div class="sv-stripe-badges">
-                  <span>🔒 SSL</span>
-                  <span>💳 Visa / MC / CB</span>
-                  <span>🛡 3D Secure</span>
+                <div class="sv-ci-info">
+                  <div class="sv-ci-name">{{ item.name }}</div>
+                  <div class="sv-ci-price">{{ item.price }}{{ item.currency }}</div>
                 </div>
+                <div class="sv-ci-qty">
+                  <button class="sv-qty-btn" @click="updateQty(item.id,-1)">−</button>
+                  <span class="sv-qty-val">{{ item.qty }}</span>
+                  <button class="sv-qty-btn" @click="updateQty(item.id,1)">+</button>
+                </div>
+                <div class="sv-ci-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
+                <button class="sv-ci-del" @click="removeFromCart(item.id)">✕</button>
               </div>
-              <button class="sv-pay-submit" :disabled="payProcessing" @click="payWithStripe">
-                <span v-if="payProcessing" class="sv-spinner-sm"></span>
-                <span v-else>💳</span>
-                {{ payProcessing ? "Redirection vers Stripe..." : `Payer ${cartTotal}${cartCurrency} par Stripe` }}
-              </button>
             </div>
-
-            <!-- PayPal -->
-            <div v-else class="sv-pay-form">
-              <div id="sv-paypal-container" class="sv-paypal-wrap"></div>
-              <p class="sv-pay-note">🔒 Paiement sécurisé via PayPal</p>
+            <div v-if="cart.length>0" class="sv-cart-footer">
+              <div class="sv-cart-total-row">
+                <span>Total</span>
+                <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
+              </div>
+              <div class="sv-cart-footer-btns">
+                <button class="sv-btn-sec" @click="showCart=false">Continuer</button>
+                <button class="sv-btn-primary sv-checkout-btn" @click="svCartStep='checkout'">
+                  📋 Livraison & Paiement →
+                </button>
+              </div>
             </div>
           </template>
+
+          <!-- ÉTAPE 2 : LIVRAISON + PAIEMENT -->
+          <template v-else-if="svCartStep==='checkout'">
+
+            <!-- Résumé articles -->
+            <div class="sv-checkout-summary">
+              <div v-for="item in cart" :key="item.id" class="sv-summary-item">
+                <div class="sv-summary-img">
+                  <img v-if="item.image" :src="item.image" :alt="item.name"/>
+                  <span v-else>🛍️</span>
+                </div>
+                <span class="sv-summary-name">{{ item.name }} ×{{ item.qty }}</span>
+                <span class="sv-summary-price">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</span>
+              </div>
+              <div class="sv-summary-total">
+                <span>Total</span>
+                <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
+              </div>
+            </div>
+
+            <!-- Formulaire client + livraison -->
+            <div class="sv-checkout-fields">
+              <div class="sv-checkout-section">👤 Informations client</div>
+              <div class="sv-checkout-row">
+                <div class="sv-checkout-field">
+                  <label>Nom complet *</label>
+                  <input v-model="customerName"  placeholder="Jean Dupont" class="sv-checkout-input"/>
+                </div>
+                <div class="sv-checkout-field">
+                  <label>Email *</label>
+                  <input v-model="customerEmail" placeholder="jean@email.com" type="email" class="sv-checkout-input"/>
+                </div>
+              </div>
+
+              <div class="sv-checkout-section" style="margin-top:12px">📦 Adresse de livraison</div>
+              <div class="sv-checkout-field">
+                <label>Adresse *</label>
+                <input v-model="svAddress" placeholder="123 rue de la Paix" class="sv-checkout-input"/>
+              </div>
+              <div class="sv-checkout-row">
+                <div class="sv-checkout-field">
+                  <label>Code postal</label>
+                  <input v-model="svZip" placeholder="75001" class="sv-checkout-input"/>
+                </div>
+                <div class="sv-checkout-field">
+                  <label>Ville</label>
+                  <input v-model="svCity" placeholder="Paris" class="sv-checkout-input"/>
+                </div>
+              </div>
+              <div class="sv-checkout-field">
+                <label>Pays</label>
+                <select v-model="svCountry" class="sv-checkout-input sv-checkout-select">
+                  <option>France</option>
+                  <option>Maroc</option>
+                  <option>Belgique</option>
+                  <option>Suisse</option>
+                  <option>Canada</option>
+                  <option>Algérie</option>
+                  <option>Tunisie</option>
+                  <option>Sénégal</option>
+                  <option>Côte d'Ivoire</option>
+                </select>
+              </div>
+            </div>
+
+            <div v-if="payError" class="sv-pay-error">⚠ {{ payError }}</div>
+
+            <!-- Bouton payer -->
+            <button class="sv-pay-final-btn" @click="payWithStripe" :disabled="payProcessing">
+              <span v-if="payProcessing" class="sv-spinner"></span>
+              <span v-else>💳</span>
+              {{ payProcessing ? 'Redirection Stripe...' : `Payer ${cartTotal}${cartCurrency}` }}
+            </button>
+            <p class="sv-secure-note">🔒 Paiement sécurisé via Stripe</p>
+          </template>
+
         </div>
       </div>
     </Transition>
@@ -927,4 +940,62 @@ const saveOrder = async (provider, transactionId) => {
   .sv-cart-item{grid-template-columns:40px 1fr auto 24px}
   .sv-ci-subtotal{display:none}
 }
+
+/* ── Cart 2 étapes SiteViewer ───────────────────────────── */
+.sv-cart-overlay .sv-modal-box{padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden}
+.sv-cart-box{max-width:520px}
+.sv-cart-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #e5e7eb;background:#f9fafb;flex-shrink:0}
+.sv-back-btn{background:#f3f4f6;border:1px solid #e5e7eb;color:#6b7280;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
+.sv-back-btn:hover{background:#e5e7eb}
+.sv-cart-header-title{display:flex;align-items:center;gap:8px;flex:1}
+.sv-cart-header-title span:first-child{font-size:20px}
+.sv-cart-header-title h2{font-size:16px;font-weight:700;color:#1a1a2e;margin:0}
+.sv-cart-count{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px}
+.sv-cart-items{overflow-y:auto;flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.sv-cart-item{display:grid;grid-template-columns:44px 1fr auto auto 24px;align-items:center;gap:8px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px}
+.sv-ci-img{width:44px;height:44px;border-radius:8px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:20px}
+.sv-ci-img img{width:100%;height:100%;object-fit:cover}
+.sv-ci-info{min-width:0}
+.sv-ci-name{font-size:13px;font-weight:600;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-ci-price{font-size:12px;color:#6b7280}
+.sv-ci-qty{display:flex;align-items:center;gap:5px}
+.sv-qty-btn{width:24px;height:24px;background:#e5e7eb;border:none;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.sv-qty-val{font-size:13px;font-weight:600;min-width:18px;text-align:center}
+.sv-ci-subtotal{font-size:12px;font-weight:700;color:#6c63ff;white-space:nowrap}
+.sv-ci-del{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:13px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:5px}
+.sv-ci-del:hover{background:#fef2f2;color:#ef4444}
+.sv-cart-footer{padding:12px 16px;border-top:1px solid #e5e7eb;flex-shrink:0}
+.sv-cart-total-row{display:flex;justify-content:space-between;align-items:center;font-size:15px;color:#374151;margin-bottom:12px}
+.sv-cart-total-row strong{font-size:20px;font-weight:800;color:#6c63ff}
+.sv-cart-footer-btns{display:flex;gap:8px}
+.sv-checkout-btn{flex:2;justify-content:center}
+
+/* Checkout step */
+.sv-checkout-summary{padding:10px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;max-height:140px;overflow-y:auto}
+.sv-summary-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f3f4f6}
+.sv-summary-item:last-of-type{border-bottom:none}
+.sv-summary-img{width:32px;height:32px;border-radius:6px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sv-summary-img img{width:100%;height:100%;object-fit:cover}
+.sv-summary-name{flex:1;font-size:12px;color:#374151}
+.sv-summary-price{font-size:12px;font-weight:700;color:#6c63ff;white-space:nowrap}
+.sv-summary-total{display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #e5e7eb;font-size:14px;color:#374151}
+.sv-summary-total strong{font-size:16px;color:#6c63ff}
+
+.sv-checkout-fields{padding:12px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1}
+.sv-checkout-section{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;padding-bottom:5px;border-bottom:1px solid #f3f4f6}
+.sv-checkout-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sv-checkout-field{display:flex;flex-direction:column;gap:4px}
+.sv-checkout-field label{font-size:11px;color:#6b7280;font-weight:500}
+.sv-checkout-input{padding:9px 12px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:#374151;transition:border-color .15s;width:100%;background:white}
+.sv-checkout-input:focus{border-color:#6c63ff}
+.sv-checkout-select{cursor:pointer}
+
+.sv-pay-error{margin:0 16px;background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:8px 12px;border-radius:8px;font-size:13px;flex-shrink:0}
+.sv-pay-final-btn{margin:10px 16px;width:calc(100% - 32px);padding:14px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s;flex-shrink:0}
+.sv-pay-final-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.35)}
+.sv-pay-final-btn:disabled{opacity:.6;cursor:not-allowed}
+.sv-secure-note{text-align:center;font-size:11px;color:#9ca3af;padding-bottom:12px;flex-shrink:0}
+.sv-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:sv-spin .6s linear infinite;flex-shrink:0}
+@keyframes sv-spin{to{transform:rotate(360deg)}}
+
 </style>

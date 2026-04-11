@@ -727,10 +727,45 @@ onMounted(() => {
           if (storeUid) {
             try {
               const { query: q, where, orderBy: ob, getDocs: gd } = await import("firebase/firestore")
-              const oSnap = await gd(q(collection(db, "users", storeUid, "orders"),
-                where("customerEmail","==", user.email?.toLowerCase()||""),
-                ob("createdAt","desc")))
-              userOrders.value = oSnap.docs.map(d=>({id:d.id,...d.data()}))
+              const results = []
+
+              // Source 1 : collection orders par clientId == uid du client
+              // (clientId dans orders correspond à uid dans customers)
+              try {
+                const snap1 = await gd(q(
+                  collection(db, "orders"),
+                  where("clientId", "==", user.uid),
+                  ob("createdAt", "desc")))
+                snap1.docs.forEach(d => results.push({ id: d.id, ...d.data() }))
+              } catch(e1) { console.warn("orders/clientId:", e1.message) }
+
+              // Source 2 : cmdclients par clientUid
+              try {
+                const snap2 = await gd(q(
+                  collection(db, "cmdclients"),
+                  where("clientUid", "==", user.uid),
+                  ob("createdAt", "desc")))
+                snap2.docs.forEach(d => {
+                  if (!results.find(r => r.id === d.id))
+                    results.push({ id: d.id, ...d.data() })
+                })
+              } catch(e2) { console.warn("cmdclients/clientUid:", e2.message) }
+
+              // Source 3 : cmdclients par email (fallback)
+              if (!results.length && user.email) {
+                try {
+                  const snap3 = await gd(q(
+                    collection(db, "cmdclients"),
+                    where("clientEmail", "==", user.email.toLowerCase()),
+                    ob("createdAt", "desc")))
+                  snap3.docs.forEach(d => {
+                    if (!results.find(r => r.id === d.id))
+                      results.push({ id: d.id, ...d.data() })
+                  })
+                } catch(e3) { console.warn("cmdclients/email:", e3.message) }
+              }
+
+              userOrders.value = results
             } catch(e) { console.warn("orders:", e.message) }
           }
         }
@@ -2453,11 +2488,12 @@ const setPageStyle = (type, value) => {
     </main>
   </div>
   <!-- ASSISTANT VOCAL CLIENT (Groq IA) -->
+  <!-- storeUid = uid du propriétaire du store (pas forcément le user connecté) -->
   <VoiceAssistantClient
     v-if="currentUser"
-    :store-uid="currentUser?.uid || ''"
+    :store-uid="publishInfo?.uid || currentUser?.uid || ''"
     :store-name="siteName"
-    :store-email="liveStripeConfig?.storeName || ''"
+    :store-email="currentUser?.email || ''"
     :lang="currentLang"
     :backend-url="'https://backend-master-production-cf50.up.railway.app'"
   />

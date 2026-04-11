@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from "vue"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db, auth } from "../firebase.js"
-import { doc, getDoc, setDoc, addDoc, collection } from "firebase/firestore"
+import { doc, getDoc, setDoc, addDoc, deleteDoc, collection } from "firebase/firestore"
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth"
 import { stripeConfig, loadStripeSDK } from "./stripe.js"
 import { paypalConfig, loadPaypalSDK } from "./paypal.js"
@@ -591,6 +591,42 @@ const publishSite = async () => {
     // 3. Mettre à jour isSaved
     localStorage.setItem("siteDataPro", JSON.stringify(site.value))
     isSaved.value = true
+
+    // 4. Synchroniser les produits du site vers prodinfos (pour l'assistant vocal)
+    try {
+      const { getDocs: gd2, query: q2, where: w2, deleteDoc: del2, doc: d2 }
+        = await import("firebase/firestore")
+
+      // Supprimer les anciens prodinfos de ce store
+      const oldSnap = await gd2(q2(
+        collection(db, "prodinfos"), w2("storeUid", "==", uid)))
+      for (const oldDoc of oldSnap.docs) {
+        await del2(d2(db, "prodinfos", oldDoc.id))
+      }
+
+      // Écrire les produits actuels du site
+      for (const page of site.value.pages || []) {
+        for (const section of page.sections || []) {
+          if (section.type === "products" && Array.isArray(section.items)) {
+            for (const p of section.items) {
+              await addDoc(collection(db, "prodinfos"), {
+                name:        p.name        || "",
+                price:       parseFloat(p.price) || 0,
+                description: p.description || "",
+                badge:       p.badge       || "",
+                currency:    p.currency    || "€",
+                image:       p.image       || "",
+                storeUid:    uid,
+                syncedAt:    new Date().toISOString(),
+              })
+            }
+          }
+        }
+      }
+      console.log("✅ prodinfos synchronisés avec siteData")
+    } catch(eSyncProd) {
+      console.warn("Sync prodinfos:", eSyncProd.message)
+    }
 
     publishInfo.value = { slug, urlUid, urlSlug, domain, uid }
     publishStatus.value = "published"

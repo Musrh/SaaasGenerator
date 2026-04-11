@@ -334,61 +334,81 @@ const svSignOut = async () => {
   svOrdersLoaded.value = false
 }
 
-// Charger commandes du client depuis orders + cmdclients
+// Charger commandes du client — SANS orderBy pour éviter les index Firestore
+// Le tri se fait côté client après récupération
 const svLoadOrders = async (user) => {
-  if (svOrdersLoaded.value || svLoadingOrders.value) return
+  if (svLoadingOrders.value) return
   svLoadingOrders.value = true
+  svOrdersLoaded.value  = false
   const results = []
+
+  const dedup = (d) => {
+    if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
+  }
+
   try {
-    const { query: q, where, orderBy: ob, getDocs: gd } = await import("firebase/firestore")
+    const { query: q, where, getDocs: gd, collection: col } = await import("firebase/firestore")
+    const uid   = user.uid
+    const email = (user.email || "").toLowerCase()
 
-    // Source 1 : orders par clientId == uid
+    // ── Source 1 : orders par clientId ────────────────────────
+    // (PAS de orderBy → pas besoin d'index composite)
     try {
-      const s1 = await gd(q(collection(db, "orders"),
-        where("clientId","==", user.uid), ob("createdAt","desc")))
-      s1.docs.forEach(d => results.push({ id: d.id, ...d.data() }))
-    } catch(e) { console.warn("sv orders:", e.message) }
+      const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
+      s1.docs.forEach(dedup)
+      console.log(`[profil] orders/clientId: ${s1.docs.length} résultats`)
+    } catch(e) { console.error("[profil] orders/clientId ERREUR:", e.message) }
 
-    // Source 2 : cmdclients par clientUid
-    try {
-      const s2 = await gd(q(collection(db, "cmdclients"),
-        where("clientUid","==", user.uid), ob("createdAt","desc")))
-      s2.docs.forEach(d => {
-        if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
-      })
-    } catch(e) { console.warn("sv cmdclients uid:", e.message) }
-
-    // Source 3 : cmdclients par email (fallback)
-    if (!results.length && user.email) {
+    // ── Source 2 : orders par customerEmail ───────────────────
+    if (email) {
       try {
-        const s3 = await gd(q(collection(db, "cmdclients"),
-          where("clientEmail","==", user.email.toLowerCase()), ob("createdAt","desc")))
-        s3.docs.forEach(d => {
-          if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
-        })
-      } catch(e) { console.warn("sv cmdclients email:", e.message) }
+        const s2 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
+        s2.docs.forEach(dedup)
+        console.log(`[profil] orders/customerEmail: ${s2.docs.length} résultats`)
+      } catch(e) { console.error("[profil] orders/customerEmail ERREUR:", e.message) }
     }
 
-    // Source 4 : sous-collection users/{storeUid}/orders par email
-    if (!results.length && resolvedUid.value && user.email) {
+    // ── Source 3 : cmdclients par clientUid ───────────────────
+    try {
+      const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
+      s3.docs.forEach(dedup)
+      console.log(`[profil] cmdclients/clientUid: ${s3.docs.length} résultats`)
+    } catch(e) { console.error("[profil] cmdclients/clientUid ERREUR:", e.message) }
+
+    // ── Source 4 : cmdclients par clientEmail ─────────────────
+    if (email) {
       try {
-        const s4 = await gd(q(collection(db, "users", resolvedUid.value, "orders"),
-          where("customerEmail","==", user.email.toLowerCase()), ob("createdAt","desc")))
-        s4.docs.forEach(d => {
-          if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
-        })
-      } catch(e) { console.warn("sv store orders:", e.message) }
+        const s4 = await gd(q(col(db, "cmdclients"), where("clientEmail", "==", email)))
+        s4.docs.forEach(dedup)
+        console.log(`[profil] cmdclients/clientEmail: ${s4.docs.length} résultats`)
+      } catch(e) { console.error("[profil] cmdclients/clientEmail ERREUR:", e.message) }
     }
 
-    svClientOrders.value = results.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""))
+    // ── Source 5 : users/{storeUid}/orders par customerEmail ──
+    if (resolvedUid.value && email) {
+      try {
+        const s5 = await gd(q(
+          col(db, "users", resolvedUid.value, "orders"),
+          where("customerEmail", "==", email)))
+        s5.docs.forEach(dedup)
+        console.log(`[profil] store/orders: ${s5.docs.length} résultats`)
+      } catch(e) { console.error("[profil] store/orders ERREUR:", e.message) }
+    }
+
+    // Trier côté client par date décroissante
+    results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+    svClientOrders.value = results
     svOrdersLoaded.value = true
-  } catch(e) { console.error("svLoadOrders:", e.message) }
+    console.log(`[profil] Total commandes chargées: ${results.length}`)
+
+  } catch(e) { console.error("[profil] svLoadOrders ERREUR:", e.message) }
   finally { svLoadingOrders.value = false }
 }
 
-// Ouvrir le profil + charger les commandes
+// Ouvrir le profil + recharger les commandes à chaque ouverture
 const svOpenProfile = async () => {
-  svShowProfile.value = true
+  svShowProfile.value  = true
+  svOrdersLoaded.value = false   // forcer rechargement
   if (svCurrentUser.value) await svLoadOrders(svCurrentUser.value)
 }
 

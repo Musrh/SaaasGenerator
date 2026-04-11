@@ -32,16 +32,24 @@ const save = async () => {
   if (!user) { error.value = "Connectez-vous d'abord."; return }
   saving.value = true
   try {
-    await addDoc(collection(db, "products"), {
+    // Sauvegarder dans products/ ET prodinfos/ (lu par l'assistant vocal)
+    const productData = {
       name:        form.value.name.trim(),
       price:       Number(form.value.price),
       description: form.value.description.trim(),
       badge:       form.value.badge.trim(),
       stock:       form.value.stock !== "" ? Number(form.value.stock) : null,
       image:       form.value.image || "",
+      storeUid:    user.uid,    // ← CRUCIAL pour que l'assistant trouve les produits
       createdBy:   user.uid,
       createdAt:   new Date().toISOString(),
-    })
+    }
+    // Collection products (catalogue)
+    await addDoc(collection(db, "products"), productData)
+    // Collection prodinfos (assistant vocal Groq)
+    try {
+      await addDoc(collection(db, "prodinfos"), productData)
+    } catch(e2) { console.warn("prodinfos write:", e2.message) }
     emit("close")
   } catch(e) {
     error.value = "Erreur : " + e.message

@@ -726,45 +726,44 @@ onMounted(() => {
           const storeUid = custSnap.data()?.storeUid || ""
           if (storeUid) {
             try {
-              const { query: q, where, orderBy: ob, getDocs: gd } = await import("firebase/firestore")
+              const { query: q, where, getDocs: gd } = await import("firebase/firestore")
               const results = []
+              const dedup = (d) => { if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() }) }
+              const uid   = user.uid
+              const email = (user.email || "").toLowerCase()
 
-              // Source 1 : collection orders par clientId == uid du client
-              // (clientId dans orders correspond à uid dans customers)
+              // SANS orderBy → pas d'index composite requis, tri côté client
+
+              // Source 1 : orders par clientId
               try {
-                const snap1 = await gd(q(
-                  collection(db, "orders"),
-                  where("clientId", "==", user.uid),
-                  ob("createdAt", "desc")))
-                snap1.docs.forEach(d => results.push({ id: d.id, ...d.data() }))
-              } catch(e1) { console.warn("orders/clientId:", e1.message) }
+                const s1 = await gd(q(collection(db, "orders"), where("clientId", "==", uid)))
+                s1.docs.forEach(dedup)
+              } catch(e) { console.error("orders/clientId:", e.message) }
 
-              // Source 2 : cmdclients par clientUid
-              try {
-                const snap2 = await gd(q(
-                  collection(db, "cmdclients"),
-                  where("clientUid", "==", user.uid),
-                  ob("createdAt", "desc")))
-                snap2.docs.forEach(d => {
-                  if (!results.find(r => r.id === d.id))
-                    results.push({ id: d.id, ...d.data() })
-                })
-              } catch(e2) { console.warn("cmdclients/clientUid:", e2.message) }
-
-              // Source 3 : cmdclients par email (fallback)
-              if (!results.length && user.email) {
+              // Source 2 : orders par customerEmail
+              if (email) {
                 try {
-                  const snap3 = await gd(q(
-                    collection(db, "cmdclients"),
-                    where("clientEmail", "==", user.email.toLowerCase()),
-                    ob("createdAt", "desc")))
-                  snap3.docs.forEach(d => {
-                    if (!results.find(r => r.id === d.id))
-                      results.push({ id: d.id, ...d.data() })
-                  })
-                } catch(e3) { console.warn("cmdclients/email:", e3.message) }
+                  const s2 = await gd(q(collection(db, "orders"), where("customerEmail", "==", email)))
+                  s2.docs.forEach(dedup)
+                } catch(e) { console.error("orders/email:", e.message) }
               }
 
+              // Source 3 : cmdclients par clientUid
+              try {
+                const s3 = await gd(q(collection(db, "cmdclients"), where("clientUid", "==", uid)))
+                s3.docs.forEach(dedup)
+              } catch(e) { console.error("cmdclients/uid:", e.message) }
+
+              // Source 4 : cmdclients par clientEmail
+              if (email) {
+                try {
+                  const s4 = await gd(q(collection(db, "cmdclients"), where("clientEmail", "==", email)))
+                  s4.docs.forEach(dedup)
+                } catch(e) { console.error("cmdclients/email:", e.message) }
+              }
+
+              // Tri côté client
+              results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
               userOrders.value = results
             } catch(e) { console.warn("orders:", e.message) }
           }

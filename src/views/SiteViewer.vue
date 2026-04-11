@@ -25,8 +25,18 @@ import { useRouter } from "vue-router"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
 import { doc, getDoc, collection, addDoc } from "firebase/firestore"
-import { getAuth } from "firebase/auth"
-const clientAuth = getAuth()
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
+const clientAuth      = getAuth()
+const svCurrentUser   = ref(null)
+const svShowAuth      = ref(false)
+const svAuthMode      = ref("login")   // "login" | "register" | "forgot"
+const svEmail         = ref("")
+const svPassword      = ref("")
+const svConfirm       = ref("")
+const svName          = ref("")
+const svAuthError     = ref("")
+const svAuthSuccess   = ref("")
+const svAuthLoading   = ref(false)
 
 // ── Props ─────────────────────────────────────────────────────
 const props  = defineProps({ uid: { type: String, required: true } })
@@ -250,7 +260,69 @@ const loadPayConfig = async (uid) => {
   } catch (e) { console.warn("Pas de config paiement:", e.message) }
 }
 
-onMounted(loadSite)
+onMounted(() => {
+  loadSite()
+  // Écouter l'état auth pour le store
+  onAuthStateChanged(clientAuth, (user) => { svCurrentUser.value = user })
+})
+
+// ── Fonctions Auth client du store ───────────────────────────
+const svLogin = async () => {
+  svAuthError.value = ""; svAuthSuccess.value = ""
+  if (!svEmail.value || !svPassword.value) { svAuthError.value = "Email et mot de passe requis."; return }
+  svAuthLoading.value = true
+  try {
+    const { signInWithEmailAndPassword } = await import("firebase/auth")
+    await signInWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
+    svShowAuth.value = false
+    svEmail.value = ""; svPassword.value = ""
+  } catch(e) {
+    const m = { "auth/user-not-found":"Email inconnu.","auth/wrong-password":"Mot de passe incorrect.",
+      "auth/invalid-email":"Email invalide.","auth/too-many-requests":"Trop de tentatives.",
+      "auth/invalid-credential":"Email ou mot de passe incorrect." }
+    svAuthError.value = m[e.code] || e.message
+  } finally { svAuthLoading.value = false }
+}
+
+const svRegister = async () => {
+  svAuthError.value = ""; svAuthSuccess.value = ""
+  if (!svName.value.trim())      { svAuthError.value = "Nom requis."; return }
+  if (!svEmail.value.trim())     { svAuthError.value = "Email requis."; return }
+  if (svPassword.value.length<6) { svAuthError.value = "Mot de passe : min. 6 caractères."; return }
+  if (svPassword.value !== svConfirm.value) { svAuthError.value = "Mots de passe différents."; return }
+  svAuthLoading.value = true
+  try {
+    const { createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth")
+    const { doc: fd, setDoc: fset } = await import("firebase/firestore")
+    const cred = await createUserWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
+    await updateProfile(cred.user, { displayName: svName.value.trim() })
+    // Enregistrer dans customers lié au store
+    await fset(fd(db, "customers", cred.user.uid), {
+      uid: cred.user.uid, email: svEmail.value.trim().toLowerCase(),
+      displayName: svName.value.trim(), storeUid: resolvedUid.value,
+      role: "customer", createdAt: new Date().toISOString(),
+    }, { merge: true })
+    svAuthSuccess.value = "Compte créé ! Bienvenue 🎉"
+    setTimeout(() => { svShowAuth.value = false; svEmail.value=""; svPassword.value=""; svConfirm.value=""; svName.value="" }, 1400)
+  } catch(e) {
+    const m = { "auth/email-already-in-use":"Email déjà utilisé.","auth/weak-password":"Mot de passe trop faible." }
+    svAuthError.value = m[e.code] || e.message
+  } finally { svAuthLoading.value = false }
+}
+
+const svForgot = async () => {
+  svAuthError.value = ""; svAuthSuccess.value = ""
+  if (!svEmail.value) { svAuthError.value = "Entrez votre email."; return }
+  svAuthLoading.value = true
+  try {
+    const { sendPasswordResetEmail } = await import("firebase/auth")
+    await sendPasswordResetEmail(clientAuth, svEmail.value.trim())
+    svAuthSuccess.value = "Email envoyé ! Vérifiez votre boîte mail."
+  } catch(e) { svAuthError.value = e.message }
+  finally { svAuthLoading.value = false }
+}
+
+const svSignOut = async () => { await signOut(clientAuth) }
 
 // ── Stripe Checkout (redirect) ───────────────────────────────
 // Le backend retourne { url } → on redirige vers Stripe Checkout
@@ -341,8 +413,11 @@ const payWithStripe = async () => {
       itemCount:     cartCount.value,
       customerName:  customerName.value,
       customerEmail: customerEmail.value,
+      customerAddress: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
       siteSlug:      props.uid,
       ownerUid:      resolvedUid.value,
+      storeUid:      resolvedUid.value,
+      clientUid:     clientAuth.currentUser?.uid || "",
       provider:      "stripe",
       createdAt:     new Date().toISOString(),
     }
@@ -438,8 +513,25 @@ const saveOrder = async (provider, transactionId) => {
   } catch (e) {
     console.error("Erreur sauvegarde commande (racine):", e.message)
   }
+  try {
+    // 3. Collection cmdclients — commandes du CLIENT (pour profil client)
+    await addDoc(collection(db, "cmdclients"), {
+      ...orderData,
+      clientUid:   clientAuth.currentUser?.uid || "",
+      clientEmail: orderData.customerEmail || "",
+      clientName:  orderData.customerName  || "",
+      storeUid:    resolvedUid.value,
+      siteSlug:    props.uid,
+    })
+    console.log("✓ Order saved to cmdclients/")
+  } catch (e) {
+    console.error("Erreur sauvegarde cmdclients:", e.message)
+  }
   // Stocker pour PaymentSuccess.vue
-  localStorage.setItem("pendingStripeOrder", JSON.stringify(orderData))
+  localStorage.setItem("pendingStripeOrder", JSON.stringify({
+    ...orderData,
+    clientUid: clientAuth.currentUser?.uid || "",
+  }))
   cart.value = []
 }
 </script>
@@ -478,11 +570,31 @@ const saveOrder = async (provider, transactionId) => {
 
     <!-- NAV du store -->
     <nav class="sv-nav">
+      <!-- Logo -->
       <div class="sv-brand">
         <img v-if="siteMeta.logo" :src="siteMeta.logo" class="sv-brand-logo" alt="logo"/>
         <span v-else class="sv-brand-icon">◈</span>
         <span class="sv-brand-name">{{ siteMeta.name || site.pages?.[0]?.name || 'Mon Store' }}</span>
       </div>
+
+      <!-- ① CONNEXION/DÉCONNEXION — avant le menu ───────────── -->
+      <div class="sv-nav-auth">
+        <!-- Connecté : avatar + nom + bouton déconnexion -->
+        <div v-if="svCurrentUser" class="sv-user-pill">
+          <div class="sv-user-avatar">
+            <img v-if="svCurrentUser.photoURL" :src="svCurrentUser.photoURL" class="sv-avatar-img" alt=""/>
+            <span v-else>{{ (svCurrentUser.displayName||svCurrentUser.email||'?')[0].toUpperCase() }}</span>
+          </div>
+          <span class="sv-user-name">{{ svCurrentUser.displayName || svCurrentUser.email?.split('@')[0] }}</span>
+          <button class="sv-signout-btn" @click="svSignOut" title="Se déconnecter">⏻</button>
+        </div>
+        <!-- Non connecté : bouton Se connecter -->
+        <button v-else class="sv-login-btn" @click="svShowAuth=true; svAuthMode='login'; svAuthError=''; svAuthSuccess=''">
+          🔑 Se connecter
+        </button>
+      </div>
+
+      <!-- ② MENU PAGES ────────────────────────────────────────── -->
       <div class="sv-page-tabs">
         <button
           v-for="(p, i) in site.pages" :key="p.id"
@@ -490,8 +602,10 @@ const saveOrder = async (provider, transactionId) => {
           @click="currentPageIndex = i"
         >{{ p.name }}</button>
       </div>
-      <button v-if="cartCount > 0" class="sv-cart-btn" @click="showCart = true">
-        🛒 <span class="sv-cart-badge">{{ cartCount }}</span>
+
+      <!-- ③ PANIER ─────────────────────────────────────────────── -->
+      <button class="sv-cart-btn" @click="showCart = true">
+        🛒 <span v-if="cartCount > 0" class="sv-cart-badge">{{ cartCount }}</span>
       </button>
     </nav>
 
@@ -764,6 +878,68 @@ const saveOrder = async (provider, transactionId) => {
     </Transition>
 
   </template>
+  <!-- ── MODAL AUTH STORE ──────────────────────────────────── -->
+  <Transition name="sv-modal">
+    <div v-if="svShowAuth" class="sv-modal-overlay sv-auth-overlay" @click.self="svShowAuth=false">
+      <div class="sv-modal-box sv-auth-box">
+        <button class="sv-modal-close" @click="svShowAuth=false">✕</button>
+
+        <!-- Branding store -->
+        <div class="sv-auth-brand">
+          <div class="sv-auth-logo-wrap">
+            <img v-if="siteMeta.logo" :src="siteMeta.logo" class="sv-auth-logo-img"/>
+            <span v-else class="sv-auth-logo-ph">◈</span>
+          </div>
+          <span class="sv-auth-store">{{ siteMeta.name || 'Notre boutique' }}</span>
+        </div>
+
+        <!-- Onglets -->
+        <div class="sv-auth-tabs">
+          <button :class="['sv-auth-tab',{active:svAuthMode==='login'}]"    @click="svAuthMode='login';svAuthError='';svAuthSuccess=''">Connexion</button>
+          <button :class="['sv-auth-tab',{active:svAuthMode==='register'}]" @click="svAuthMode='register';svAuthError='';svAuthSuccess=''">Inscription</button>
+        </div>
+
+        <!-- Messages -->
+        <p v-if="svAuthError"   class="sv-auth-error">⚠ {{ svAuthError }}</p>
+        <p v-if="svAuthSuccess" class="sv-auth-success">✓ {{ svAuthSuccess }}</p>
+
+        <!-- CONNEXION -->
+        <div v-if="svAuthMode==='login'" class="sv-auth-form">
+          <input v-model="svEmail"    type="email"    placeholder="Email *"         class="sv-auth-input" @keydown.enter="svLogin"/>
+          <input v-model="svPassword" type="password" placeholder="Mot de passe *"  class="sv-auth-input" @keydown.enter="svLogin"/>
+          <button class="sv-auth-forgot-link" @click="svAuthMode='forgot';svAuthError='';svAuthSuccess=''">Mot de passe oublié ?</button>
+          <button class="sv-auth-submit" @click="svLogin" :disabled="svAuthLoading">
+            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
+            <span v-else>🔑 Se connecter</span>
+          </button>
+        </div>
+
+        <!-- INSCRIPTION -->
+        <div v-else-if="svAuthMode==='register'" class="sv-auth-form">
+          <input v-model="svName"     type="text"     placeholder="Nom complet *"          class="sv-auth-input"/>
+          <input v-model="svEmail"    type="email"    placeholder="Email *"                class="sv-auth-input"/>
+          <input v-model="svPassword" type="password" placeholder="Mot de passe * (min.6)" class="sv-auth-input"/>
+          <input v-model="svConfirm"  type="password" placeholder="Confirmer *"            class="sv-auth-input" @keydown.enter="svRegister"/>
+          <button class="sv-auth-submit" @click="svRegister" :disabled="svAuthLoading">
+            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
+            <span v-else>✨ Créer mon compte</span>
+          </button>
+        </div>
+
+        <!-- MOT DE PASSE OUBLIÉ -->
+        <div v-else-if="svAuthMode==='forgot'" class="sv-auth-form">
+          <p class="sv-auth-forgot-desc">Entrez votre email pour recevoir un lien.</p>
+          <input v-model="svEmail" type="email" placeholder="Email" class="sv-auth-input" @keydown.enter="svForgot"/>
+          <button class="sv-auth-submit" @click="svForgot" :disabled="svAuthLoading">
+            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
+            <span v-else>📧 Envoyer le lien</span>
+          </button>
+          <button class="sv-auth-back-link" @click="svAuthMode='login';svAuthError='';svAuthSuccess=''">← Retour</button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
   <!-- ASSISTANT VOCAL CLIENT (Groq IA) -->
   <VoiceAssistantClient
     v-if="resolvedUid"
@@ -790,7 +966,43 @@ const saveOrder = async (provider, transactionId) => {
 .sv-error p{font-size:14px}.sv-error code{background:#f3f4f6;padding:2px 8px;border-radius:4px}
 
 /* NAV */
-.sv-nav{background:#fff;border-bottom:1px solid #e5e7eb;padding:12px 32px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06)}
+.sv-nav{background:#fff;border-bottom:1px solid #e5e7eb;padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06);height:56px;flex-wrap:nowrap}
+/* Nav auth (connexion/déconnexion) */
+.sv-nav-auth{display:flex;align-items:center;flex-shrink:0}
+.sv-user-pill{display:flex;align-items:center;gap:6px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:100px;padding:4px 10px 4px 4px}
+.sv-user-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#6c63ff,#a78bfa);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;overflow:hidden;flex-shrink:0}
+.sv-avatar-img{width:100%;height:100%;object-fit:cover}
+.sv-user-name{font-size:12px;font-weight:600;color:#374151;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-signout-btn{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;padding:2px 4px;border-radius:4px;line-height:1;transition:all .15s}
+.sv-signout-btn:hover{color:#ef4444;background:rgba(239,68,68,.1)}
+.sv-login-btn{display:flex;align-items:center;gap:5px;background:#6c63ff;color:white;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
+.sv-login-btn:hover{background:#5b52ee}
+/* Auth modal */
+.sv-auth-overlay .sv-modal-box{padding:0}
+.sv-auth-box{max-width:380px}
+.sv-auth-brand{display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 20px 0;text-align:center}
+.sv-auth-logo-wrap{width:52px;height:52px;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f3f4f6}
+.sv-auth-logo-img{width:100%;height:100%;object-fit:contain}
+.sv-auth-logo-ph{font-size:24px;color:#6c63ff}
+.sv-auth-store{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:#1a1a2e}
+.sv-auth-tabs{display:flex;background:#f3f4f6;border-radius:10px;padding:3px;margin:14px 18px 0;gap:3px}
+.sv-auth-tab{flex:1;padding:8px;background:none;border:none;border-radius:8px;font-size:13px;font-weight:500;color:#6b7280;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
+.sv-auth-tab.active{background:white;color:#6c63ff;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.sv-auth-error{margin:10px 18px 0;background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:9px 12px;border-radius:8px;font-size:13px}
+.sv-auth-success{margin:10px 18px 0;background:#ecfdf5;border:1px solid #a7f3d0;color:#059669;padding:9px 12px;border-radius:8px;font-size:13px}
+.sv-auth-form{display:flex;flex-direction:column;gap:10px;padding:14px 18px 20px}
+.sv-auth-input{padding:11px 13px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;color:#1a1a2e;transition:border-color .15s;width:100%}
+.sv-auth-input:focus{border-color:#6c63ff;box-shadow:0 0 0 3px rgba(108,99,255,.08)}
+.sv-auth-forgot-link{background:none;border:none;color:#6c63ff;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:right;padding:0;align-self:flex-end}
+.sv-auth-submit{padding:13px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s}
+.sv-auth-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(108,99,255,.35)}
+.sv-auth-submit:disabled{opacity:.6;cursor:not-allowed}
+.sv-auth-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:sv-auth-spin .6s linear infinite;flex-shrink:0}
+@keyframes sv-auth-spin{to{transform:rotate(360deg)}}
+.sv-auth-forgot-desc{font-size:13px;color:#6b7280;text-align:center;line-height:1.6}
+.sv-auth-back-link{background:none;border:none;color:#9ca3af;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:center;padding:4px;transition:color .15s}
+.sv-auth-back-link:hover{color:#374151}
+@media(max-width:480px){.sv-user-name{display:none}.sv-login-btn{padding:7px 10px;font-size:11px}}
 .sv-brand{display:flex;align-items:center;gap:8px;margin-right:auto}
 .sv-brand-logo{width:32px;height:32px;border-radius:6px;object-fit:contain}
 .sv-brand-icon{font-size:20px;color:#6c63ff}

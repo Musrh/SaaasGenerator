@@ -37,6 +37,11 @@ const svName          = ref("")
 const svAuthError     = ref("")
 const svAuthSuccess   = ref("")
 const svAuthLoading   = ref(false)
+// ── Profil client ─────────────────────────────────────────────
+const svShowProfile   = ref(false)
+const svClientOrders  = ref([])
+const svLoadingOrders = ref(false)
+const svOrdersLoaded  = ref(false)
 
 // ── Props ─────────────────────────────────────────────────────
 const props  = defineProps({ uid: { type: String, required: true } })
@@ -322,7 +327,70 @@ const svForgot = async () => {
   finally { svAuthLoading.value = false }
 }
 
-const svSignOut = async () => { await signOut(clientAuth) }
+const svSignOut = async () => {
+  await signOut(clientAuth)
+  svShowProfile.value  = false
+  svClientOrders.value = []
+  svOrdersLoaded.value = false
+}
+
+// Charger commandes du client depuis orders + cmdclients
+const svLoadOrders = async (user) => {
+  if (svOrdersLoaded.value || svLoadingOrders.value) return
+  svLoadingOrders.value = true
+  const results = []
+  try {
+    const { query: q, where, orderBy: ob, getDocs: gd } = await import("firebase/firestore")
+
+    // Source 1 : orders par clientId == uid
+    try {
+      const s1 = await gd(q(collection(db, "orders"),
+        where("clientId","==", user.uid), ob("createdAt","desc")))
+      s1.docs.forEach(d => results.push({ id: d.id, ...d.data() }))
+    } catch(e) { console.warn("sv orders:", e.message) }
+
+    // Source 2 : cmdclients par clientUid
+    try {
+      const s2 = await gd(q(collection(db, "cmdclients"),
+        where("clientUid","==", user.uid), ob("createdAt","desc")))
+      s2.docs.forEach(d => {
+        if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
+      })
+    } catch(e) { console.warn("sv cmdclients uid:", e.message) }
+
+    // Source 3 : cmdclients par email (fallback)
+    if (!results.length && user.email) {
+      try {
+        const s3 = await gd(q(collection(db, "cmdclients"),
+          where("clientEmail","==", user.email.toLowerCase()), ob("createdAt","desc")))
+        s3.docs.forEach(d => {
+          if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
+        })
+      } catch(e) { console.warn("sv cmdclients email:", e.message) }
+    }
+
+    // Source 4 : sous-collection users/{storeUid}/orders par email
+    if (!results.length && resolvedUid.value && user.email) {
+      try {
+        const s4 = await gd(q(collection(db, "users", resolvedUid.value, "orders"),
+          where("customerEmail","==", user.email.toLowerCase()), ob("createdAt","desc")))
+        s4.docs.forEach(d => {
+          if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
+        })
+      } catch(e) { console.warn("sv store orders:", e.message) }
+    }
+
+    svClientOrders.value = results.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""))
+    svOrdersLoaded.value = true
+  } catch(e) { console.error("svLoadOrders:", e.message) }
+  finally { svLoadingOrders.value = false }
+}
+
+// Ouvrir le profil + charger les commandes
+const svOpenProfile = async () => {
+  svShowProfile.value = true
+  if (svCurrentUser.value) await svLoadOrders(svCurrentUser.value)
+}
 
 // ── Stripe Checkout (redirect) ───────────────────────────────
 // Le backend retourne { url } → on redirige vers Stripe Checkout
@@ -580,13 +648,13 @@ const saveOrder = async (provider, transactionId) => {
       <!-- ① CONNEXION/DÉCONNEXION — avant le menu ───────────── -->
       <div class="sv-nav-auth">
         <!-- Connecté : avatar + nom + bouton déconnexion -->
-        <div v-if="svCurrentUser" class="sv-user-pill">
+        <div v-if="svCurrentUser" class="sv-user-pill" @click="svOpenProfile" title="Mon profil">
           <div class="sv-user-avatar">
             <img v-if="svCurrentUser.photoURL" :src="svCurrentUser.photoURL" class="sv-avatar-img" alt=""/>
             <span v-else>{{ (svCurrentUser.displayName||svCurrentUser.email||'?')[0].toUpperCase() }}</span>
           </div>
           <span class="sv-user-name">{{ svCurrentUser.displayName || svCurrentUser.email?.split('@')[0] }}</span>
-          <button class="sv-signout-btn" @click="svSignOut" title="Se déconnecter">⏻</button>
+          <span class="sv-profile-arrow">▾</span>
         </div>
         <!-- Non connecté : bouton Se connecter -->
         <button v-else class="sv-login-btn" @click="svShowAuth=true; svAuthMode='login'; svAuthError=''; svAuthSuccess=''">
@@ -878,6 +946,109 @@ const saveOrder = async (provider, transactionId) => {
     </Transition>
 
   </template>
+  <!-- ── MODAL PROFIL CLIENT ──────────────────────────────── -->
+  <Transition name="sv-modal">
+    <div v-if="svShowProfile && svCurrentUser" class="sv-modal-overlay sv-profile-overlay"
+         @click.self="svShowProfile=false">
+      <div class="sv-modal-box sv-profile-box">
+        <button class="sv-modal-close" @click="svShowProfile=false">✕</button>
+
+        <!-- Avatar + infos ─────────────────────────────────── -->
+        <div class="svp-header">
+          <div class="svp-avatar">
+            <img v-if="svCurrentUser.photoURL" :src="svCurrentUser.photoURL" class="svp-avatar-img" alt=""/>
+            <span v-else class="svp-avatar-initials">
+              {{ (svCurrentUser.displayName||svCurrentUser.email||'?')[0].toUpperCase() }}
+            </span>
+          </div>
+          <div class="svp-info">
+            <div class="svp-name">{{ svCurrentUser.displayName || "Client" }}</div>
+            <div class="svp-email">{{ svCurrentUser.email }}</div>
+            <span class="svp-badge">🛍 Client du store</span>
+          </div>
+        </div>
+
+        <!-- Stats rapides ──────────────────────────────────── -->
+        <div class="svp-stats">
+          <div class="svp-stat">
+            <span class="svp-stat-val">{{ svClientOrders.length }}</span>
+            <span class="svp-stat-label">Commandes</span>
+          </div>
+          <div class="svp-stat">
+            <span class="svp-stat-val">
+              {{ svClientOrders.filter(o=>o.status==='paid'||o.status==='delivered').length }}
+            </span>
+            <span class="svp-stat-label">Payées</span>
+          </div>
+          <div class="svp-stat">
+            <span class="svp-stat-val">
+              {{ svClientOrders.reduce((s,o)=>s+parseFloat(o.total||0),0).toFixed(2) }}{{ svClientOrders[0]?.currency||'€' }}
+            </span>
+            <span class="svp-stat-label">Total dépensé</span>
+          </div>
+        </div>
+
+        <!-- Commandes ──────────────────────────────────────── -->
+        <div class="svp-orders-section">
+          <div class="svp-orders-title">
+            📦 Mes commandes
+            <span v-if="svLoadingOrders" class="svp-loading">chargement...</span>
+            <span v-else class="svp-orders-count">{{ svClientOrders.length }}</span>
+          </div>
+
+          <!-- Chargement -->
+          <div v-if="svLoadingOrders" class="svp-orders-loader">
+            <div class="svp-spinner"></div>
+          </div>
+
+          <!-- Vide -->
+          <div v-else-if="!svClientOrders.length" class="svp-orders-empty">
+            <span>🛍️</span>
+            <p>Aucune commande pour le moment.</p>
+            <button class="svp-shop-btn" @click="svShowProfile=false">Découvrir les produits →</button>
+          </div>
+
+          <!-- Liste des commandes -->
+          <div v-else class="svp-orders-list">
+            <div v-for="order in svClientOrders" :key="order.id" class="svp-order-card">
+              <!-- Ligne principale -->
+              <div class="svp-order-top">
+                <div class="svp-order-left">
+                  <span class="svp-order-id">#{{ (order.id||'').slice(0,8).toUpperCase() }}</span>
+                  <span class="svp-order-date">{{ (order.createdAt||'').slice(0,10) }}</span>
+                </div>
+                <div class="svp-order-right">
+                  <span class="svp-order-total">
+                    {{ parseFloat(order.total||0).toFixed(2) }}{{ order.currency||'€' }}
+                  </span>
+                  <span class="svp-order-status" :class="'svp-s-'+(order.status||'pending')">
+                    {{ {paid:'✓ Payée',pending:'⏳ En attente',shipped:'🚚 Expédiée',
+                        delivered:'✅ Livrée',cancelled:'✗ Annulée'}[order.status] || order.status }}
+                  </span>
+                </div>
+              </div>
+              <!-- Articles -->
+              <div v-if="order.items?.length" class="svp-order-items">
+                <span v-for="item in order.items" :key="item.id" class="svp-order-item-tag">
+                  {{ item.name }} ×{{ item.qty }}
+                </span>
+              </div>
+              <!-- Adresse livraison -->
+              <div v-if="order.customerAddress || order.adresseLivraison" class="svp-order-addr">
+                📍 {{ order.customerAddress || order.adresseLivraison }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action déconnexion ─────────────────────────────── -->
+        <button class="svp-signout-btn" @click="svSignOut">
+          ⏻ Se déconnecter
+        </button>
+      </div>
+    </div>
+  </Transition>
+
   <!-- ── MODAL AUTH STORE ──────────────────────────────────── -->
   <Transition name="sv-modal">
     <div v-if="svShowAuth" class="sv-modal-overlay sv-auth-overlay" @click.self="svShowAuth=false">
@@ -1209,5 +1380,68 @@ const saveOrder = async (provider, transactionId) => {
 .sv-secure-note{text-align:center;font-size:11px;color:#9ca3af;padding-bottom:12px;flex-shrink:0}
 .sv-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:sv-spin .6s linear infinite;flex-shrink:0}
 @keyframes sv-spin{to{transform:rotate(360deg)}}
+
+
+/* ── Profil client — pill cliquable ────────────────────── */
+.sv-user-pill{cursor:pointer;transition:all .15s}
+.sv-user-pill:hover{background:#ede9fe;border-color:#6c63ff}
+.sv-profile-arrow{font-size:11px;color:#9ca3af;margin-left:2px}
+
+/* ── Modal profil ───────────────────────────────────────── */
+.sv-profile-overlay .sv-modal-box{padding:0;max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
+.sv-profile-box{max-width:440px}
+
+/* Header avatar */
+.svp-header{display:flex;align-items:center;gap:14px;padding:20px 20px 16px;background:linear-gradient(135deg,#6c63ff,#a78bfa);flex-shrink:0}
+.svp-avatar{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;border:2px solid rgba(255,255,255,.4)}
+.svp-avatar-img{width:100%;height:100%;object-fit:cover}
+.svp-avatar-initials{color:white;font-size:22px;font-weight:700}
+.svp-info{flex:1;min-width:0}
+.svp-name{font-size:16px;font-weight:700;color:white;margin-bottom:2px}
+.svp-email{font-size:12px;color:rgba(255,255,255,.8);word-break:break-all}
+.svp-badge{display:inline-block;background:rgba(255,255,255,.2);color:white;font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;margin-top:5px;border:1px solid rgba(255,255,255,.3)}
+
+/* Stats */
+.svp-stats{display:grid;grid-template-columns:repeat(3,1fr);padding:12px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;gap:4px}
+.svp-stat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:white;border-radius:8px;border:1px solid #e5e7eb}
+.svp-stat-val{font-size:15px;font-weight:800;color:#6c63ff}
+.svp-stat-label{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.3px;text-align:center}
+
+/* Section commandes */
+.svp-orders-section{display:flex;flex-direction:column;flex:1;overflow:hidden;padding:0}
+.svp-orders-title{font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.4px;padding:12px 16px 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f3f4f6;flex-shrink:0}
+.svp-loading{font-size:11px;color:#9ca3af;font-weight:400;margin-left:auto}
+.svp-orders-count{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;margin-left:auto}
+.svp-orders-loader{display:flex;justify-content:center;padding:24px}
+.svp-spinner{width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#6c63ff;border-radius:50%;animation:svp-spin .6s linear infinite}
+@keyframes svp-spin{to{transform:rotate(360deg)}}
+.svp-orders-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 16px;text-align:center;color:#6b7280;font-size:14px}
+.svp-orders-empty span{font-size:36px}
+.svp-shop-btn{background:#6c63ff;color:white;border:none;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;margin-top:4px}
+.svp-shop-btn:hover{background:#5b52ee}
+.svp-orders-list{overflow-y:auto;flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:8px;max-height:320px}
+
+/* Carte commande */
+.svp-order-card{background:white;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;transition:border-color .15s}
+.svp-order-card:hover{border-color:#6c63ff}
+.svp-order-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.svp-order-left{display:flex;flex-direction:column;gap:2px}
+.svp-order-id{font-size:12px;font-weight:700;color:#374151;font-family:monospace}
+.svp-order-date{font-size:10px;color:#9ca3af}
+.svp-order-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.svp-order-total{font-size:14px;font-weight:800;color:#6c63ff}
+.svp-order-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px}
+.svp-s-paid{background:#ecfdf5;color:#059669}
+.svp-s-pending{background:#fefce8;color:#d97706}
+.svp-s-shipped{background:#eff6ff;color:#2563eb}
+.svp-s-delivered{background:#f0fdf4;color:#15803d}
+.svp-s-cancelled{background:#fef2f2;color:#dc2626}
+.svp-order-items{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+.svp-order-item-tag{background:#f3f4f6;border:1px solid #e5e7eb;color:#6b7280;font-size:10px;padding:2px 7px;border-radius:5px}
+.svp-order-addr{font-size:10px;color:#9ca3af;margin-top:2px}
+
+/* Déconnexion */
+.svp-signout-btn{width:calc(100% - 32px);margin:10px 16px 14px;padding:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;text-align:center;flex-shrink:0}
+.svp-signout-btn:hover{background:rgba(239,68,68,.15)}
 
 </style>

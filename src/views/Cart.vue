@@ -121,7 +121,7 @@ async function pay() {
   const cancelUrl  = `${origin}/`
 
   try {
-    const res = await fetch(`${BACKEND}/create-stripe-session`, {
+    const res = await fetch(`${BACKEND}/create-store-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

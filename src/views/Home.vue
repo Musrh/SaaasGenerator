@@ -2712,6 +2712,21 @@ const setPageStyle = (type, value) => {
   </Transition>
 
 </div>
+
+<div>
+
+    <!-- FOOTER -->
+    <footer class="mt-16 py-6 text-center border-t">
+      <router-link 
+        to="/privacy-policy" 
+        class="text-sm text-gray-500 hover:underline"
+      >
+        Privacy Policy
+      </router-link>
+    </footer>
+
+  </div>
+  
 </template>
 
 <style>

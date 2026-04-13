@@ -14,6 +14,9 @@ import Cancel from "./views/Paymentcancel.vue"
 import Orders from "./views/Orders.vue"
 
 import Cart from "./views/Cart.vue"
+
+import PrivacyPolicy from './views/PrivacyPolicy.vue'
+
 const routes = [
 
   // ── Page d'accueil de SaaasGenerator ──────────────────────
@@ -71,8 +74,13 @@ const routes = [
     path: "/orders",
     name: "Orders",
     component: Orders
+  },
+  
+{
+    path: '/privacy-policy',
+    name: 'PrivacyPolicy',
+    component: PrivacyPolicy
   }
-
   
 
 ]

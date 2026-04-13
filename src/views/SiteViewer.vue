@@ -2,22 +2,468 @@
   SaaasGenerator/src/views/SiteViewer.vue
   
   Affiche le site PUBLIÉ d'un propriétaire de store.
-  Mode : aperçu final uniquement — pas de barre d'édition.
-  
   Route  : /site/:uid
-  :uid   : UID Firestore direct OU slug convivial
   
-  Résolution :
-    1. users/{uid}/siteData          → UID direct
-    2. slugs/{uid} → uid réel        → Slug
-    3. Introuvable                   → Page 404 intégrée
-  
-  Paiement client :
-    - Lit users/{resolvedUid}/config/payment  (storePaymentConfig)
-    - Stripe Elements réel  → backend du STORE
-    - PayPal SDK réel       → backend du STORE
-    - Commande sauvegardée  → users/{resolvedUid}/orders/{id}
+  🔧 FIX : Footer toujours visible grâce à min-h-screen + flex
 ============================================================ -->
+
+<template>
+  <!-- ✅ WRAPPER FLEX pour footer collé en bas -->
+  <div class="flex flex-col min-h-screen bg-white text-gray-800">
+
+    <!-- ══════════════════════════════════════════════════════════
+         LOADING
+    ══════════════════════════════════════════════════════════ -->
+    <div v-if="loading" class="flex-grow flex items-center justify-center">
+      <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+        <p class="text-gray-500">Chargement du site…</p>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         ERREUR 404
+    ══════════════════════════════════════════════════════════ -->
+    <div v-else-if="error" class="flex-grow flex items-center justify-center">
+      <div class="text-center max-w-md mx-auto p-8">
+        <div class="text-6xl mb-4">😕</div>
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">Site introuvable</h1>
+        <p class="text-gray-500 mb-4">{{ error }}</p>
+        <p v-if="debugInfo" class="text-xs text-gray-400 bg-gray-50 rounded p-3 mb-4">{{ debugInfo }}</p>
+        <button @click="router.push('/')" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+          Retour à l'accueil
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         SITE CONTENT
+    ══════════════════════════════════════════════════════════ -->
+    <template v-else-if="site">
+
+      <!-- ── NAVBAR ──────────────────────────────────────────── -->
+      <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur shadow-sm border-b border-gray-100">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <!-- Logo + Nom -->
+          <div class="flex items-center gap-3">
+            <img v-if="siteMeta.logo" :src="siteMeta.logo" alt="Logo" class="h-8 w-8 rounded-full object-cover" />
+            <span class="font-bold text-lg text-gray-800">{{ siteMeta.name || 'Mon Store' }}</span>
+          </div>
+
+          <!-- Navigation pages -->
+          <div class="hidden md:flex items-center gap-4">
+            <button v-for="(page, i) in site.pages" :key="i"
+              @click="currentPageIndex = i"
+              :class="[
+                'px-3 py-1.5 rounded-lg text-sm font-medium transition',
+                currentPageIndex === i
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100'
+              ]">
+              {{ page.name || 'Page ' + (i+1) }}
+            </button>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-3">
+            <!-- Panier -->
+            <button @click="showCart = true" class="relative p-2 rounded-full hover:bg-gray-100 transition">
+              🛒
+              <span v-if="cartCount" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {{ cartCount }}
+              </span>
+            </button>
+
+            <!-- Auth / Profil -->
+            <template v-if="svCurrentUser">
+              <button @click="svOpenProfile" class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition text-sm">
+                <span class="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                  {{ (svCurrentUser.displayName || svCurrentUser.email || '?')[0].toUpperCase() }}
+                </span>
+                <span class="hidden sm:inline text-gray-700">{{ svCurrentUser.displayName || 'Mon compte' }}</span>
+              </button>
+            </template>
+            <template v-else>
+              <button @click="svShowAuth = true; svAuthMode = 'login'"
+                class="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition">
+                Connexion
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Nav mobile -->
+        <div class="md:hidden flex gap-2 px-4 pb-2 overflow-x-auto">
+          <button v-for="(page, i) in site.pages" :key="'m'+i"
+            @click="currentPageIndex = i"
+            :class="[
+              'px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition',
+              currentPageIndex === i ? 'bg-blue-100 text-blue-700' : 'text-gray-500 bg-gray-50'
+            ]">
+            {{ page.name || 'Page ' + (i+1) }}
+          </button>
+        </div>
+      </nav>
+
+      <!-- ── MAIN CONTENT (flex-grow pour pousser le footer) ── -->
+      <main class="flex-grow">
+        <div v-if="currentPage" class="max-w-7xl mx-auto px-4 py-8">
+
+          <!-- HERO -->
+          <section v-if="currentPage.hero" class="mb-12 text-center py-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+              {{ currentPage.hero.title || siteMeta.name || 'Bienvenue' }}
+            </h1>
+            <p v-if="currentPage.hero.subtitle" class="text-lg text-gray-600 max-w-2xl mx-auto mb-6">
+              {{ currentPage.hero.subtitle }}
+            </p>
+            <img v-if="currentPage.hero.image" :src="currentPage.hero.image" alt="Hero"
+              class="max-h-80 mx-auto rounded-xl shadow-lg mt-6" />
+          </section>
+
+          <!-- BLOCS DYNAMIQUES -->
+          <template v-for="(block, bi) in currentPage.blocks" :key="bi">
+
+            <!-- Texte -->
+            <section v-if="block.type === 'text'" class="mb-10 max-w-3xl mx-auto">
+              <h2 v-if="block.title" class="text-2xl font-bold mb-3">{{ block.title }}</h2>
+              <div class="prose prose-lg text-gray-600" v-html="block.content || block.text"></div>
+            </section>
+
+            <!-- Image -->
+            <section v-if="block.type === 'image'" class="mb-10 text-center">
+              <img :src="block.url || block.src" :alt="block.alt || 'Image'" class="max-w-full mx-auto rounded-xl shadow" />
+              <p v-if="block.caption" class="text-sm text-gray-500 mt-2">{{ block.caption }}</p>
+            </section>
+
+            <!-- Vidéo -->
+            <section v-if="block.type === 'video'" class="mb-10">
+              <div class="max-w-3xl mx-auto aspect-video rounded-xl overflow-hidden shadow">
+                <iframe :src="getEmbedUrl(block.url)" class="w-full h-full" frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen></iframe>
+              </div>
+            </section>
+
+            <!-- Produits -->
+            <section v-if="block.type === 'products'" class="mb-12">
+              <h2 v-if="block.title" class="text-2xl font-bold mb-6 text-center">{{ block.title }}</h2>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div v-for="(product, pi) in block.items" :key="pi"
+                  class="bg-white rounded-xl shadow-md hover:shadow-lg transition overflow-hidden border border-gray-100">
+                  <img v-if="product.image" :src="product.image" :alt="product.name"
+                    class="w-full h-48 object-cover" />
+                  <div class="p-4">
+                    <h3 class="font-bold text-gray-800">{{ product.name }}</h3>
+                    <p v-if="product.description" class="text-sm text-gray-500 mt-1 line-clamp-2">{{ product.description }}</p>
+                    <div class="flex items-center justify-between mt-3">
+                      <span class="text-lg font-bold text-blue-600">{{ product.price }} {{ product.currency || '€' }}</span>
+                      <button @click="addToCart(product)"
+                        class="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition">
+                        Ajouter 🛒
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Contact -->
+            <section v-if="block.type === 'contact'" class="mb-12 max-w-lg mx-auto">
+              <h2 class="text-2xl font-bold mb-6 text-center">{{ block.title || 'Contact' }}</h2>
+              <form @submit.prevent="sendContact" class="space-y-4">
+                <input v-model="contactName" placeholder="Votre nom" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-300 outline-none" />
+                <input v-model="contactEmail" type="email" placeholder="Votre email" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-300 outline-none" />
+                <textarea v-model="contactMessage" placeholder="Votre message" rows="4" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-300 outline-none resize-none"></textarea>
+                <p v-if="contactError" class="text-red-500 text-sm">{{ contactError }}</p>
+                <p v-if="contactSent" class="text-green-600 text-sm">✅ Message envoyé avec succès !</p>
+                <button type="submit" :disabled="contactSending"
+                  class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium">
+                  {{ contactSending ? 'Envoi…' : 'Envoyer' }}
+                </button>
+              </form>
+            </section>
+
+          </template>
+        </div>
+      </main>
+
+      <!-- ══════════════════════════════════════════════════════
+           ✅ FOOTER — TOUJOURS VISIBLE
+      ══════════════════════════════════════════════════════ -->
+      <footer class="bg-gray-900 text-gray-300 mt-auto">
+        <div class="max-w-7xl mx-auto px-6 py-12">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+            <!-- Colonne 1 : À propos -->
+            <div>
+              <div class="flex items-center gap-3 mb-4">
+                <img v-if="siteMeta.logo" :src="siteMeta.logo" alt="Logo" class="h-8 w-8 rounded-full object-cover" />
+                <span class="text-white font-bold text-lg">{{ siteMeta.name || 'Mon Store' }}</span>
+              </div>
+              <p class="text-sm text-gray-400 leading-relaxed">
+                Votre boutique en ligne de confiance. Qualité, rapidité et satisfaction garantie.
+              </p>
+            </div>
+
+            <!-- Colonne 2 : Navigation -->
+            <div>
+              <h4 class="text-white font-semibold mb-4">Navigation</h4>
+              <ul class="space-y-2">
+                <li v-for="(page, i) in site.pages" :key="'f'+i">
+                  <button @click="currentPageIndex = i; window.scrollTo({top:0, behavior:'smooth'})"
+                    class="text-sm text-gray-400 hover:text-white transition">
+                    {{ page.name || 'Page ' + (i+1) }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Colonne 3 : Contact -->
+            <div>
+              <h4 class="text-white font-semibold mb-4">Contact</h4>
+              <p class="text-sm text-gray-400">📧 contact@{{ (siteMeta.name || 'store').toLowerCase().replace(/\s/g, '') }}.com</p>
+              <div class="flex gap-3 mt-4">
+                <a href="#" class="w-8 h-8 bg-gray-700 hover:bg-blue-600 rounded-full flex items-center justify-center transition text-sm">f</a>
+                <a href="#" class="w-8 h-8 bg-gray-700 hover:bg-sky-500 rounded-full flex items-center justify-center transition text-sm">𝕏</a>
+                <a href="#" class="w-8 h-8 bg-gray-700 hover:bg-pink-600 rounded-full flex items-center justify-center transition text-sm">ig</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Barre bas -->
+          <div class="border-t border-gray-700 mt-8 pt-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <p class="text-xs text-gray-500">
+              © {{ new Date().getFullYear() }} {{ siteMeta.name || 'Mon Store' }} — Tous droits réservés
+            </p>
+            <p class="text-xs text-gray-600">
+              Propulsé par <span class="text-blue-400 font-medium">SaaasGenerator</span>
+            </p>
+          </div>
+        </div>
+      </footer>
+
+    </template>
+
+    <!-- ══════════════════════════════════════════════════════════
+         MODAL AUTH CLIENT
+    ══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="svShowAuth" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="svShowAuth = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 relative">
+          <button @click="svShowAuth = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl">✕</button>
+
+          <h2 class="text-xl font-bold text-center mb-6">
+            {{ svAuthMode === 'login' ? 'Connexion' : svAuthMode === 'register' ? 'Créer un compte' : 'Mot de passe oublié' }}
+          </h2>
+
+          <!-- Login -->
+          <form v-if="svAuthMode === 'login'" @submit.prevent="svLogin" class="space-y-4">
+            <input v-model="svEmail" type="email" placeholder="Email" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <input v-model="svPassword" type="password" placeholder="Mot de passe" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <p v-if="svAuthError" class="text-red-500 text-sm">{{ svAuthError }}</p>
+            <p v-if="svAuthSuccess" class="text-green-600 text-sm">{{ svAuthSuccess }}</p>
+            <button type="submit" :disabled="svAuthLoading" class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium">
+              {{ svAuthLoading ? 'Connexion…' : 'Se connecter' }}
+            </button>
+            <div class="text-center text-sm space-y-1">
+              <button type="button" @click="svAuthMode = 'forgot'" class="text-blue-600 hover:underline">Mot de passe oublié ?</button>
+              <p class="text-gray-500">Pas de compte ? <button type="button" @click="svAuthMode = 'register'" class="text-blue-600 hover:underline">Créer un compte</button></p>
+            </div>
+          </form>
+
+          <!-- Register -->
+          <form v-if="svAuthMode === 'register'" @submit.prevent="svRegister" class="space-y-4">
+            <input v-model="svName" placeholder="Nom complet" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <input v-model="svEmail" type="email" placeholder="Email" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <input v-model="svPassword" type="password" placeholder="Mot de passe (min. 6 car.)" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <input v-model="svConfirm" type="password" placeholder="Confirmer le mot de passe" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <p v-if="svAuthError" class="text-red-500 text-sm">{{ svAuthError }}</p>
+            <p v-if="svAuthSuccess" class="text-green-600 text-sm">{{ svAuthSuccess }}</p>
+            <button type="submit" :disabled="svAuthLoading" class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium">
+              {{ svAuthLoading ? 'Création…' : 'Créer mon compte' }}
+            </button>
+            <p class="text-center text-sm text-gray-500">Déjà un compte ? <button type="button" @click="svAuthMode = 'login'" class="text-blue-600 hover:underline">Se connecter</button></p>
+          </form>
+
+          <!-- Forgot -->
+          <form v-if="svAuthMode === 'forgot'" @submit.prevent="svForgot" class="space-y-4">
+            <input v-model="svEmail" type="email" placeholder="Votre email" class="w-full px-4 py-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+            <p v-if="svAuthError" class="text-red-500 text-sm">{{ svAuthError }}</p>
+            <p v-if="svAuthSuccess" class="text-green-600 text-sm">{{ svAuthSuccess }}</p>
+            <button type="submit" :disabled="svAuthLoading" class="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition font-medium">
+              {{ svAuthLoading ? 'Envoi…' : 'Réinitialiser' }}
+            </button>
+            <p class="text-center text-sm text-gray-500"><button type="button" @click="svAuthMode = 'login'" class="text-blue-600 hover:underline">← Retour à la connexion</button></p>
+          </form>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ══════════════════════════════════════════════════════════
+         MODAL PANIER
+    ══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="showCart" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="showCart = false">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-lg mx-0 sm:mx-4 p-6 max-h-[80vh] overflow-y-auto relative">
+          <button @click="showCart = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl">✕</button>
+          <h2 class="text-xl font-bold mb-4">🛒 Mon panier</h2>
+
+          <div v-if="!cart.length" class="text-center py-8 text-gray-400">
+            <p class="text-4xl mb-2">🛒</p>
+            <p>Votre panier est vide</p>
+          </div>
+
+          <div v-else>
+            <!-- Étape panier -->
+            <template v-if="svCartStep === 'cart'">
+              <div v-for="item in cart" :key="item.id" class="flex items-center gap-4 py-3 border-b last:border-0">
+                <img v-if="item.image" :src="item.image" class="w-14 h-14 rounded-lg object-cover" />
+                <div class="flex-grow">
+                  <p class="font-medium text-sm">{{ item.name }}</p>
+                  <p class="text-sm text-gray-500">{{ item.price }} {{ item.currency || '€' }}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button @click="updateQty(item.id, -1)" class="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-sm">−</button>
+                  <span class="text-sm font-medium w-6 text-center">{{ item.qty }}</span>
+                  <button @click="updateQty(item.id, 1)" class="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-sm">+</button>
+                </div>
+                <button @click="removeFromCart(item.id)" class="text-red-400 hover:text-red-600 text-lg">✕</button>
+              </div>
+
+              <div class="mt-4 pt-4 border-t flex items-center justify-between">
+                <span class="font-bold text-lg">Total : {{ cartTotal }} {{ cartCurrency }}</span>
+                <button @click="svCartStep = 'checkout'"
+                  class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">
+                  Commander →
+                </button>
+              </div>
+            </template>
+
+            <!-- Étape checkout -->
+            <template v-if="svCartStep === 'checkout'">
+              <button @click="svCartStep = 'cart'" class="text-sm text-blue-600 hover:underline mb-4">← Retour au panier</button>
+
+              <div class="space-y-3 mb-4">
+                <input v-model="customerName" placeholder="Nom complet *" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+                <input v-model="customerEmail" type="email" placeholder="Email *" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+                <input v-model="svAddress" placeholder="Adresse de livraison" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+                <div class="grid grid-cols-2 gap-3">
+                  <input v-model="svZip" placeholder="Code postal" class="px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+                  <input v-model="svCity" placeholder="Ville" class="px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+                </div>
+                <input v-model="svCountry" placeholder="Pays" class="w-full px-4 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-300" />
+              </div>
+
+              <!-- Choix paiement -->
+              <div class="space-y-3">
+                <h3 class="font-semibold text-sm text-gray-700">Mode de paiement</h3>
+
+                <button v-if="storePayConfig.stripe"
+                  @click="payWithStripe" :disabled="payProcessing"
+                  class="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition font-medium flex items-center justify-center gap-2">
+                  💳 {{ payProcessing ? 'Redirection…' : 'Payer par carte (Stripe)' }}
+                </button>
+
+                <div v-if="storePayConfig.paypal">
+                  <button @click="payProvider = 'paypal'; showPayModal = true"
+                    class="w-full py-3 bg-yellow-400 text-gray-900 rounded-lg hover:bg-yellow-500 transition font-medium">
+                    🅿️ Payer avec PayPal
+                  </button>
+                </div>
+
+                <p v-if="!storePayConfig.stripe && !storePayConfig.paypal" class="text-sm text-gray-400 text-center py-4">
+                  Aucun moyen de paiement configuré pour ce store.
+                </p>
+
+                <p v-if="payError" class="text-red-500 text-sm mt-2">{{ payError }}</p>
+              </div>
+
+              <div class="mt-4 pt-3 border-t text-right">
+                <span class="font-bold text-lg">Total : {{ cartTotal }} {{ cartCurrency }}</span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ══════════════════════════════════════════════════════════
+         MODAL PAYPAL
+    ══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="showPayModal && payProvider === 'paypal'" class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="showPayModal = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+          <h3 class="text-lg font-bold mb-4">Paiement PayPal</h3>
+          <div id="sv-paypal-container" class="min-h-[120px]"></div>
+          <p v-if="payError" class="text-red-500 text-sm mt-3">{{ payError }}</p>
+          <button @click="showPayModal = false" class="mt-4 w-full py-2 border rounded-lg text-gray-600 hover:bg-gray-50 transition">Annuler</button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ══════════════════════════════════════════════════════════
+         MODAL PROFIL CLIENT
+    ══════════════════════════════════════════════════════════ -->
+    <Teleport to="body">
+      <div v-if="svShowProfile" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="svShowProfile = false">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 max-h-[80vh] overflow-y-auto relative">
+          <button @click="svShowProfile = false" class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-xl">✕</button>
+
+          <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-3">
+              {{ (svCurrentUser?.displayName || svCurrentUser?.email || '?')[0].toUpperCase() }}
+            </div>
+            <h2 class="text-xl font-bold">{{ svCurrentUser?.displayName || 'Client' }}</h2>
+            <p class="text-sm text-gray-500">{{ svCurrentUser?.email }}</p>
+          </div>
+
+          <!-- Commandes -->
+          <div class="border-t pt-4">
+            <h3 class="font-semibold mb-3">📦 Mes commandes</h3>
+
+            <div v-if="svLoadingOrders" class="text-center py-4">
+              <div class="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent mx-auto"></div>
+            </div>
+
+            <div v-else-if="svOrdersLoaded && !svClientOrders.length" class="text-center py-4 text-gray-400 text-sm">
+              Aucune commande pour le moment.
+            </div>
+
+            <div v-else class="space-y-3">
+              <div v-for="order in svClientOrders" :key="order.id"
+                class="border rounded-lg p-3 text-sm">
+                <div class="flex justify-between items-center mb-1">
+                  <span class="font-medium">{{ order.id.slice(0,8) }}…</span>
+                  <span :class="[
+                    'px-2 py-0.5 rounded-full text-xs font-medium',
+                    order.status === 'paid' ? 'bg-green-100 text-green-700' :
+                    order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-gray-100 text-gray-600'
+                  ]">
+                    {{ order.status || 'en cours' }}
+                  </span>
+                </div>
+                <p class="text-gray-500 text-xs">{{ order.createdAt ? new Date(order.createdAt).toLocaleDateString('fr-FR') : '—' }}</p>
+                <p class="font-bold mt-1">{{ order.total || order.amount || '—' }} {{ order.currency || '€' }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Déconnexion -->
+          <button @click="svSignOut"
+            class="mt-6 w-full py-2 border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition text-sm">
+            Se déconnecter
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Voice Assistant -->
+    <VoiceAssistantClient v-if="resolvedUid" :storeUid="resolvedUid" />
+
+  </div>
+</template>
 
 <script setup>
 import { ref, onMounted, computed, watch } from "vue"
@@ -26,10 +472,11 @@ import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
 import { doc, getDoc, collection, addDoc } from "firebase/firestore"
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
+
 const clientAuth      = getAuth()
 const svCurrentUser   = ref(null)
 const svShowAuth      = ref(false)
-const svAuthMode      = ref("login")   // "login" | "register" | "forgot"
+const svAuthMode      = ref("login")
 const svEmail         = ref("")
 const svPassword      = ref("")
 const svConfirm       = ref("")
@@ -37,28 +484,24 @@ const svName          = ref("")
 const svAuthError     = ref("")
 const svAuthSuccess   = ref("")
 const svAuthLoading   = ref(false)
-// ── Profil client ─────────────────────────────────────────────
+
 const svShowProfile   = ref(false)
 const svClientOrders  = ref([])
 const svLoadingOrders = ref(false)
 const svOrdersLoaded  = ref(false)
 
-// ── Props ─────────────────────────────────────────────────────
 const props  = defineProps({ uid: { type: String, required: true } })
 const router = useRouter()
 
-// ── État global ───────────────────────────────────────────────
 const site         = ref(null)
 const loading      = ref(true)
 const error        = ref("")
 const resolvedUid  = ref("")
-const siteMeta     = ref({})          // { name, logo }
+const siteMeta     = ref({})
 const currentPageIndex = ref(0)
 
-// ── Config paiement du store ──────────────────────────────────
 const storePayConfig = ref({ stripe: null, paypal: null })
 
-// ── Formulaire contact ───────────────────────────────────────
 const contactName    = ref("")
 const contactEmail   = ref("")
 const contactMessage = ref("")
@@ -77,8 +520,6 @@ const sendContact = async () => {
   contactSending.value = true
   contactError.value   = ""
   try {
-    // Écrire dans users/{ownerUid}/contacts/{id}
-    // Règle Firestore : allow create: if true  → pas besoin d'auth
     const ownerUid = resolvedUid.value
     if (!ownerUid) throw new Error("Store non trouvé")
 
@@ -104,8 +545,7 @@ const sendContact = async () => {
   }
 }
 
-// ── Panier ────────────────────────────────────────────────────
-const svCartStep = ref("cart")   // "cart" | "checkout"
+const svCartStep = ref("cart")
 const svAddress  = ref("")
 const svZip      = ref("")
 const svCity     = ref("")
@@ -120,7 +560,6 @@ const payError     = ref("")
 const customerName  = ref("")
 const customerEmail = ref("")
 
-// Stripe Checkout (redirect vers Stripe)
 const stripeLoading = ref(false)
 
 const cartCount    = computed(() => cart.value.reduce((s, i) => s + i.qty, 0))
@@ -128,12 +567,8 @@ const cartTotal    = computed(() => cart.value.reduce((s, i) => s + parseFloat(i
 const cartCurrency = computed(() => cart.value[0]?.currency || "€")
 const currentPage  = computed(() => site.value?.pages?.[currentPageIndex.value] || site.value?.pages?.[0])
 
-// ── Panier — actions ──────────────────────────────────────────
-// Auth Firebase pour vérifier si le client est connecté
 const addToCart = (product) => {
-  // Connexion obligatoire pour acheter
   if (!clientAuth.currentUser) {
-    // Rediriger vers la page auth du store avec retour prévu
     router.push(`/auth?store=${props.uid}&redirect=/site/${props.uid}`)
     return
   }
@@ -147,7 +582,6 @@ const updateQty = (id, delta) => {
   if (item) item.qty = Math.max(1, item.qty + delta)
 }
 
-// ── Embed vidéo ───────────────────────────────────────────────
 const getEmbedUrl = (url) => {
   if (!url) return ""
   const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/)
@@ -157,8 +591,7 @@ const getEmbedUrl = (url) => {
   return url
 }
 
-// ── Chargement site + config paiement ────────────────────────
-const debugInfo = ref("")   // infos de diagnostic affichées si erreur
+const debugInfo = ref("")
 
 const loadSite = async () => {
   loading.value  = true
@@ -172,77 +605,51 @@ const loadSite = async () => {
     return
   }
 
-  console.log("🔍 SiteViewer: chargement pour uid/slug =", uid)
-
   try {
-    // ── Étape 1 : essayer comme UID Firestore direct ──────
     let userSnap = null
     try {
       userSnap = await getDoc(doc(db, "users", uid))
-      console.log("  Étape 1 (UID direct):", userSnap.exists() ? "document trouvé" : "non trouvé")
-    } catch(e) {
-      console.warn("  Étape 1 échouée:", e.message)
-    }
+    } catch(e) { console.warn("Étape 1 échouée:", e.message) }
 
     if (userSnap?.exists()) {
       const data = userSnap.data()
       if (data.siteData) {
-        // ✅ UID direct avec siteData
         site.value        = data.siteData
         siteMeta.value    = { name: data.siteName || "", logo: data.siteLogo || "" }
         resolvedUid.value = uid
         await loadPayConfig(uid)
         loading.value = false
-        console.log("  ✅ Site chargé via UID direct")
         return
       } else {
-        // Utilisateur existe mais pas encore publié
-        console.warn("  ⚠️ Utilisateur trouvé mais siteData manquant — site non publié ?")
         debugInfo.value = `Compte trouvé (${uid}) mais le site n'a pas encore été publié.`
       }
     }
 
-    // ── Étape 2 : essayer comme slug dans collection slugs ─
-    console.log("  Étape 2: cherche slug 'slugs/" + uid + "'")
     let slugSnap = null
     try {
       slugSnap = await getDoc(doc(db, "slugs", uid))
-      console.log("  Étape 2 (slug):", slugSnap.exists() ? "slug trouvé → uid=" + slugSnap.data().uid : "slug non trouvé")
-    } catch(e) {
-      console.warn("  Étape 2 échouée:", e.message)
-    }
+    } catch(e) { console.warn("Étape 2 échouée:", e.message) }
 
     if (slugSnap?.exists()) {
       const realUid = slugSnap.data().uid
       let realSnap  = null
       try {
         realSnap = await getDoc(doc(db, "users", realUid))
-      } catch(e) {
-        console.warn("  Étape 2b échouée:", e.message)
-      }
+      } catch(e) { console.warn("Étape 2b échouée:", e.message) }
 
       if (realSnap?.exists() && realSnap.data().siteData) {
-        // ✅ Slug résolu avec succès
         site.value        = realSnap.data().siteData
         siteMeta.value    = { name: realSnap.data().siteName || "", logo: realSnap.data().siteLogo || "" }
         resolvedUid.value = realUid
         await loadPayConfig(realUid)
         loading.value = false
-        console.log("  ✅ Site chargé via slug →", realUid)
         return
       } else if (realSnap?.exists()) {
         debugInfo.value = `Slug "${uid}" trouvé → UID ${realUid}, mais le site n'a pas de données publiées.`
-        console.warn("  ⚠️ Slug trouvé mais siteData manquant pour", realUid)
       }
     }
 
-    // ── Rien trouvé ───────────────────────────────────────
-    if (debugInfo.value) {
-      error.value = debugInfo.value
-    } else {
-      error.value = `Site "${uid}" introuvable.`
-      debugInfo.value = `Aucun document trouvé pour "${uid}" dans users/ ni dans slugs/.`
-    }
+    error.value = debugInfo.value || `Site "${uid}" introuvable.`
     loading.value = false
 
   } catch (e) {
@@ -254,10 +661,8 @@ const loadSite = async () => {
 
 const loadPayConfig = async (uid) => {
   try {
-    // Chercher d'abord dans users/{uid}/config/payment (sous-collection)
     const snap = await getDoc(doc(db, "users", uid, "config", "payment"))
     if (snap.exists()) { storePayConfig.value = snap.data(); return }
-    // Fallback : storePaymentConfig dans le document principal
     const mainSnap = await getDoc(doc(db, "users", uid))
     if (mainSnap.exists() && mainSnap.data().storePaymentConfig) {
       storePayConfig.value = mainSnap.data().storePaymentConfig
@@ -267,11 +672,10 @@ const loadPayConfig = async (uid) => {
 
 onMounted(() => {
   loadSite()
-  // Écouter l'état auth pour le store
   onAuthStateChanged(clientAuth, (user) => { svCurrentUser.value = user })
 })
 
-// ── Fonctions Auth client du store ───────────────────────────
+// ── Auth functions ───────────────────────────────────────────
 const svLogin = async () => {
   svAuthError.value = ""; svAuthSuccess.value = ""
   if (!svEmail.value || !svPassword.value) { svAuthError.value = "Email et mot de passe requis."; return }
@@ -301,7 +705,6 @@ const svRegister = async () => {
     const { doc: fd, setDoc: fset } = await import("firebase/firestore")
     const cred = await createUserWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
     await updateProfile(cred.user, { displayName: svName.value.trim() })
-    // Enregistrer dans customers lié au store
     await fset(fd(db, "customers", cred.user.uid), {
       uid: cred.user.uid, email: svEmail.value.trim().toLowerCase(),
       displayName: svName.value.trim(), storeUid: resolvedUid.value,
@@ -334,8 +737,6 @@ const svSignOut = async () => {
   svOrdersLoaded.value = false
 }
 
-// Charger commandes du client — SANS orderBy pour éviter les index Firestore
-// Le tri se fait côté client après récupération
 const svLoadOrders = async (user) => {
   if (svLoadingOrders.value) return
   svLoadingOrders.value = true
@@ -351,72 +752,53 @@ const svLoadOrders = async (user) => {
     const uid   = user.uid
     const email = (user.email || "").toLowerCase()
 
-    // ── Source 1 : orders par clientId ────────────────────────
-    // (PAS de orderBy → pas besoin d'index composite)
     try {
       const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
       s1.docs.forEach(dedup)
-      console.log(`[profil] orders/clientId: ${s1.docs.length} résultats`)
     } catch(e) { console.error("[profil] orders/clientId ERREUR:", e.message) }
 
-    // ── Source 2 : orders par customerEmail ───────────────────
     if (email) {
       try {
         const s2 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
         s2.docs.forEach(dedup)
-        console.log(`[profil] orders/customerEmail: ${s2.docs.length} résultats`)
       } catch(e) { console.error("[profil] orders/customerEmail ERREUR:", e.message) }
     }
 
-    // ── Source 3 : cmdclients par clientUid ───────────────────
     try {
       const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
       s3.docs.forEach(dedup)
-      console.log(`[profil] cmdclients/clientUid: ${s3.docs.length} résultats`)
     } catch(e) { console.error("[profil] cmdclients/clientUid ERREUR:", e.message) }
 
-    // ── Source 4 : cmdclients par clientEmail ─────────────────
     if (email) {
       try {
         const s4 = await gd(q(col(db, "cmdclients"), where("clientEmail", "==", email)))
         s4.docs.forEach(dedup)
-        console.log(`[profil] cmdclients/clientEmail: ${s4.docs.length} résultats`)
       } catch(e) { console.error("[profil] cmdclients/clientEmail ERREUR:", e.message) }
     }
 
-    // ── Source 5 : users/{storeUid}/orders par customerEmail ──
     if (resolvedUid.value && email) {
       try {
         const s5 = await gd(q(
           col(db, "users", resolvedUid.value, "orders"),
           where("customerEmail", "==", email)))
         s5.docs.forEach(dedup)
-        console.log(`[profil] store/orders: ${s5.docs.length} résultats`)
       } catch(e) { console.error("[profil] store/orders ERREUR:", e.message) }
     }
 
-    // Trier côté client par date décroissante
     results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
     svClientOrders.value = results
     svOrdersLoaded.value = true
-    console.log(`[profil] Total commandes chargées: ${results.length}`)
 
   } catch(e) { console.error("[profil] svLoadOrders ERREUR:", e.message) }
   finally { svLoadingOrders.value = false }
 }
 
-// Ouvrir le profil + recharger les commandes à chaque ouverture
 const svOpenProfile = async () => {
   svShowProfile.value  = true
-  svOrdersLoaded.value = false   // forcer rechargement
+  svOrdersLoaded.value = false
   if (svCurrentUser.value) await svLoadOrders(svCurrentUser.value)
 }
 
-// ── Stripe Checkout (redirect) ───────────────────────────────
-// Le backend retourne { url } → on redirige vers Stripe Checkout
-// Pas besoin de Stripe Elements (formulaire inline)
-
-// ── PayPal buttons ────────────────────────────────────────────
 const initPaypal = async () => {
   const cfg = storePayConfig.value?.paypal
   if (!cfg?.clientId || cfg.clientId.length < 5) {
@@ -475,14 +857,12 @@ const initPaypal = async () => {
   } catch (e) { payError.value = "Erreur PayPal : " + e.message }
 }
 
-// ── Watch payment modal → init PayPal si nécessaire ─────────
 watch([showPayModal, payProvider], ([open, provider]) => {
   if (!open) return
   payError.value = ""
   if (provider === "paypal") setTimeout(initPaypal, 150)
 })
 
-// ── Paiement Stripe Checkout (redirect) ──────────────────────
 const payWithStripe = async () => {
   const cfg = storePayConfig.value?.stripe
   if (!cfg?.backendUrl) { payError.value = "backendUrl Stripe non configuré."; return }
@@ -492,976 +872,58 @@ const payWithStripe = async () => {
   payProcessing.value = true
   payError.value = ""
   try {
-    // ── Sauvegarder la commande dans localStorage (pas sessionStorage)
-    // sessionStorage est effacé par Stripe sur certains navigateurs mobiles
-    const pendingOrder = {
-      items:         cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, currency: i.currency, qty: i.qty, image: i.image || "" })),
-      total:         cartTotal.value,
-      currency:      cartCurrency.value,
-      itemCount:     cartCount.value,
-      customerName:  customerName.value,
-      customerEmail: customerEmail.value,
-      customerAddress: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
-      siteSlug:      props.uid,
-      ownerUid:      resolvedUid.value,
-      storeUid:      resolvedUid.value,
-      clientUid:     clientAuth.currentUser?.uid || "",
-      provider:      "stripe",
-      createdAt:     new Date().toISOString(),
-    }
-    localStorage.setItem("pendingStripeOrder", JSON.stringify(pendingOrder))
-    localStorage.setItem("stripeOwnerUid", resolvedUid.value)
-    localStorage.setItem("stripeSiteSlug", props.uid)
-
-    // ── URLs de retour Stripe
-    // Stripe supprime tout ce qui est après #
-    // Solution : URL racine simple, la détection se fait dans main.js
-    // via localStorage("pendingStripeOrder") au démarrage de l'app
-    const origin     = "https://musrh.github.io/SaaasGenerator"
-    const successUrl = cfg.successUrl || `${origin}/`
-    const cancelUrl  = cfg.cancelUrl  || `${origin}/`
-
-    // ── Appel backend
-    const res = await fetch(cfg.backendUrl, {
+    const res = await fetch(cfg.backendUrl + "/create-checkout-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount:           Math.round(parseFloat(cartTotal.value) * 100),
-        currency:         cfg.currency || "eur",
-        description:      `Commande — ${cartCount.value} article(s)`,
-        items:            cart.value.map(i => ({
-          nom:      i.name,
-          prix:     parseFloat(i.price),
-          quantity: i.qty,
-        })),
-        email:            customerEmail.value,
-        clientId:         resolvedUid.value,
-        plan:             "store-order",
-        storeName:        cfg.storeName || "Store",
-        adresseLivraison: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
-        successUrl,
-        cancelUrl,
+        items:    cart.value.map(i => ({ name: i.name, price: parseFloat(i.price), currency: i.currency || "EUR", quantity: i.qty, image: i.image || "" })),
+        customerName:  customerName.value,
+        customerEmail: customerEmail.value,
+        customerAddress: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
+        storeUid:      resolvedUid.value,
+        successUrl:    window.location.origin + window.location.pathname + "#/payment-success",
+        cancelUrl:     window.location.href,
       }),
     })
-    if (!res.ok) throw new Error("Erreur serveur " + res.status)
     const data = await res.json()
-
     if (data.url) {
-      // Fermer les modales avant redirect
-      showCart.value     = false
-      showPayModal.value = false
+      localStorage.setItem("pendingOrder", JSON.stringify({
+        items: cart.value, total: cartTotal.value, currency: cartCurrency.value,
+        customerName: customerName.value, customerEmail: customerEmail.value,
+        storeUid: resolvedUid.value,
+      }))
       window.location.href = data.url
-      return
+    } else {
+      payError.value = data.error || "Erreur Stripe"
     }
-    throw new Error(data.error || "Pas d'URL Stripe reçue")
-  } catch (e) {
-    payError.value      = e.message
+  } catch(e) {
+    payError.value = "Erreur : " + e.message
+  } finally {
     payProcessing.value = false
   }
 }
 
-// ── Sauvegarde commande Firestore ─────────────────────────────
-// Écrit dans DEUX endroits :
-//   1. users/{ownerUid}/orders/{id}  → dashboard propriétaire
-//   2. orders/{id}                   → collection globale (webhook Stripe)
 const saveOrder = async (provider, transactionId) => {
-  if (!resolvedUid.value) return
-  const orderData = {
-    items: cart.value.map(i => ({
-      id: i.id, name: i.name, price: i.price,
-      currency: i.currency, qty: i.qty, image: i.image || "",
-    })),
-    total:         cartTotal.value,
-    currency:      cartCurrency.value,
-    itemCount:     cartCount.value,
-    provider,
-    transactionId: transactionId || "stripe-checkout",
-    customerName:  customerName.value,
-    customerEmail: customerEmail.value,
-    status:        "paid",
-    createdAt:     new Date().toISOString(),
-    siteSlug:      props.uid,
-    storeUid:      resolvedUid.value,
-    ownerUid:      resolvedUid.value,
-  }
   try {
-    // 1. Sous-collection du store (vue dashboard Orders.vue)
+    const orderData = {
+      items:         cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, qty: i.qty })),
+      total:         cartTotal.value,
+      currency:      cartCurrency.value,
+      provider,
+      transactionId,
+      customerName:  customerName.value,
+      customerEmail: customerEmail.value,
+      customerAddress: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
+      clientId:      clientAuth.currentUser?.uid || null,
+      storeUid:      resolvedUid.value,
+      status:        "paid",
+      createdAt:     new Date().toISOString(),
+    }
     await addDoc(collection(db, "users", resolvedUid.value, "orders"), orderData)
-    console.log("✓ Order saved to users/" + resolvedUid.value + "/orders")
-  } catch (e) {
-    console.error("Erreur sauvegarde commande (sous-collection):", e.message)
-  }
-  try {
-    // 2. Collection racine orders (compatible règle Firestore fournie)
-    await addDoc(collection(db, "orders"), {
-      ...orderData,
-      clientId: resolvedUid.value,
-    })
-    console.log("✓ Order saved to orders/")
-  } catch (e) {
-    console.error("Erreur sauvegarde commande (racine):", e.message)
-  }
-  try {
-    // 3. Collection cmdclients — commandes du CLIENT (pour profil client)
-    await addDoc(collection(db, "cmdclients"), {
-      ...orderData,
-      clientUid:   clientAuth.currentUser?.uid || "",
-      clientEmail: orderData.customerEmail || "",
-      clientName:  orderData.customerName  || "",
-      storeUid:    resolvedUid.value,
-      siteSlug:    props.uid,
-    })
-    console.log("✓ Order saved to cmdclients/")
-  } catch (e) {
-    console.error("Erreur sauvegarde cmdclients:", e.message)
-  }
-  // Stocker pour PaymentSuccess.vue
-  localStorage.setItem("pendingStripeOrder", JSON.stringify({
-    ...orderData,
-    clientUid: clientAuth.currentUser?.uid || "",
-  }))
-  cart.value = []
+    await addDoc(collection(db, "orders"), orderData)
+    cart.value = []
+    showCart.value = false
+    showPayModal.value = false
+  } catch(e) { console.error("saveOrder error:", e) }
 }
 </script>
-
-<template>
-<div class="sv-root">
-
-  <!-- LOADING -->
-  <div v-if="loading" class="sv-loading">
-    <div class="sv-spinner"></div>
-    <p>Chargement du site...</p>
-  </div>
-
-  <!-- ERREUR -->
-  <div v-else-if="error" class="sv-error">
-    <span>🔍</span>
-    <h2>Site introuvable</h2>
-    <p class="sv-error-msg">{{ error }}</p>
-    <div class="sv-error-debug">
-      <p>Adresse demandée : <code>{{ uid }}</code></p>
-      <p v-if="debugInfo" class="sv-debug-info">{{ debugInfo }}</p>
-      <div class="sv-error-hints">
-        <p>Causes possibles :</p>
-        <ul>
-          <li>Le site n'a pas encore été publié (cliquez sur <strong>Publier</strong> dans le builder)</li>
-          <li>Le slug choisi est différent de <code>{{ uid }}</code></li>
-          <li>Essayez avec votre UID Firestore à la place du slug</li>
-        </ul>
-      </div>
-    </div>
-    <button class="sv-error-retry" @click="loadSite">🔄 Réessayer</button>
-  </div>
-
-  <!-- SITE -->
-  <template v-else-if="site">
-
-    <!-- NAV du store -->
-    <nav class="sv-nav">
-      <!-- Logo -->
-      <div class="sv-brand">
-        <img v-if="siteMeta.logo" :src="siteMeta.logo" class="sv-brand-logo" alt="logo"/>
-        <span v-else class="sv-brand-icon">◈</span>
-        <span class="sv-brand-name">{{ siteMeta.name || site.pages?.[0]?.name || 'Mon Store' }}</span>
-      </div>
-
-      <!-- ① CONNEXION/DÉCONNEXION — avant le menu ───────────── -->
-      <div class="sv-nav-auth">
-        <!-- Connecté : avatar + nom + bouton déconnexion -->
-        <div v-if="svCurrentUser" class="sv-user-pill" @click="svOpenProfile" title="Mon profil">
-          <div class="sv-user-avatar">
-            <img v-if="svCurrentUser.photoURL" :src="svCurrentUser.photoURL" class="sv-avatar-img" alt=""/>
-            <span v-else>{{ (svCurrentUser.displayName||svCurrentUser.email||'?')[0].toUpperCase() }}</span>
-          </div>
-          <span class="sv-user-name">{{ svCurrentUser.displayName || svCurrentUser.email?.split('@')[0] }}</span>
-          <span class="sv-profile-arrow">▾</span>
-        </div>
-        <!-- Non connecté : bouton Se connecter -->
-        <button v-else class="sv-login-btn" @click="svShowAuth=true; svAuthMode='login'; svAuthError=''; svAuthSuccess=''">
-          🔑 Se connecter
-        </button>
-      </div>
-
-      <!-- ② MENU PAGES ────────────────────────────────────────── -->
-      <div class="sv-page-tabs">
-        <button
-          v-for="(p, i) in site.pages" :key="p.id"
-          class="sv-tab" :class="{ active: currentPageIndex === i }"
-          @click="currentPageIndex = i"
-        >{{ p.name }}</button>
-      </div>
-
-      <!-- ③ PANIER ─────────────────────────────────────────────── -->
-      <button class="sv-cart-btn" @click="showCart = true">
-        🛒 <span v-if="cartCount > 0" class="sv-cart-badge">{{ cartCount }}</span>
-      </button>
-    </nav>
-
-    <!-- CONTENU PAGE -->
-    <main class="sv-page" :style="currentPage?.style">
-      <template v-for="s in currentPage?.sections" :key="s.id">
-
-        <!-- HERO -->
-        <div v-if="s.type==='hero'" class="sv-hero" :style="s.style">
-          <h1 class="sv-hero-title">{{ s.content }}</h1>
-          <p  class="sv-hero-sub">{{ s.subtitle }}</p>
-          <button v-if="s.cta" class="sv-hero-cta">{{ s.cta }}</button>
-        </div>
-
-        <!-- TEXT -->
-        <div v-else-if="s.type==='text'" class="sv-text" :style="s.style">
-          <p>{{ s.content }}</p>
-        </div>
-
-        <!-- IMAGE -->
-        <div v-else-if="s.type==='image'" class="sv-image" :style="s.style">
-          <img v-if="s.url" :src="s.url" :alt="s.alt"/>
-        </div>
-
-        <!-- GALLERY -->
-        <div v-else-if="s.type==='gallery'" class="sv-gallery" :style="s.style">
-          <div class="sv-gallery-grid" :style="`grid-template-columns:repeat(${s.columns||3},1fr)`">
-            <div v-for="img in s.images" :key="img.id" class="sv-gallery-item">
-              <img :src="img.url" :alt="img.alt"/>
-            </div>
-          </div>
-        </div>
-
-        <!-- VIDEO -->
-        <div v-else-if="s.type==='video'" class="sv-video" :style="s.style">
-          <h3 v-if="s.title" class="sv-video-title">{{ s.title }}</h3>
-          <div v-if="s.url" class="sv-video-wrap">
-            <iframe :src="getEmbedUrl(s.url)" allowfullscreen></iframe>
-          </div>
-        </div>
-
-        <!-- PRODUCTS -->
-        <div v-else-if="s.type==='products'" class="sv-products" :style="s.style">
-          <div class="sv-products-grid">
-            <div v-for="p in s.items" :key="p.id" class="sv-product-card">
-              <div class="sv-product-img-wrap">
-                <img v-if="p.image" :src="p.image" :alt="p.name" class="sv-product-img"/>
-                <div v-else class="sv-product-img-ph">🛍️</div>
-                <span v-if="p.badge" class="sv-product-badge">{{ p.badge }}</span>
-              </div>
-              <div class="sv-product-body">
-                <div class="sv-product-name">{{ p.name }}</div>
-                <div class="sv-product-desc">{{ p.description }}</div>
-                <div class="sv-product-footer">
-                  <span class="sv-product-price">{{ p.price }}{{ p.currency }}</span>
-                  <button class="sv-product-btn" @click="addToCart(p)">🛒 Acheter</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- FEATURES -->
-        <div v-else-if="s.type==='features'" class="sv-features" :style="s.style">
-          <div class="sv-features-grid">
-            <div v-for="(item, fi) in s.items" :key="fi" class="sv-feature-card">
-              <span class="sv-feat-icon">{{ item.icon }}</span>
-              <strong>{{ item.title }}</strong>
-              <p>{{ item.desc }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- PAYMENT -->
-        <div v-else-if="s.type==='payment'" class="sv-payment" :style="s.style">
-          <h2 class="sv-payment-title">{{ s.title }}</h2>
-          <p  class="sv-payment-desc">{{ s.description }}</p>
-          <div class="sv-payment-amount">{{ s.amount }}{{ s.currency }}</div>
-          <div class="sv-payment-btns">
-            <button class="sv-pay-btn sv-stripe"
-              @click="cart=[{...s, id:'direct', qty:1, price:s.amount}]; payProvider='stripe'; showPayModal=true">
-              💳 Payer avec Stripe
-            </button>
-            <button class="sv-pay-btn sv-paypal"
-              @click="cart=[{...s, id:'direct', qty:1, price:s.amount}]; payProvider='paypal'; showPayModal=true">
-              🅿 Payer avec PayPal
-            </button>
-          </div>
-        </div>
-
-        <!-- FORM -->
-        <div v-else-if="s.type==='form'" class="sv-form" :style="s.style">
-          <h3>Contactez-nous</h3>
-          <input
-            v-model="contactName"
-            placeholder="Nom complet"
-            class="sv-form-input"
-          />
-          <input
-            v-model="contactEmail"
-            placeholder="Email"
-            type="email"
-            class="sv-form-input"
-          />
-          <textarea
-            v-model="contactMessage"
-            rows="4"
-            placeholder="Votre message..."
-            class="sv-form-input sv-form-textarea"
-          ></textarea>
-          <p v-if="contactError" class="sv-form-error">⚠ {{ contactError }}</p>
-          <div v-if="contactSent" class="sv-form-success">
-            ✅ Message envoyé ! Nous vous répondrons bientôt.
-          </div>
-          <button
-            type="button"
-            class="sv-form-btn"
-            @click="sendContact"
-            :disabled="contactSending"
-          >
-            <span v-if="contactSending">Envoi en cours...</span>
-            <span v-else>Envoyer →</span>
-          </button>
-        </div>
-
-        <!-- DIVIDER -->
-        <div v-else-if="s.type==='divider'" class="sv-divider" :style="s.style">
-          <hr/>
-        </div>
-
-      </template>
-    </main>
-
-    <!-- ── MODAL PANIER 2 ÉTAPES (panier → livraison → paiement) -->
-    <Transition name="sv-modal">
-      <div v-if="showCart" class="sv-modal-overlay sv-cart-overlay"
-           @click.self="showCart=false; svCartStep='cart'">
-        <div class="sv-modal-box sv-cart-box">
-
-          <!-- HEADER -->
-          <div class="sv-cart-header">
-            <button v-if="svCartStep==='checkout'" class="sv-back-btn" @click="svCartStep='cart'">
-              ← Retour
-            </button>
-            <div class="sv-cart-header-title">
-              <span>{{ svCartStep==='cart' ? '🛒' : '📋' }}</span>
-              <h2>{{ svCartStep==='cart' ? 'Mon panier' : 'Livraison & Paiement' }}</h2>
-              <span v-if="svCartStep==='cart' && cart.length>0" class="sv-cart-count">
-                {{ cartCount }} article{{ cartCount>1?'s':'' }}
-              </span>
-            </div>
-            <button class="sv-modal-close" @click="showCart=false; svCartStep='cart'">✕</button>
-          </div>
-
-          <!-- ÉTAPE 1 : ARTICLES -->
-          <template v-if="svCartStep==='cart'">
-            <div v-if="cart.length===0" class="sv-cart-empty">
-              <span>🛍️</span><p>Votre panier est vide</p>
-            </div>
-            <div v-else class="sv-cart-items">
-              <div v-for="item in cart" :key="item.id" class="sv-cart-item">
-                <div class="sv-ci-img">
-                  <img v-if="item.image" :src="item.image" :alt="item.name"/>
-                  <span v-else>🛍️</span>
-                </div>
-                <div class="sv-ci-info">
-                  <div class="sv-ci-name">{{ item.name }}</div>
-                  <div class="sv-ci-price">{{ item.price }}{{ item.currency }}</div>
-                </div>
-                <div class="sv-ci-qty">
-                  <button class="sv-qty-btn" @click="updateQty(item.id,-1)">−</button>
-                  <span class="sv-qty-val">{{ item.qty }}</span>
-                  <button class="sv-qty-btn" @click="updateQty(item.id,1)">+</button>
-                </div>
-                <div class="sv-ci-subtotal">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</div>
-                <button class="sv-ci-del" @click="removeFromCart(item.id)">✕</button>
-              </div>
-            </div>
-            <div v-if="cart.length>0" class="sv-cart-footer">
-              <div class="sv-cart-total-row">
-                <span>Total</span>
-                <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
-              </div>
-              <div class="sv-cart-footer-btns">
-                <button class="sv-btn-sec" @click="showCart=false">Continuer</button>
-                <button class="sv-btn-primary sv-checkout-btn" @click="svCartStep='checkout'">
-                  📋 Livraison & Paiement →
-                </button>
-              </div>
-            </div>
-          </template>
-
-          <!-- ÉTAPE 2 : LIVRAISON + PAIEMENT -->
-          <template v-else-if="svCartStep==='checkout'">
-
-            <!-- Résumé articles -->
-            <div class="sv-checkout-summary">
-              <div v-for="item in cart" :key="item.id" class="sv-summary-item">
-                <div class="sv-summary-img">
-                  <img v-if="item.image" :src="item.image" :alt="item.name"/>
-                  <span v-else>🛍️</span>
-                </div>
-                <span class="sv-summary-name">{{ item.name }} ×{{ item.qty }}</span>
-                <span class="sv-summary-price">{{ (parseFloat(item.price)*item.qty).toFixed(2) }}{{ item.currency }}</span>
-              </div>
-              <div class="sv-summary-total">
-                <span>Total</span>
-                <strong>{{ cartTotal }}{{ cartCurrency }}</strong>
-              </div>
-            </div>
-
-            <!-- Formulaire client + livraison -->
-            <div class="sv-checkout-fields">
-              <div class="sv-checkout-section">👤 Informations client</div>
-              <div class="sv-checkout-row">
-                <div class="sv-checkout-field">
-                  <label>Nom complet *</label>
-                  <input v-model="customerName"  placeholder="Jean Dupont" class="sv-checkout-input"/>
-                </div>
-                <div class="sv-checkout-field">
-                  <label>Email *</label>
-                  <input v-model="customerEmail" placeholder="jean@email.com" type="email" class="sv-checkout-input"/>
-                </div>
-              </div>
-
-              <div class="sv-checkout-section" style="margin-top:12px">📦 Adresse de livraison</div>
-              <div class="sv-checkout-field">
-                <label>Adresse *</label>
-                <input v-model="svAddress" placeholder="123 rue de la Paix" class="sv-checkout-input"/>
-              </div>
-              <div class="sv-checkout-row">
-                <div class="sv-checkout-field">
-                  <label>Code postal</label>
-                  <input v-model="svZip" placeholder="75001" class="sv-checkout-input"/>
-                </div>
-                <div class="sv-checkout-field">
-                  <label>Ville</label>
-                  <input v-model="svCity" placeholder="Paris" class="sv-checkout-input"/>
-                </div>
-              </div>
-              <div class="sv-checkout-field">
-                <label>Pays</label>
-                <select v-model="svCountry" class="sv-checkout-input sv-checkout-select">
-                  <option>France</option>
-                  <option>Maroc</option>
-                  <option>Belgique</option>
-                  <option>Suisse</option>
-                  <option>Canada</option>
-                  <option>Algérie</option>
-                  <option>Tunisie</option>
-                  <option>Sénégal</option>
-                  <option>Côte d'Ivoire</option>
-                </select>
-              </div>
-            </div>
-
-            <div v-if="payError" class="sv-pay-error">⚠ {{ payError }}</div>
-
-            <!-- Bouton payer -->
-            <button class="sv-pay-final-btn" @click="payWithStripe" :disabled="payProcessing">
-              <span v-if="payProcessing" class="sv-spinner"></span>
-              <span v-else>💳</span>
-              {{ payProcessing ? 'Redirection Stripe...' : `Payer ${cartTotal}${cartCurrency}` }}
-            </button>
-            <p class="sv-secure-note">🔒 Paiement sécurisé via Stripe</p>
-          </template>
-
-        </div>
-      </div>
-    </Transition>
-
-  </template>
-  <!-- ── MODAL PROFIL CLIENT ──────────────────────────────── -->
-  <Transition name="sv-modal">
-    <div v-if="svShowProfile && svCurrentUser" class="sv-modal-overlay sv-profile-overlay"
-         @click.self="svShowProfile=false">
-      <div class="sv-modal-box sv-profile-box">
-        <button class="sv-modal-close" @click="svShowProfile=false">✕</button>
-
-        <!-- Avatar + infos ─────────────────────────────────── -->
-        <div class="svp-header">
-          <div class="svp-avatar">
-            <img v-if="svCurrentUser.photoURL" :src="svCurrentUser.photoURL" class="svp-avatar-img" alt=""/>
-            <span v-else class="svp-avatar-initials">
-              {{ (svCurrentUser.displayName||svCurrentUser.email||'?')[0].toUpperCase() }}
-            </span>
-          </div>
-          <div class="svp-info">
-            <div class="svp-name">{{ svCurrentUser.displayName || "Client" }}</div>
-            <div class="svp-email">{{ svCurrentUser.email }}</div>
-            <span class="svp-badge">🛍 Client du store</span>
-          </div>
-        </div>
-
-        <!-- Stats rapides ──────────────────────────────────── -->
-        <div class="svp-stats">
-          <div class="svp-stat">
-            <span class="svp-stat-val">{{ svClientOrders.length }}</span>
-            <span class="svp-stat-label">Commandes</span>
-          </div>
-          <div class="svp-stat">
-            <span class="svp-stat-val">
-              {{ svClientOrders.filter(o=>o.status==='paid'||o.status==='delivered').length }}
-            </span>
-            <span class="svp-stat-label">Payées</span>
-          </div>
-          <div class="svp-stat">
-            <span class="svp-stat-val">
-              {{ svClientOrders.reduce((s,o)=>s+parseFloat(o.total||0),0).toFixed(2) }}{{ svClientOrders[0]?.currency||'€' }}
-            </span>
-            <span class="svp-stat-label">Total dépensé</span>
-          </div>
-        </div>
-
-        <!-- Commandes ──────────────────────────────────────── -->
-        <div class="svp-orders-section">
-          <div class="svp-orders-title">
-            📦 Mes commandes
-            <span v-if="svLoadingOrders" class="svp-loading">chargement...</span>
-            <span v-else class="svp-orders-count">{{ svClientOrders.length }}</span>
-          </div>
-
-          <!-- Chargement -->
-          <div v-if="svLoadingOrders" class="svp-orders-loader">
-            <div class="svp-spinner"></div>
-          </div>
-
-          <!-- Vide -->
-          <div v-else-if="!svClientOrders.length" class="svp-orders-empty">
-            <span>🛍️</span>
-            <p>Aucune commande pour le moment.</p>
-            <button class="svp-shop-btn" @click="svShowProfile=false">Découvrir les produits →</button>
-          </div>
-
-          <!-- Liste des commandes -->
-          <div v-else class="svp-orders-list">
-            <div v-for="order in svClientOrders" :key="order.id" class="svp-order-card">
-              <!-- Ligne principale -->
-              <div class="svp-order-top">
-                <div class="svp-order-left">
-                  <span class="svp-order-id">#{{ (order.id||'').slice(0,8).toUpperCase() }}</span>
-                  <span class="svp-order-date">{{ (order.createdAt||'').slice(0,10) }}</span>
-                </div>
-                <div class="svp-order-right">
-                  <span class="svp-order-total">
-                    {{ parseFloat(order.total||0).toFixed(2) }}{{ order.currency||'€' }}
-                  </span>
-                  <span class="svp-order-status" :class="'svp-s-'+(order.status||'pending')">
-                    {{ {paid:'✓ Payée',pending:'⏳ En attente',shipped:'🚚 Expédiée',
-                        delivered:'✅ Livrée',cancelled:'✗ Annulée'}[order.status] || order.status }}
-                  </span>
-                </div>
-              </div>
-              <!-- Articles -->
-              <div v-if="order.items?.length" class="svp-order-items">
-                <span v-for="item in order.items" :key="item.id" class="svp-order-item-tag">
-                  {{ item.name }} ×{{ item.qty }}
-                </span>
-              </div>
-              <!-- Adresse livraison -->
-              <div v-if="order.customerAddress || order.adresseLivraison" class="svp-order-addr">
-                📍 {{ order.customerAddress || order.adresseLivraison }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Action déconnexion ─────────────────────────────── -->
-        <button class="svp-signout-btn" @click="svSignOut">
-          ⏻ Se déconnecter
-        </button>
-      </div>
-    </div>
-  </Transition>
-
-  <!-- ── MODAL AUTH STORE ──────────────────────────────────── -->
-  <Transition name="sv-modal">
-    <div v-if="svShowAuth" class="sv-modal-overlay sv-auth-overlay" @click.self="svShowAuth=false">
-      <div class="sv-modal-box sv-auth-box">
-        <button class="sv-modal-close" @click="svShowAuth=false">✕</button>
-
-        <!-- Branding store -->
-        <div class="sv-auth-brand">
-          <div class="sv-auth-logo-wrap">
-            <img v-if="siteMeta.logo" :src="siteMeta.logo" class="sv-auth-logo-img"/>
-            <span v-else class="sv-auth-logo-ph">◈</span>
-          </div>
-          <span class="sv-auth-store">{{ siteMeta.name || 'Notre boutique' }}</span>
-        </div>
-
-        <!-- Onglets -->
-        <div class="sv-auth-tabs">
-          <button :class="['sv-auth-tab',{active:svAuthMode==='login'}]"    @click="svAuthMode='login';svAuthError='';svAuthSuccess=''">Connexion</button>
-          <button :class="['sv-auth-tab',{active:svAuthMode==='register'}]" @click="svAuthMode='register';svAuthError='';svAuthSuccess=''">Inscription</button>
-        </div>
-
-        <!-- Messages -->
-        <p v-if="svAuthError"   class="sv-auth-error">⚠ {{ svAuthError }}</p>
-        <p v-if="svAuthSuccess" class="sv-auth-success">✓ {{ svAuthSuccess }}</p>
-
-        <!-- CONNEXION -->
-        <div v-if="svAuthMode==='login'" class="sv-auth-form">
-          <input v-model="svEmail"    type="email"    placeholder="Email *"         class="sv-auth-input" @keydown.enter="svLogin"/>
-          <input v-model="svPassword" type="password" placeholder="Mot de passe *"  class="sv-auth-input" @keydown.enter="svLogin"/>
-          <button class="sv-auth-forgot-link" @click="svAuthMode='forgot';svAuthError='';svAuthSuccess=''">Mot de passe oublié ?</button>
-          <button class="sv-auth-submit" @click="svLogin" :disabled="svAuthLoading">
-            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
-            <span v-else>🔑 Se connecter</span>
-          </button>
-        </div>
-
-        <!-- INSCRIPTION -->
-        <div v-else-if="svAuthMode==='register'" class="sv-auth-form">
-          <input v-model="svName"     type="text"     placeholder="Nom complet *"          class="sv-auth-input"/>
-          <input v-model="svEmail"    type="email"    placeholder="Email *"                class="sv-auth-input"/>
-          <input v-model="svPassword" type="password" placeholder="Mot de passe * (min.6)" class="sv-auth-input"/>
-          <input v-model="svConfirm"  type="password" placeholder="Confirmer *"            class="sv-auth-input" @keydown.enter="svRegister"/>
-          <button class="sv-auth-submit" @click="svRegister" :disabled="svAuthLoading">
-            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
-            <span v-else>✨ Créer mon compte</span>
-          </button>
-        </div>
-
-        <!-- MOT DE PASSE OUBLIÉ -->
-        <div v-else-if="svAuthMode==='forgot'" class="sv-auth-form">
-          <p class="sv-auth-forgot-desc">Entrez votre email pour recevoir un lien.</p>
-          <input v-model="svEmail" type="email" placeholder="Email" class="sv-auth-input" @keydown.enter="svForgot"/>
-          <button class="sv-auth-submit" @click="svForgot" :disabled="svAuthLoading">
-            <span v-if="svAuthLoading" class="sv-auth-spin"></span>
-            <span v-else>📧 Envoyer le lien</span>
-          </button>
-          <button class="sv-auth-back-link" @click="svAuthMode='login';svAuthError='';svAuthSuccess=''">← Retour</button>
-        </div>
-      </div>
-    </div>
-  </Transition>
-
-  <!-- ASSISTANT VOCAL CLIENT (Groq IA) -->
-  <VoiceAssistantClient
-    v-if="resolvedUid"
-    :store-uid="resolvedUid"
-    :store-name="siteMeta.name || 'Notre boutique'"
-    :store-email="storePayConfig?.stripe?.storeName || ''"
-    :lang="'fr'"
-    :backend-url="'https://backend-master-production-cf50.up.railway.app'"
-  />
-
-</div>
-</template>
-
-<style scoped>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Playfair+Display:wght@500;600&display=swap');
-*{box-sizing:border-box;margin:0;padding:0}
-.sv-root{min-height:100vh;font-family:'DM Sans',sans-serif;color:#374151;background:#fff}
-
-/* LOADING / ERROR */
-.sv-loading,.sv-error{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#6b7280;text-align:center;padding:20px}
-.sv-spinner{width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#6c63ff;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.sv-error span{font-size:48px}.sv-error h2{font-size:22px;color:#374151}
-.sv-error p{font-size:14px}.sv-error code{background:#f3f4f6;padding:2px 8px;border-radius:4px}
-
-/* NAV */
-.sv-nav{background:#fff;border-bottom:1px solid #e5e7eb;padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06);height:56px;flex-wrap:nowrap}
-/* Nav auth (connexion/déconnexion) */
-.sv-nav-auth{display:flex;align-items:center;flex-shrink:0}
-.sv-user-pill{display:flex;align-items:center;gap:6px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:100px;padding:4px 10px 4px 4px}
-.sv-user-avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#6c63ff,#a78bfa);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:700;overflow:hidden;flex-shrink:0}
-.sv-avatar-img{width:100%;height:100%;object-fit:cover}
-.sv-user-name{font-size:12px;font-weight:600;color:#374151;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sv-signout-btn{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;padding:2px 4px;border-radius:4px;line-height:1;transition:all .15s}
-.sv-signout-btn:hover{color:#ef4444;background:rgba(239,68,68,.1)}
-.sv-login-btn{display:flex;align-items:center;gap:5px;background:#6c63ff;color:white;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;white-space:nowrap}
-.sv-login-btn:hover{background:#5b52ee}
-/* Auth modal */
-.sv-auth-overlay .sv-modal-box{padding:0}
-.sv-auth-box{max-width:380px}
-.sv-auth-brand{display:flex;flex-direction:column;align-items:center;gap:8px;padding:24px 20px 0;text-align:center}
-.sv-auth-logo-wrap{width:52px;height:52px;border-radius:12px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f3f4f6}
-.sv-auth-logo-img{width:100%;height:100%;object-fit:contain}
-.sv-auth-logo-ph{font-size:24px;color:#6c63ff}
-.sv-auth-store{font-family:'Playfair Display',serif;font-size:17px;font-weight:600;color:#1a1a2e}
-.sv-auth-tabs{display:flex;background:#f3f4f6;border-radius:10px;padding:3px;margin:14px 18px 0;gap:3px}
-.sv-auth-tab{flex:1;padding:8px;background:none;border:none;border-radius:8px;font-size:13px;font-weight:500;color:#6b7280;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s}
-.sv-auth-tab.active{background:white;color:#6c63ff;font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,.1)}
-.sv-auth-error{margin:10px 18px 0;background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:9px 12px;border-radius:8px;font-size:13px}
-.sv-auth-success{margin:10px 18px 0;background:#ecfdf5;border:1px solid #a7f3d0;color:#059669;padding:9px 12px;border-radius:8px;font-size:13px}
-.sv-auth-form{display:flex;flex-direction:column;gap:10px;padding:14px 18px 20px}
-.sv-auth-input{padding:11px 13px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none;color:#1a1a2e;transition:border-color .15s;width:100%}
-.sv-auth-input:focus{border-color:#6c63ff;box-shadow:0 0 0 3px rgba(108,99,255,.08)}
-.sv-auth-forgot-link{background:none;border:none;color:#6c63ff;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:right;padding:0;align-self:flex-end}
-.sv-auth-submit{padding:13px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s}
-.sv-auth-submit:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(108,99,255,.35)}
-.sv-auth-submit:disabled{opacity:.6;cursor:not-allowed}
-.sv-auth-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:sv-auth-spin .6s linear infinite;flex-shrink:0}
-@keyframes sv-auth-spin{to{transform:rotate(360deg)}}
-.sv-auth-forgot-desc{font-size:13px;color:#6b7280;text-align:center;line-height:1.6}
-.sv-auth-back-link{background:none;border:none;color:#9ca3af;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:center;padding:4px;transition:color .15s}
-.sv-auth-back-link:hover{color:#374151}
-@media(max-width:480px){.sv-user-name{display:none}.sv-login-btn{padding:7px 10px;font-size:11px}}
-.sv-brand{display:flex;align-items:center;gap:8px;margin-right:auto}
-.sv-brand-logo{width:32px;height:32px;border-radius:6px;object-fit:contain}
-.sv-brand-icon{font-size:20px;color:#6c63ff}
-.sv-brand-name{font-family:'Playfair Display',serif;font-size:18px;color:#1a1a2e;font-weight:600}
-.sv-page-tabs{display:flex;gap:4px;flex-wrap:wrap}
-.sv-tab{background:transparent;border:1px solid transparent;color:#6b7280;font-size:14px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif}
-.sv-tab:hover{background:#f3f4f6;color:#111}
-.sv-tab.active{background:#6c63ff;color:white;border-color:#6c63ff}
-.sv-cart-btn{display:flex;align-items:center;gap:6px;background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;transition:all .15s}
-.sv-cart-btn:hover{background:#ede9fe;border-color:#6c63ff}
-.sv-cart-badge{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px}
-.sv-page{min-height:calc(100vh - 57px)}
-
-/* HERO */
-.sv-hero{padding:100px 60px;background:linear-gradient(135deg,#f8f7ff,#ede9fe);text-align:center}
-.sv-hero-title{font-family:'Playfair Display',serif;font-size:52px;font-weight:600;color:#1a1a2e;line-height:1.15;white-space:pre-line;margin-bottom:16px}
-.sv-hero-sub{font-size:20px;color:#6b7280;margin-bottom:32px}
-.sv-hero-cta{background:#6c63ff;color:white;border:none;border-radius:10px;padding:14px 32px;font-size:16px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:transform .2s}
-.sv-hero-cta:hover{transform:translateY(-2px)}
-/* TEXT */
-.sv-text{padding:48px 60px}.sv-text p{font-size:17px;line-height:1.8;color:#374151;max-width:720px}
-/* IMAGE */
-.sv-image{padding:32px 60px}.sv-image img{width:100%;border-radius:12px;display:block}
-/* GALLERY */
-.sv-gallery{padding:32px 60px}.sv-gallery-grid{display:grid;gap:10px}
-.sv-gallery-item{border-radius:10px;overflow:hidden;aspect-ratio:1}
-.sv-gallery-item img{width:100%;height:100%;object-fit:cover;display:block}
-/* VIDEO */
-.sv-video{padding:32px 60px}
-.sv-video-title{font-family:'Playfair Display',serif;font-size:24px;color:#1a1a2e;margin-bottom:16px}
-.sv-video-wrap{border-radius:12px;overflow:hidden}
-.sv-video-wrap iframe{width:100%;height:400px;border:none;display:block}
-/* PRODUCTS */
-.sv-products{padding:48px 60px;background:#fafafa}
-.sv-products-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
-.sv-product-card{background:white;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06);transition:transform .2s}
-.sv-product-card:hover{transform:translateY(-4px)}
-.sv-product-img-wrap{position:relative}
-.sv-product-img{width:100%;height:200px;object-fit:cover;display:block}
-.sv-product-img-ph{width:100%;height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:48px}
-.sv-product-badge{position:absolute;top:12px;left:12px;background:#fef3c7;color:#92400e;font-size:10px;font-weight:700;padding:3px 10px;border-radius:100px;text-transform:uppercase;letter-spacing:.5px}
-.sv-product-body{padding:18px}
-.sv-product-name{font-size:16px;font-weight:600;color:#111;margin-bottom:6px}
-.sv-product-desc{font-size:13px;color:#6b7280;line-height:1.5;margin-bottom:14px}
-.sv-product-footer{display:flex;align-items:center;justify-content:space-between}
-.sv-product-price{font-size:20px;font-weight:700;color:#6c63ff}
-.sv-product-btn{background:#6c63ff;color:white;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;display:flex;align-items:center;gap:6px}
-.sv-product-btn:hover{background:#5b52ee;transform:translateY(-1px)}
-/* FEATURES */
-.sv-features{padding:60px;background:#fafafa}
-.sv-features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:840px;margin:0 auto}
-.sv-feature-card{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:28px 24px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.04)}
-.sv-feat-icon{font-size:32px;display:block;margin-bottom:12px}
-.sv-feature-card strong{font-size:16px;color:#111;display:block;margin-bottom:6px}
-.sv-feature-card p{font-size:14px;color:#6b7280;line-height:1.5}
-/* PAYMENT */
-.sv-payment{padding:80px 60px;background:linear-gradient(135deg,#f8f7ff,#ede9fe);text-align:center}
-.sv-payment-title{font-family:'Playfair Display',serif;font-size:36px;color:#1a1a2e;margin-bottom:10px}
-.sv-payment-desc{font-size:16px;color:#6b7280;margin-bottom:24px}
-.sv-payment-amount{font-size:64px;font-weight:700;color:#6c63ff;margin-bottom:36px}
-.sv-payment-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-.sv-pay-btn{padding:14px 32px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:transform .2s}
-.sv-pay-btn:hover{transform:translateY(-2px)}
-.sv-stripe{background:#635bff;color:white}.sv-paypal{background:#ffc439;color:#003087}
-/* FORM */
-.sv-form{padding:60px;background:#f8f7ff;display:flex;flex-direction:column;align-items:center;gap:12px}
-.sv-form h3{font-family:'Playfair Display',serif;font-size:30px;color:#1a1a2e;margin-bottom:12px}
-.sv-form-input{width:100%;max-width:500px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:15px;font-family:'DM Sans',sans-serif;background:white;outline:none;transition:border-color .15s}
-.sv-form-input:focus{border-color:#6c63ff}
-.sv-form-textarea{min-height:120px;resize:vertical}
-.sv-form-error{color:#ef4444;font-size:13px;width:100%;max-width:500px;padding:8px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px}
-.sv-form-success{color:#065f46;font-size:14px;font-weight:600;width:100%;max-width:500px;padding:12px 16px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;text-align:center}
-.sv-form-btn{background:#6c63ff;color:white;border:none;border-radius:10px;padding:13px 28px;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;width:100%;max-width:500px}
-.sv-form-btn:hover:not(:disabled){background:#5b52ee;transform:translateY(-1px)}
-.sv-form-btn:disabled{opacity:.6;cursor:not-allowed}
-/* DIVIDER */
-.sv-divider hr{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
-
-/* MODALS */
-.sv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px}
-.sv-modal-box{background:white;border-radius:16px;padding:32px;position:relative;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.18)}
-.sv-modal-close{position:absolute;top:16px;right:16px;background:#f3f4f6;border:none;color:#6b7280;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
-.sv-modal-header{text-align:center;margin-bottom:20px}
-.sv-modal-header span{font-size:36px;display:block;margin-bottom:10px}
-.sv-modal-header h2{font-family:'Playfair Display',serif;font-size:22px;color:#1a1a2e}
-.sv-modal-enter-active,.sv-modal-leave-active{transition:all .25s ease}
-.sv-modal-enter-from,.sv-modal-leave-to{opacity:0;transform:scale(.95)}
-/* CART */
-.sv-cart-empty{text-align:center;padding:40px;color:#9ca3af;display:flex;flex-direction:column;align-items:center;gap:12px}
-.sv-cart-empty span{font-size:40px;opacity:.5}
-.sv-cart-items{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;max-height:340px;overflow-y:auto}
-.sv-cart-item{display:grid;grid-template-columns:48px 1fr auto auto 24px;align-items:center;gap:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px}
-.sv-ci-img{width:48px;height:48px;border-radius:8px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
-.sv-ci-img img{width:100%;height:100%;object-fit:cover}
-.sv-ci-info{min-width:0}
-.sv-ci-name{font-size:13px;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sv-ci-price{font-size:12px;color:#6b7280}
-.sv-ci-qty{display:flex;align-items:center;gap:6px}
-.sv-ci-qty button{background:#e5e7eb;border:none;color:#374151;width:24px;height:24px;border-radius:5px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
-.sv-ci-qty span{font-size:13px;font-weight:600;min-width:20px;text-align:center}
-.sv-ci-subtotal{font-size:13px;font-weight:700;color:#6c63ff;white-space:nowrap}
-.sv-ci-del{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:4px}
-.sv-ci-del:hover{background:#fee2e2;color:#ef4444}
-.sv-cart-footer{border-top:1px solid #e5e7eb;padding-top:16px}
-.sv-cart-total{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.sv-cart-total span{font-size:14px;color:#6b7280}
-.sv-cart-total strong{font-size:24px;font-weight:700;color:#6c63ff}
-.sv-cart-actions{display:flex;gap:10px}
-.sv-btn-sec{flex:1;padding:11px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;color:#374151}
-.sv-btn-primary{flex:2;padding:12px;background:#6c63ff;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif}
-.sv-btn-primary:hover{background:#5b52ee}
-/* PAYMENT MODAL */
-.sv-pay-box{max-width:440px}
-.sv-pay-amount{font-size:34px;font-weight:700;color:#6c63ff;margin-top:6px}
-.sv-customer-fields{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
-.sv-cust-input{width:100%;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;font-family:'DM Sans',sans-serif;outline:none}
-.sv-cust-input:focus{border-color:#6c63ff}
-.sv-pay-error{background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
-.sv-pay-tabs{display:flex;gap:8px;margin-bottom:16px}
-.sv-pay-tabs button{flex:1;padding:10px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;color:#6b7280;transition:all .15s}
-.sv-pay-tabs button.active{background:#635bff;color:white;border-color:#635bff}
-.sv-pay-form{display:flex;flex-direction:column;gap:12px}
-.sv-stripe-checkout-info{background:#f8f9ff;border:1px solid #e0e7ff;border-radius:10px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
-.sv-stripe-logo{background:#635bff;color:white;font-size:13px;font-weight:800;letter-spacing:2px;padding:6px 16px;border-radius:6px;text-transform:lowercase}
-.sv-stripe-checkout-desc{font-size:13px;color:#6b7280;line-height:1.6}
-.sv-stripe-badges{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-.sv-stripe-badges span{background:#f3f4f6;border:1px solid #e5e7eb;color:#374151;font-size:11px;font-weight:600;padding:3px 10px;border-radius:100px}
-.sv-paypal-wrap{min-height:50px}
-.sv-pay-note{font-size:11px;color:#9ca3af;text-align:center}
-.sv-pay-submit{width:100%;padding:14px;background:#635bff;color:white;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px}
-.sv-pay-submit:disabled{opacity:.6;cursor:not-allowed}
-.sv-spinner-sm{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .6s linear infinite}
-/* PAY SUCCESS */
-.sv-pay-success{text-align:center;padding:16px 0}
-.sv-success-icon{width:64px;height:64px;background:#10b981;border-radius:50%;color:white;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
-.sv-pay-success h2{font-family:'Playfair Display',serif;font-size:22px;color:#1a1a2e;margin-bottom:8px}
-.sv-pay-success p{font-size:14px;color:#6b7280;line-height:1.6}
-
-@media(max-width:768px){
-  .sv-nav{padding:10px 16px;flex-wrap:wrap}
-  .sv-hero{padding:60px 24px}.sv-hero-title{font-size:34px}
-  .sv-text,.sv-image,.sv-gallery,.sv-video,.sv-products,.sv-features,.sv-payment,.sv-form{padding-left:20px;padding-right:20px}
-  .sv-products-grid{grid-template-columns:1fr 1fr}.sv-features-grid{grid-template-columns:1fr}
-}
-@media(max-width:480px){
-  .sv-products-grid{grid-template-columns:1fr}
-  .sv-cart-item{grid-template-columns:40px 1fr auto 24px}
-  .sv-ci-subtotal{display:none}
-}
-
-/* ── Cart 2 étapes SiteViewer ───────────────────────────── */
-.sv-cart-overlay .sv-modal-box{padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden}
-.sv-cart-box{max-width:520px}
-.sv-cart-header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #e5e7eb;background:#f9fafb;flex-shrink:0}
-.sv-back-btn{background:#f3f4f6;border:1px solid #e5e7eb;color:#6b7280;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;white-space:nowrap;transition:all .15s}
-.sv-back-btn:hover{background:#e5e7eb}
-.sv-cart-header-title{display:flex;align-items:center;gap:8px;flex:1}
-.sv-cart-header-title span:first-child{font-size:20px}
-.sv-cart-header-title h2{font-size:16px;font-weight:700;color:#1a1a2e;margin:0}
-.sv-cart-count{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px}
-.sv-cart-items{overflow-y:auto;flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
-.sv-cart-item{display:grid;grid-template-columns:44px 1fr auto auto 24px;align-items:center;gap:8px;padding:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px}
-.sv-ci-img{width:44px;height:44px;border-radius:8px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:20px}
-.sv-ci-img img{width:100%;height:100%;object-fit:cover}
-.sv-ci-info{min-width:0}
-.sv-ci-name{font-size:13px;font-weight:600;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sv-ci-price{font-size:12px;color:#6b7280}
-.sv-ci-qty{display:flex;align-items:center;gap:5px}
-.sv-qty-btn{width:24px;height:24px;background:#e5e7eb;border:none;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
-.sv-qty-val{font-size:13px;font-weight:600;min-width:18px;text-align:center}
-.sv-ci-subtotal{font-size:12px;font-weight:700;color:#6c63ff;white-space:nowrap}
-.sv-ci-del{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:13px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:5px}
-.sv-ci-del:hover{background:#fef2f2;color:#ef4444}
-.sv-cart-footer{padding:12px 16px;border-top:1px solid #e5e7eb;flex-shrink:0}
-.sv-cart-total-row{display:flex;justify-content:space-between;align-items:center;font-size:15px;color:#374151;margin-bottom:12px}
-.sv-cart-total-row strong{font-size:20px;font-weight:800;color:#6c63ff}
-.sv-cart-footer-btns{display:flex;gap:8px}
-.sv-checkout-btn{flex:2;justify-content:center}
-
-/* Checkout step */
-.sv-checkout-summary{padding:10px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;max-height:140px;overflow-y:auto}
-.sv-summary-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f3f4f6}
-.sv-summary-item:last-of-type{border-bottom:none}
-.sv-summary-img{width:32px;height:32px;border-radius:6px;overflow:hidden;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-.sv-summary-img img{width:100%;height:100%;object-fit:cover}
-.sv-summary-name{flex:1;font-size:12px;color:#374151}
-.sv-summary-price{font-size:12px;font-weight:700;color:#6c63ff;white-space:nowrap}
-.sv-summary-total{display:flex;justify-content:space-between;padding-top:8px;margin-top:4px;border-top:1px solid #e5e7eb;font-size:14px;color:#374151}
-.sv-summary-total strong{font-size:16px;color:#6c63ff}
-
-.sv-checkout-fields{padding:12px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1}
-.sv-checkout-section{font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;padding-bottom:5px;border-bottom:1px solid #f3f4f6}
-.sv-checkout-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.sv-checkout-field{display:flex;flex-direction:column;gap:4px}
-.sv-checkout-field label{font-size:11px;color:#6b7280;font-weight:500}
-.sv-checkout-input{padding:9px 12px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:#374151;transition:border-color .15s;width:100%;background:white}
-.sv-checkout-input:focus{border-color:#6c63ff}
-.sv-checkout-select{cursor:pointer}
-
-.sv-pay-error{margin:0 16px;background:#fef2f2;border:1px solid #fecaca;color:#ef4444;padding:8px 12px;border-radius:8px;font-size:13px;flex-shrink:0}
-.sv-pay-final-btn{margin:10px 16px;width:calc(100% - 32px);padding:14px;background:linear-gradient(135deg,#6c63ff,#a78bfa);color:white;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .2s;flex-shrink:0}
-.sv-pay-final-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(108,99,255,.35)}
-.sv-pay-final-btn:disabled{opacity:.6;cursor:not-allowed}
-.sv-secure-note{text-align:center;font-size:11px;color:#9ca3af;padding-bottom:12px;flex-shrink:0}
-.sv-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:sv-spin .6s linear infinite;flex-shrink:0}
-@keyframes sv-spin{to{transform:rotate(360deg)}}
-
-
-/* ── Profil client — pill cliquable ────────────────────── */
-.sv-user-pill{cursor:pointer;transition:all .15s}
-.sv-user-pill:hover{background:#ede9fe;border-color:#6c63ff}
-.sv-profile-arrow{font-size:11px;color:#9ca3af;margin-left:2px}
-
-/* ── Modal profil ───────────────────────────────────────── */
-.sv-profile-overlay .sv-modal-box{padding:0;max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
-.sv-profile-box{max-width:440px}
-
-/* Header avatar */
-.svp-header{display:flex;align-items:center;gap:14px;padding:20px 20px 16px;background:linear-gradient(135deg,#6c63ff,#a78bfa);flex-shrink:0}
-.svp-avatar{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;border:2px solid rgba(255,255,255,.4)}
-.svp-avatar-img{width:100%;height:100%;object-fit:cover}
-.svp-avatar-initials{color:white;font-size:22px;font-weight:700}
-.svp-info{flex:1;min-width:0}
-.svp-name{font-size:16px;font-weight:700;color:white;margin-bottom:2px}
-.svp-email{font-size:12px;color:rgba(255,255,255,.8);word-break:break-all}
-.svp-badge{display:inline-block;background:rgba(255,255,255,.2);color:white;font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;margin-top:5px;border:1px solid rgba(255,255,255,.3)}
-
-/* Stats */
-.svp-stats{display:grid;grid-template-columns:repeat(3,1fr);padding:12px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;flex-shrink:0;gap:4px}
-.svp-stat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;background:white;border-radius:8px;border:1px solid #e5e7eb}
-.svp-stat-val{font-size:15px;font-weight:800;color:#6c63ff}
-.svp-stat-label{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.3px;text-align:center}
-
-/* Section commandes */
-.svp-orders-section{display:flex;flex-direction:column;flex:1;overflow:hidden;padding:0}
-.svp-orders-title{font-size:12px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.4px;padding:12px 16px 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f3f4f6;flex-shrink:0}
-.svp-loading{font-size:11px;color:#9ca3af;font-weight:400;margin-left:auto}
-.svp-orders-count{background:#6c63ff;color:white;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;margin-left:auto}
-.svp-orders-loader{display:flex;justify-content:center;padding:24px}
-.svp-spinner{width:24px;height:24px;border:3px solid #e5e7eb;border-top-color:#6c63ff;border-radius:50%;animation:svp-spin .6s linear infinite}
-@keyframes svp-spin{to{transform:rotate(360deg)}}
-.svp-orders-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 16px;text-align:center;color:#6b7280;font-size:14px}
-.svp-orders-empty span{font-size:36px}
-.svp-shop-btn{background:#6c63ff;color:white;border:none;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;margin-top:4px}
-.svp-shop-btn:hover{background:#5b52ee}
-.svp-orders-list{overflow-y:auto;flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:8px;max-height:320px}
-
-/* Carte commande */
-.svp-order-card{background:white;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;transition:border-color .15s}
-.svp-order-card:hover{border-color:#6c63ff}
-.svp-order-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.svp-order-left{display:flex;flex-direction:column;gap:2px}
-.svp-order-id{font-size:12px;font-weight:700;color:#374151;font-family:monospace}
-.svp-order-date{font-size:10px;color:#9ca3af}
-.svp-order-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
-.svp-order-total{font-size:14px;font-weight:800;color:#6c63ff}
-.svp-order-status{font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px}
-.svp-s-paid{background:#ecfdf5;color:#059669}
-.svp-s-pending{background:#fefce8;color:#d97706}
-.svp-s-shipped{background:#eff6ff;color:#2563eb}
-.svp-s-delivered{background:#f0fdf4;color:#15803d}
-.svp-s-cancelled{background:#fef2f2;color:#dc2626}
-.svp-order-items{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
-.svp-order-item-tag{background:#f3f4f6;border:1px solid #e5e7eb;color:#6b7280;font-size:10px;padding:2px 7px;border-radius:5px}
-.svp-order-addr{font-size:10px;color:#9ca3af;margin-top:2px}
-
-/* Déconnexion */
-.svp-signout-btn{width:calc(100% - 32px);margin:10px 16px 14px;padding:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;text-align:center;flex-shrink:0}
-.svp-signout-btn:hover{background:rgba(239,68,68,.15)}
-
-</style>

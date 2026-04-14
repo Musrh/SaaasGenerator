@@ -1,36 +1,33 @@
 <!-- ============================================================
-  SITEVIEWER.VUE — VERSION CORRIGÉE (BACKEND COMPATIBLE)
+  SITEVIEWER.VUE — VERSION PRO (SECTIONS FIX + STRIPE FIX)
 ============================================================ -->
 
 <script setup>
-import { ref, onMounted, computed, watch } from "vue"
+import { ref, onMounted, computed } from "vue"
 import { useRouter } from "vue-router"
 import { db } from "../firebase.js"
-import { doc, getDoc, collection, addDoc } from "firebase/firestore"
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
+import { doc, getDoc } from "firebase/firestore"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
 
 const clientAuth = getAuth()
 const router = useRouter()
 
-// ============================================================
-// STATE
-// ============================================================
-const props = defineProps({ uid: { type: String, required: true } })
+// ===================== PROPS =====================
+const props = defineProps({
+  uid: { type: String, required: true }
+})
 
+// ===================== STATE =====================
 const site = ref(null)
 const loading = ref(true)
 const error = ref("")
 const resolvedUid = ref("")
-
-// AUTH CLIENT
-const svCurrentUser = ref(null)
 
 // CART
 const cart = ref([])
 const showCart = ref(false)
 
 // CHECKOUT
-const customerName = ref("")
 const customerEmail = ref("")
 const payProcessing = ref(false)
 const payError = ref("")
@@ -38,33 +35,40 @@ const payError = ref("")
 // PAYMENT CONFIG
 const storePayConfig = ref({ stripe: null, paypal: null })
 
-// ============================================================
-// COMPUTED
-// ============================================================
+// AUTH
+const currentUser = ref(null)
+
+// ===================== COMPUTED =====================
 const cartCount = computed(() =>
   cart.value.reduce((s, i) => s + i.qty, 0)
 )
 
 const cartTotal = computed(() =>
-  cart.value
-    .reduce((s, i) => s + Number(i.price || 0) * i.qty, 0)
-    .toFixed(2)
+  cart.value.reduce((s, i) => s + Number(i.price || 0) * i.qty, 0).toFixed(2)
 )
 
-// ============================================================
-// LOAD SITE
-// ============================================================
+// ===================== LOAD SITE =====================
 const loadSite = async () => {
   loading.value = true
+  error.value = ""
+
   try {
     const snap = await getDoc(doc(db, "users", props.uid))
 
-    if (snap.exists() && snap.data().siteData) {
-      site.value = snap.data().siteData
-      resolvedUid.value = props.uid
-    } else {
+    if (!snap.exists()) {
       error.value = "Site introuvable"
+      return
     }
+
+    const data = snap.data()
+
+    // 🔥 IMPORTANT
+    site.value = data.siteData || {}
+
+    resolvedUid.value = props.uid
+
+    console.log("SITE LOADED:", site.value)
+
   } catch (e) {
     error.value = e.message
   } finally {
@@ -72,9 +76,7 @@ const loadSite = async () => {
   }
 }
 
-// ============================================================
-// CART
-// ============================================================
+// ===================== CART =====================
 const addToCart = (product) => {
   if (!clientAuth.currentUser) {
     router.push(`/auth?store=${props.uid}`)
@@ -101,9 +103,7 @@ const removeFromCart = (id) => {
   cart.value = cart.value.filter(i => i.id !== id)
 }
 
-// ============================================================
-// 🔥 STRIPE CHECKOUT (FIXED BACKEND COMPATIBLE)
-// ============================================================
+// ===================== STRIPE CHECKOUT =====================
 const payWithStripe = async () => {
   const cfg = storePayConfig.value?.stripe
 
@@ -117,11 +117,6 @@ const payWithStripe = async () => {
     return
   }
 
-  if (!resolvedUid.value) {
-    payError.value = "Store introuvable"
-    return
-  }
-
   if (!cart.value.length) {
     payError.value = "Panier vide"
     return
@@ -131,9 +126,7 @@ const payWithStripe = async () => {
   payError.value = ""
 
   try {
-    // =====================================================
-    // 🔥 FORMAT EXACT BACKEND
-    // =====================================================
+    // 🔥 FORMAT COMPATIBLE BACKEND
     const payload = {
       ownerUid: resolvedUid.value,
       email: customerEmail.value.trim().toLowerCase(),
@@ -145,53 +138,38 @@ const payWithStripe = async () => {
       }))
     }
 
-    console.log("📦 PAYLOAD:", payload)
-
-    const res = await fetch(
-      cfg.backendUrl + "/create-store-session",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      }
-    )
+    const res = await fetch(cfg.backendUrl + "/create-store-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
 
     const data = await res.json()
 
-    if (!res.ok) {
-      throw new Error(data.error || "Erreur backend")
-    }
+    if (!res.ok) throw new Error(data.error || "Erreur backend")
 
-    if (data.url) {
-      window.location.href = data.url
-    } else {
-      throw new Error("URL Stripe manquante")
-    }
+    window.location.href = data.url
 
   } catch (e) {
-    console.error(e)
     payError.value = e.message
   } finally {
     payProcessing.value = false
   }
 }
 
-// ============================================================
-// AUTH STATE
-// ============================================================
+// ===================== AUTH =====================
 onMounted(() => {
   loadSite()
   onAuthStateChanged(clientAuth, (user) => {
-    svCurrentUser.value = user
+    currentUser.value = user
   })
 })
 </script>
 
+<!-- ===================== TEMPLATE ===================== -->
 <template>
   <div class="p-6 text-white">
-    
+
     <!-- LOADING -->
     <div v-if="loading">Chargement...</div>
 
@@ -203,38 +181,83 @@ onMounted(() => {
     <!-- SITE -->
     <div v-if="site">
 
-      <h1 class="text-2xl font-bold">
-        {{ site.title }}
-      </h1>
+      <!-- ================= SECTIONS ================= -->
+      <div v-if="site.sections && site.sections.length">
 
-      <!-- PRODUCTS -->
-      <div class="grid grid-cols-2 gap-4 mt-6">
         <div
-          v-for="p in site.products"
-          :key="p.id"
-          class="bg-gray-800 p-4 rounded"
+          v-for="(section, index) in site.sections"
+          :key="index"
+          class="mb-10"
         >
-          <h3>{{ p.name }}</h3>
-          <p>{{ p.price }} €</p>
 
-          <button
-            class="bg-blue-500 px-3 py-1 mt-2"
-            @click="addToCart(p)"
-          >
-            Ajouter
-          </button>
+          <!-- HERO -->
+          <div v-if="section.type === 'hero'" class="text-center">
+            <h1 class="text-3xl font-bold">
+              {{ section.title }}
+            </h1>
+            <p class="text-gray-300">
+              {{ section.subtitle }}
+            </p>
+          </div>
+
+          <!-- PRODUCTS -->
+          <div v-else-if="section.type === 'products'">
+            <h2 class="text-xl font-bold mb-4">
+              {{ section.title }}
+            </h2>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div
+                v-for="p in (section.items || [])"
+                :key="p.id"
+                class="bg-gray-800 p-4 rounded"
+              >
+                <h3>{{ p.name }}</h3>
+                <p>{{ p.price }} €</p>
+
+                <button
+                  class="bg-blue-500 px-3 py-1 mt-2"
+                  @click="addToCart(p)"
+                >
+                  Ajouter
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TEXT -->
+          <div v-else-if="section.type === 'text'">
+            <p class="text-gray-300">
+              {{ section.content }}
+            </p>
+          </div>
+
+          <!-- IMAGE -->
+          <div v-else-if="section.type === 'image'">
+            <img :src="section.url" class="rounded w-full" />
+          </div>
+
         </div>
+
       </div>
 
-      <!-- CART -->
-      <div v-if="cart.length" class="mt-10 bg-gray-900 p-4">
-        <h2 class="text-xl">Panier</h2>
+      <!-- EMPTY -->
+      <div v-else>
+        <p class="text-gray-400">
+          Aucune section disponible
+        </p>
+      </div>
+
+      <!-- ================= CART ================= -->
+      <div v-if="cart.length" class="mt-10 bg-gray-900 p-4 rounded">
+
+        <h2 class="text-xl mb-2">Panier</h2>
 
         <div v-for="item in cart" :key="item.id">
           {{ item.name }} x{{ item.qty }}
         </div>
 
-        <p>Total: {{ cartTotal }} €</p>
+        <p class="mt-2">Total: {{ cartTotal }} €</p>
 
         <input
           v-model="customerEmail"
@@ -253,6 +276,7 @@ onMounted(() => {
         <p v-if="payError" class="text-red-400">
           {{ payError }}
         </p>
+
       </div>
 
     </div>

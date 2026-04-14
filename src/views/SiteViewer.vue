@@ -301,16 +301,29 @@ const svRegister = async () => {
     const { doc: fd, setDoc: fset } = await import("firebase/firestore")
     const cred = await createUserWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
     await updateProfile(cred.user, { displayName: svName.value.trim() })
-    // Enregistrer dans customers lié au store
+
+    // ✅ Stocker UNIQUEMENT dans la collection customers (jamais dans users)
+    // users est réservé aux propriétaires de stores
     await fset(fd(db, "customers", cred.user.uid), {
-      uid: cred.user.uid, email: svEmail.value.trim().toLowerCase(),
-      displayName: svName.value.trim(), storeUid: resolvedUid.value,
-      role: "customer", createdAt: new Date().toISOString(),
+      uid:         cred.user.uid,
+      email:       svEmail.value.trim().toLowerCase(),
+      displayName: svName.value.trim(),
+      storeUid:    resolvedUid.value,          // UID du store propriétaire
+      siteSlug:    props.uid,                  // slug ou uid utilisé dans l'URL
+      role:        "customer",
+      createdAt:   new Date().toISOString(),
     }, { merge: true })
+
     svAuthSuccess.value = "Compte créé ! Bienvenue 🎉"
-    setTimeout(() => { svShowAuth.value = false; svEmail.value=""; svPassword.value=""; svConfirm.value=""; svName.value="" }, 1400)
+    setTimeout(() => {
+      svShowAuth.value = false
+      svEmail.value = ""; svPassword.value = ""; svConfirm.value = ""; svName.value = ""
+    }, 1400)
   } catch(e) {
-    const m = { "auth/email-already-in-use":"Email déjà utilisé.","auth/weak-password":"Mot de passe trop faible." }
+    const m = {
+      "auth/email-already-in-use": "Email déjà utilisé.",
+      "auth/weak-password":        "Mot de passe trop faible."
+    }
     svAuthError.value = m[e.code] || e.message
   } finally { svAuthLoading.value = false }
 }
@@ -334,8 +347,9 @@ const svSignOut = async () => {
   svOrdersLoaded.value = false
 }
 
-// Charger commandes du client — SANS orderBy pour éviter les index Firestore
-// Le tri se fait côté client après récupération
+// ✅ Charger commandes du client depuis la collection orders
+// Filtre : ownerUid (identifie le store) + email du client
+// La collection users est réservée aux propriétaires — on n'y touche pas ici
 const svLoadOrders = async (user) => {
   if (svLoadingOrders.value) return
   svLoadingOrders.value = true
@@ -347,59 +361,40 @@ const svLoadOrders = async (user) => {
   }
 
   try {
-    const { query: q, where, getDocs: gd, collection: col } = await import("firebase/firestore")
-    const uid   = user.uid
-    const email = (user.email || "").toLowerCase()
+    const { query: q, where, getDocs: gd, collection: col, and } = await import("firebase/firestore")
+    const email    = (user.email || "").toLowerCase()
+    const storeUid = resolvedUid.value   // UID du propriétaire du store
 
-    // ── Source 1 : orders par clientId ────────────────────────
-    // (PAS de orderBy → pas besoin d'index composite)
-    try {
-      const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
-      s1.docs.forEach(dedup)
-      console.log(`[profil] orders/clientId: ${s1.docs.length} résultats`)
-    } catch(e) { console.error("[profil] orders/clientId ERREUR:", e.message) }
-
-    // ── Source 2 : orders par customerEmail ───────────────────
-    if (email) {
+    // ── Source principale : orders filtrées par ownerUid + email ──
+    // ownerUid identifie le store concerné (évite de voir les commandes d'autres stores)
+    if (storeUid && email) {
       try {
-        const s2 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
-        s2.docs.forEach(dedup)
-        console.log(`[profil] orders/customerEmail: ${s2.docs.length} résultats`)
-      } catch(e) { console.error("[profil] orders/customerEmail ERREUR:", e.message) }
+        const snap = await gd(q(
+          col(db, "orders"),
+          where("ownerUid",      "==", storeUid),
+          where("email",         "==", email)
+        ))
+        snap.docs.forEach(dedup)
+        console.log(`[profil] orders ownerUid+email: ${snap.docs.length} résultats`)
+      } catch(e) { console.error("[profil] orders ownerUid+email ERREUR:", e.message) }
+
+      // Fallback si le champ email s'appelle "customerEmail"
+      try {
+        const snap2 = await gd(q(
+          col(db, "orders"),
+          where("ownerUid",      "==", storeUid),
+          where("customerEmail", "==", email)
+        ))
+        snap2.docs.forEach(dedup)
+        console.log(`[profil] orders ownerUid+customerEmail: ${snap2.docs.length} résultats`)
+      } catch(e) { console.error("[profil] orders ownerUid+customerEmail ERREUR:", e.message) }
     }
 
-    // ── Source 3 : cmdclients par clientUid ───────────────────
-    try {
-      const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
-      s3.docs.forEach(dedup)
-      console.log(`[profil] cmdclients/clientUid: ${s3.docs.length} résultats`)
-    } catch(e) { console.error("[profil] cmdclients/clientUid ERREUR:", e.message) }
-
-    // ── Source 4 : cmdclients par clientEmail ─────────────────
-    if (email) {
-      try {
-        const s4 = await gd(q(col(db, "cmdclients"), where("clientEmail", "==", email)))
-        s4.docs.forEach(dedup)
-        console.log(`[profil] cmdclients/clientEmail: ${s4.docs.length} résultats`)
-      } catch(e) { console.error("[profil] cmdclients/clientEmail ERREUR:", e.message) }
-    }
-
-    // ── Source 5 : users/{storeUid}/orders par customerEmail ──
-    if (resolvedUid.value && email) {
-      try {
-        const s5 = await gd(q(
-          col(db, "users", resolvedUid.value, "orders"),
-          where("customerEmail", "==", email)))
-        s5.docs.forEach(dedup)
-        console.log(`[profil] store/orders: ${s5.docs.length} résultats`)
-      } catch(e) { console.error("[profil] store/orders ERREUR:", e.message) }
-    }
-
-    // Trier côté client par date décroissante
+    // Trier par date décroissante côté client
     results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
     svClientOrders.value = results
     svOrdersLoaded.value = true
-    console.log(`[profil] Total commandes chargées: ${results.length}`)
+    console.log(`[profil] Total commandes: ${results.length}`)
 
   } catch(e) { console.error("[profil] svLoadOrders ERREUR:", e.message) }
   finally { svLoadingOrders.value = false }

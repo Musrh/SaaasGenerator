@@ -521,18 +521,16 @@ const payWithStripe = async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount:           Math.round(parseFloat(cartTotal.value) * 100),
+        // ✅ ownerUid = UID du propriétaire du store (requis par /create-store-session)
+        ownerUid:         resolvedUid.value,
+        email:            customerEmail.value,
         currency:         cfg.currency || "eur",
-        description:      `Commande — ${cartCount.value} article(s)`,
         items:            cart.value.map(i => ({
           nom:      i.name,
           prix:     parseFloat(i.price),
           quantity: i.qty,
         })),
-        email:            customerEmail.value,
-        clientId:         resolvedUid.value,
-        plan:             "store-order",
-        storeName:        cfg.storeName || "Store",
+        storeName:        cfg.storeName || siteMeta.value?.name || "Store",
         adresseLivraison: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
         successUrl,
         cancelUrl,
@@ -590,7 +588,7 @@ const saveOrder = async (provider, transactionId) => {
     // 2. Collection racine orders (compatible règle Firestore fournie)
     await addDoc(collection(db, "orders"), {
       ...orderData,
-      clientId: resolvedUid.value,
+      ownerUid: resolvedUid.value,
     })
     console.log("✓ Order saved to orders/")
   } catch (e) {

@@ -536,7 +536,7 @@ const payWithStripe = async () => {
     const cancelUrl  = cfg.cancelUrl  || `${origin}/`
 
     // ── Appel backend
-    const res = await fetch(cfg.backend_Url, {
+    const res = await fetch(cfg.backend_Url.value, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

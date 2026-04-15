@@ -58,6 +58,19 @@ const currentPageIndex = ref(0)
 // ── Config paiement du store ──────────────────────────────────
 const storePayConfig = ref({ stripe: null, paypal: null })
 
+// ── Plan du propriétaire → backend dynamique ──────────────────
+const storeOwner = ref({ plan: "free", paye: false })
+
+const isPro = computed(() =>
+  storeOwner.value.plan === "pro" || storeOwner.value.paye === true
+)
+
+const BACKEND_URL = computed(() =>
+  isPro.value
+    ? "https://backendfinal-production-afd2.up.railway.app"
+    : "https://backend-master-production-cf50.up.railway.app"
+)
+
 // ── Formulaire contact ───────────────────────────────────────
 const contactName    = ref("")
 const contactEmail   = ref("")
@@ -188,12 +201,13 @@ const loadSite = async () => {
       const data = userSnap.data()
       if (data.siteData) {
         // ✅ UID direct avec siteData
-        site.value        = data.siteData
-        siteMeta.value    = { name: data.siteName || "", logo: data.siteLogo || "" }
-        resolvedUid.value = uid
+        site.value           = data.siteData
+        siteMeta.value       = { name: data.siteName || "", logo: data.siteLogo || "" }
+        resolvedUid.value    = uid
+        storeOwner.value     = { plan: data.plan || "free", paye: data.paye || false }
         await loadPayConfig(uid)
         loading.value = false
-        console.log("  ✅ Site chargé via UID direct")
+        console.log("  ✅ Site chargé via UID direct | plan:", storeOwner.value.plan, "| backend:", BACKEND_URL.value)
         return
       } else {
         // Utilisateur existe mais pas encore publié
@@ -223,12 +237,14 @@ const loadSite = async () => {
 
       if (realSnap?.exists() && realSnap.data().siteData) {
         // ✅ Slug résolu avec succès
-        site.value        = realSnap.data().siteData
-        siteMeta.value    = { name: realSnap.data().siteName || "", logo: realSnap.data().siteLogo || "" }
-        resolvedUid.value = realUid
+        const rd             = realSnap.data()
+        site.value           = rd.siteData
+        siteMeta.value       = { name: rd.siteName || "", logo: rd.siteLogo || "" }
+        resolvedUid.value    = realUid
+        storeOwner.value     = { plan: rd.plan || "free", paye: rd.paye || false }
         await loadPayConfig(realUid)
         loading.value = false
-        console.log("  ✅ Site chargé via slug →", realUid)
+        console.log("  ✅ Site chargé via slug →", realUid, "| plan:", storeOwner.value.plan, "| backend:", BACKEND_URL.value)
         return
       } else if (realSnap?.exists()) {
         debugInfo.value = `Slug "${uid}" trouvé → UID ${realUid}, mais le site n'a pas de données publiées.`
@@ -265,24 +281,10 @@ const loadPayConfig = async (uid) => {
   } catch (e) { console.warn("Pas de config paiement:", e.message) }
 }
 
-const storeOwner = ref(null)
-const BACKEND_URL = ref("")
-  
 onMounted(() => {
   loadSite()
   // Écouter l'état auth pour le store
   onAuthStateChanged(clientAuth, (user) => { svCurrentUser.value = user })
-
-const snap = await getDoc(doc(db, "users", storeUid))
-  storeOwner.value = snap.data()
-
-  const isPro = storeOwner.value.plan === "pro"
-
-  BACKEND_URL.value = isPro
-    ? "https://backendfinal-production-afd2.up.railway.app"
-    : "https://backend-master-production-cf50.up.railway.app"
-
-
 })
 
 // ── Fonctions Auth client du store ───────────────────────────
@@ -499,75 +501,83 @@ watch([showPayModal, payProvider], ([open, provider]) => {
 // ── Paiement Stripe Checkout (redirect) ──────────────────────
 const payWithStripe = async () => {
   const cfg = storePayConfig.value?.stripe
-  if (!cfg?.backendUrl) { payError.value = "backendUrl Stripe non configuré."; return }
+
   if (!customerName.value || !customerEmail.value) {
     payError.value = "Nom et email obligatoires."; return
   }
   payProcessing.value = true
   payError.value = ""
+
   try {
-    // ── Sauvegarder la commande dans localStorage (pas sessionStorage)
-    // sessionStorage est effacé par Stripe sur certains navigateurs mobiles
+    const adresseLivraison = [svAddress.value, svZip.value, svCity.value, svCountry.value]
+      .filter(Boolean).join(", ")
+
+    // ── Sauvegarder dans localStorage (survit au redirect cross-domain)
     const pendingOrder = {
-      items:         cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, currency: i.currency, qty: i.qty, image: i.image || "" })),
-      total:         cartTotal.value,
-      currency:      cartCurrency.value,
-      itemCount:     cartCount.value,
-      customerName:  customerName.value,
-      customerEmail: customerEmail.value,
-      customerAddress: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
-      siteSlug:      props.uid,
-      ownerUid:      resolvedUid.value,
-      storeUid:      resolvedUid.value,
-      clientUid:     clientAuth.currentUser?.uid || "",
-      provider:      "stripe",
-      createdAt:     new Date().toISOString(),
+      items:           cart.value.map(i => ({ id: i.id, name: i.name, price: i.price, currency: i.currency, qty: i.qty, image: i.image || "" })),
+      total:           cartTotal.value,
+      currency:        cartCurrency.value,
+      itemCount:       cartCount.value,
+      customerName:    customerName.value,
+      customerEmail:   customerEmail.value,
+      customerAddress: adresseLivraison,
+      siteSlug:        props.uid,
+      ownerUid:        resolvedUid.value,
+      storeUid:        resolvedUid.value,
+      clientUid:       clientAuth.currentUser?.uid || "",
+      provider:        "stripe",
+      createdAt:       new Date().toISOString(),
     }
     localStorage.setItem("pendingStripeOrder", JSON.stringify(pendingOrder))
-    localStorage.setItem("stripeOwnerUid", resolvedUid.value)
-    localStorage.setItem("stripeSiteSlug", props.uid)
+    localStorage.setItem("stripeOwnerUid",  resolvedUid.value)
+    localStorage.setItem("stripeSiteSlug",  props.uid)
 
-    // ── URLs de retour Stripe
-    // Stripe supprime tout ce qui est après #
-    // Solution : URL racine simple, la détection se fait dans main.js
-    // via localStorage("pendingStripeOrder") au démarrage de l'app
+    // ── URLs retour (Stripe supprime tout après #)
     const origin     = "https://musrh.github.io/SaaasGenerator"
-    const successUrl = cfg.successUrl || `${origin}/`
-    const cancelUrl  = cfg.cancelUrl  || `${origin}/`
+    const successUrl = cfg?.successUrl || `${origin}/`
+    const cancelUrl  = cfg?.cancelUrl  || `${origin}/`
 
-    // ── Appel backend
-    const res = await fetch(cfg.backend_Url.value, {
-      method: "POST",
+    // ── Backend selon le plan du store (isPro = computed)
+    const backendUrl = `${BACKEND_URL.value}/create-store-session`
+    console.log(`💳 Paiement → ${backendUrl} (isPro: ${isPro.value})`)
+
+    const res = await fetch(backendUrl, {
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        amount:           Math.round(parseFloat(cartTotal.value) * 100),
-        currency:         cfg.currency || "eur",
-        description:      `Commande — ${cartCount.value} article(s)`,
-        items:            cart.value.map(i => ({
+        items: cart.value.map(i => ({
           nom:      i.name,
           prix:     parseFloat(i.price),
           quantity: i.qty,
         })),
         email:            customerEmail.value,
-        clientId:         resolvedUid.value,
-        plan:             "store-order",
-        storeName:        cfg.storeName || "Store",
-        adresseLivraison: [svAddress.value, svZip.value, svCity.value, svCountry.value].filter(Boolean).join(", "),
+        ownerUid:         resolvedUid.value,
+        storeUid:         resolvedUid.value,
+        clientId:         clientAuth.currentUser?.uid || resolvedUid.value,
+        siteSlug:         props.uid,
+        adresseLivraison,
+        storeName:        cfg?.storeName || siteMeta.value.name || "Store",
+        currency:         cfg?.currency  || "eur",
+        plan:             storeOwner.value.plan,
         successUrl,
         cancelUrl,
       }),
     })
-    if (!res.ok) throw new Error("Erreur serveur " + res.status)
-    const data = await res.json()
 
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || err.details || `Erreur serveur ${res.status}`)
+    }
+
+    const data = await res.json()
     if (data.url) {
-      // Fermer les modales avant redirect
       showCart.value     = false
       showPayModal.value = false
       window.location.href = data.url
       return
     }
     throw new Error(data.error || "Pas d'URL Stripe reçue")
+
   } catch (e) {
     payError.value      = e.message
     payProcessing.value = false

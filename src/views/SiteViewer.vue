@@ -265,10 +265,24 @@ const loadPayConfig = async (uid) => {
   } catch (e) { console.warn("Pas de config paiement:", e.message) }
 }
 
+const storeOwner = ref(null)
+const BACKEND_URL = ref("")
+  
 onMounted(() => {
   loadSite()
   // Écouter l'état auth pour le store
   onAuthStateChanged(clientAuth, (user) => { svCurrentUser.value = user })
+
+const snap = await getDoc(doc(db, "users", storeUid))
+  storeOwner.value = snap.data()
+
+  const isPro = storeOwner.value.plan === "pro"
+
+  BACKEND_URL.value = isPro
+    ? "https://backendfinal-production-afd2.up.railway.app"
+    : "https://backend-master-production-cf50.up.railway.app"
+
+
 })
 
 // ── Fonctions Auth client du store ───────────────────────────
@@ -522,7 +536,7 @@ const payWithStripe = async () => {
     const cancelUrl  = cfg.cancelUrl  || `${origin}/`
 
     // ── Appel backend
-    const res = await fetch(cfg.backendUrl, {
+    const res = await fetch(cfg.backend_Url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

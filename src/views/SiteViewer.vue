@@ -130,8 +130,17 @@ const payProvider  = ref("stripe")
 const payProcessing = ref(false)
 const paySuccess   = ref(false)
 const payError     = ref("")
-const customerName  = ref("")
-const customerEmail = ref("")
+// Pré-remplir depuis la session si disponible
+const customerName  = computed({
+  get: () => _customerName.value || svCurrentUser.value?.displayName || "",
+  set: (v) => { _customerName.value = v }
+})
+const customerEmail = computed({
+  get: () => _customerEmail.value || svCurrentUser.value?.email || "",
+  set: (v) => { _customerEmail.value = v }
+})
+const _customerName  = ref("")
+const _customerEmail = ref("")
 
 // Stripe Checkout (redirect vers Stripe)
 const stripeLoading = ref(false)
@@ -144,10 +153,14 @@ const currentPage  = computed(() => site.value?.pages?.[currentPageIndex.value] 
 // ── Panier — actions ──────────────────────────────────────────
 // Auth Firebase pour vérifier si le client est connecté
 const addToCart = (product) => {
-  // Connexion obligatoire pour acheter
-  if (!clientAuth.currentUser) {
-    // Rediriger vers la page auth du store avec retour prévu
-    router.push(`/auth?store=${props.uid}&redirect=/site/${props.uid}`)
+  // Vérifier la session locale (clients Firestore) OU Firebase Auth
+  // svCurrentUser est défini dès que le client est connecté via n'importe quelle méthode
+  if (!svCurrentUser.value) {
+    // Non connecté → ouvrir le formulaire de connexion du store
+    svShowAuth.value = true
+    svAuthMode.value = "login"
+    svAuthError.value   = ""
+    svAuthSuccess.value = ""
     return
   }
   const ex = cart.value.find(i => i.id === product.id)
@@ -653,8 +666,24 @@ watch([showPayModal, payProvider], ([open, provider]) => {
 const payWithStripe = async () => {
   const cfg = storePayConfig.value?.stripe
 
+  // Vérifier que le client est connecté (session Firestore OU Firebase Auth)
+  if (!svCurrentUser.value) {
+    payError.value = "Veuillez vous connecter pour finaliser votre achat."
+    svShowAuth.value = true
+    svAuthMode.value = "login"
+    return
+  }
+
   if (!customerName.value || !customerEmail.value) {
     payError.value = "Nom et email obligatoires."; return
+  }
+
+  // Pré-remplir email depuis la session si vide
+  if (!customerEmail.value && svCurrentUser.value?.email) {
+    customerEmail.value = svCurrentUser.value.email
+  }
+  if (!customerName.value && svCurrentUser.value?.displayName) {
+    customerName.value = svCurrentUser.value.displayName
   }
   payProcessing.value = true
   payError.value = ""
@@ -675,7 +704,7 @@ const payWithStripe = async () => {
       siteSlug:        props.uid,
       ownerUid:        resolvedUid.value,
       storeUid:        resolvedUid.value,
-      clientUid:       clientAuth.currentUser?.uid || "",
+      clientUid:       svCurrentUser.value?.uid || clientAuth.currentUser?.uid || "",
       provider:        "stripe",
       createdAt:       new Date().toISOString(),
     }
@@ -704,7 +733,7 @@ const payWithStripe = async () => {
         email:            customerEmail.value,
         ownerUid:         resolvedUid.value,
         storeUid:         resolvedUid.value,
-        clientId:         clientAuth.currentUser?.uid || resolvedUid.value,
+        clientId:         svCurrentUser.value?.uid || clientAuth.currentUser?.uid || resolvedUid.value,
         siteSlug:         props.uid,
         adresseLivraison,
         storeName:        cfg?.storeName || siteMeta.value.name || "Store",
@@ -780,7 +809,7 @@ const saveOrder = async (provider, transactionId) => {
     // 3. Collection cmdclients — commandes du CLIENT (pour profil client)
     await addDoc(collection(db, "cmdclients"), {
       ...orderData,
-      clientUid:   clientAuth.currentUser?.uid || "",
+      clientUid:   svCurrentUser.value?.uid || clientAuth.currentUser?.uid || "",
       clientEmail: orderData.customerEmail || "",
       clientName:  orderData.customerName  || "",
       storeUid:    resolvedUid.value,

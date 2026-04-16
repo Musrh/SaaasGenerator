@@ -24,7 +24,7 @@ import { ref, onMounted, computed, watch } from "vue"
 import { useRouter } from "vue-router"
 import VoiceAssistantClient from "../components/VoiceAssistantClient.vue"
 import { db } from "../firebase.js"
-import { doc, getDoc, collection, addDoc } from "firebase/firestore"
+import { doc, getDoc, setDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore"
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth"
 const clientAuth      = getAuth()
 const svCurrentUser   = ref(null)
@@ -283,52 +283,199 @@ const loadPayConfig = async (uid) => {
 
 onMounted(() => {
   loadSite()
-  // Écouter l'état auth pour le store
-  onAuthStateChanged(clientAuth, (user) => { svCurrentUser.value = user })
+
+  // Restaurer session client Firestore si déjà connectée
+  const savedSession = sessionStorage.getItem("svClientSession")
+  if (savedSession) {
+    try {
+      svCurrentUser.value = JSON.parse(savedSession)
+    } catch(e) { sessionStorage.removeItem("svClientSession") }
+  }
+
+  // Écouter aussi Firebase Auth (pour anciens comptes)
+  onAuthStateChanged(clientAuth, (user) => {
+    // Ne pas écraser la session Firestore déjà établie
+    if (!svCurrentUser.value && user) {
+      svCurrentUser.value = {
+        uid:         user.uid,
+        email:       user.email,
+        displayName: user.displayName || "",
+        role:        "customer",
+      }
+    }
+  })
 })
 
 // ── Fonctions Auth client du store ───────────────────────────
 const svLogin = async () => {
-  svAuthError.value = ""; svAuthSuccess.value = ""
-  if (!svEmail.value || !svPassword.value) { svAuthError.value = "Email et mot de passe requis."; return }
+  svAuthError.value   = ""
+  svAuthSuccess.value = ""
+  if (!svEmail.value || !svPassword.value) {
+    svAuthError.value = "Email et mot de passe requis."; return
+  }
   svAuthLoading.value = true
   try {
-    const { signInWithEmailAndPassword } = await import("firebase/auth")
-    await signInWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
-    svShowAuth.value = false
-    svEmail.value = ""; svPassword.value = ""
+    const email = svEmail.value.trim().toLowerCase()
+
+    // ── Tentative 1 : chercher dans customers/ (compte store Firestore) ──
+    const q = await getDocs(
+      query(collection(db, "customers"), where("email", "==", email))
+    )
+
+    if (!q.empty) {
+      const customerDoc  = q.docs[0]
+      const customerData = customerDoc.data()
+
+      // Vérifier le mot de passe (hash SHA-256)
+      if (customerData.passwordHash) {
+        const inputHash = await svHashPassword(svPassword.value)
+        if (inputHash !== customerData.passwordHash) {
+          svAuthError.value = "Mot de passe incorrect."
+          return
+        }
+      }
+
+      // ✅ Connexion réussie — stocker la session localement
+      const clientSession = {
+        uid:         customerData.uid || customerDoc.id,
+        email:       customerData.email,
+        displayName: customerData.displayName || "",
+        storeUid:    customerData.storeUid    || resolvedUid.value,
+        role:        "customer",
+        loggedAt:    new Date().toISOString(),
+      }
+      sessionStorage.setItem("svClientSession", JSON.stringify(clientSession))
+      svCurrentUser.value = clientSession
+
+      svShowAuth.value = false
+      svEmail.value    = ""
+      svPassword.value = ""
+      return
+    }
+
+    // ── Tentative 2 : fallback Firebase Auth (anciens comptes) ──
+    // Ces anciens clients ont un compte Auth — on les connecte
+    // mais ils ne verront pas le builder car isOwner = false
+    try {
+      const { signInWithEmailAndPassword } = await import("firebase/auth")
+      const cred = await signInWithEmailAndPassword(clientAuth, email, svPassword.value)
+      // Vérifier que ce n'est pas un propriétaire (pas de doc users/)
+      const userSnap = await getDoc(doc(db, "users", cred.user.uid))
+      if (userSnap.exists() && userSnap.data().role === "owner") {
+        // C'est un propriétaire → déconnecter et refuser
+        await signOut(clientAuth)
+        svAuthError.value = "Veuillez vous connecter depuis l'espace propriétaire."
+        return
+      }
+      // Client avec compte Auth : créer session locale
+      const clientSession = {
+        uid:         cred.user.uid,
+        email:       cred.user.email,
+        displayName: cred.user.displayName || "",
+        storeUid:    resolvedUid.value,
+        role:        "customer",
+        loggedAt:    new Date().toISOString(),
+      }
+      sessionStorage.setItem("svClientSession", JSON.stringify(clientSession))
+      svCurrentUser.value = clientSession
+      svShowAuth.value    = false
+      svEmail.value       = ""
+      svPassword.value    = ""
+    } catch(authErr) {
+      svAuthError.value = "Email ou mot de passe incorrect."
+    }
+
   } catch(e) {
-    const m = { "auth/user-not-found":"Email inconnu.","auth/wrong-password":"Mot de passe incorrect.",
-      "auth/invalid-email":"Email invalide.","auth/too-many-requests":"Trop de tentatives.",
-      "auth/invalid-credential":"Email ou mot de passe incorrect." }
-    svAuthError.value = m[e.code] || e.message
-  } finally { svAuthLoading.value = false }
+    svAuthError.value = "Erreur de connexion : " + e.message
+    console.error("svLogin:", e)
+  } finally {
+    svAuthLoading.value = false
+  }
 }
 
+// Hash simple du mot de passe côté client (pour stockage Firestore)
+// NB : pas de Firebase Auth — les clients du store ne peuvent pas se connecter au builder
+const svHashPassword = async (password) => {
+  const encoder = new TextEncoder()
+  const data     = encoder.encode(password)
+  const hash     = await crypto.subtle.digest("SHA-256", data)
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,"0")).join("")
+}
+
+// Générer un ID unique pour le client (sans Firebase Auth)
+const svGenerateId = () =>
+  Date.now().toString(36) + Math.random().toString(36).slice(2, 9)
+
 const svRegister = async () => {
-  svAuthError.value = ""; svAuthSuccess.value = ""
-  if (!svName.value.trim())      { svAuthError.value = "Nom requis."; return }
-  if (!svEmail.value.trim())     { svAuthError.value = "Email requis."; return }
-  if (svPassword.value.length<6) { svAuthError.value = "Mot de passe : min. 6 caractères."; return }
-  if (svPassword.value !== svConfirm.value) { svAuthError.value = "Mots de passe différents."; return }
+  svAuthError.value   = ""
+  svAuthSuccess.value = ""
+
+  // Validations
+  if (!svName.value.trim())       { svAuthError.value = "Nom requis."; return }
+  if (!svEmail.value.trim())      { svAuthError.value = "Email requis."; return }
+  if (svPassword.value.length < 6){ svAuthError.value = "Mot de passe : min. 6 caractères."; return }
+  if (svPassword.value !== svConfirm.value) {
+    svAuthError.value = "Les mots de passe ne correspondent pas."; return
+  }
+
   svAuthLoading.value = true
   try {
-    const { createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth")
-    const { doc: fd, setDoc: fset } = await import("firebase/firestore")
-    const cred = await createUserWithEmailAndPassword(clientAuth, svEmail.value.trim(), svPassword.value)
-    await updateProfile(cred.user, { displayName: svName.value.trim() })
-    // Enregistrer dans customers lié au store
-    await fset(fd(db, "customers", cred.user.uid), {
-      uid: cred.user.uid, email: svEmail.value.trim().toLowerCase(),
-      displayName: svName.value.trim(), storeUid: resolvedUid.value,
-      role: "customer", createdAt: new Date().toISOString(),
-    }, { merge: true })
-    svAuthSuccess.value = "Compte créé ! Bienvenue 🎉"
-    setTimeout(() => { svShowAuth.value = false; svEmail.value=""; svPassword.value=""; svConfirm.value=""; svName.value="" }, 1400)
+    const email = svEmail.value.trim().toLowerCase()
+
+    // Vérifier si email déjà utilisé dans customers
+    const existingQ = await getDocs(
+      query(collection(db, "customers"), where("email", "==", email))
+    )
+    if (!existingQ.empty) {
+      svAuthError.value = "Un compte existe déjà avec cet email."
+      return
+    }
+
+    // Hasher le mot de passe (SHA-256, pas de compte Firebase Auth)
+    const passwordHash = await svHashPassword(svPassword.value)
+
+    // Générer un UID client unique
+    const clientUid = svGenerateId()
+
+    // Enregistrer dans customers/ UNIQUEMENT (pas dans users/, pas dans Firebase Auth)
+    await setDoc(doc(db, "customers", clientUid), {
+      uid:          clientUid,
+      email,
+      displayName:  svName.value.trim(),
+      passwordHash,                      // hash SHA-256 pour login Firestore
+      storeUid:     resolvedUid.value,   // lié au store
+      role:         "customer",
+      createdAt:    new Date().toISOString(),
+      authMethod:   "firestore",         // distingue des comptes Firebase Auth
+    })
+
+    // Connecter le client localement (stocker en sessionStorage)
+    const clientSession = {
+      uid:         clientUid,
+      email,
+      displayName: svName.value.trim(),
+      storeUid:    resolvedUid.value,
+      role:        "customer",
+      loggedAt:    new Date().toISOString(),
+    }
+    sessionStorage.setItem("svClientSession", JSON.stringify(clientSession))
+    svCurrentUser.value = clientSession
+
+    svAuthSuccess.value = "Compte créé avec succès ! Bienvenue 🎉"
+    setTimeout(() => {
+      svShowAuth.value  = false
+      svEmail.value     = ""
+      svPassword.value  = ""
+      svConfirm.value   = ""
+      svName.value      = ""
+    }, 1400)
+
   } catch(e) {
-    const m = { "auth/email-already-in-use":"Email déjà utilisé.","auth/weak-password":"Mot de passe trop faible." }
-    svAuthError.value = m[e.code] || e.message
-  } finally { svAuthLoading.value = false }
+    svAuthError.value = "Erreur : " + e.message
+    console.error("svRegister:", e)
+  } finally {
+    svAuthLoading.value = false
+  }
 }
 
 const svForgot = async () => {
@@ -344,7 +491,11 @@ const svForgot = async () => {
 }
 
 const svSignOut = async () => {
-  await signOut(clientAuth)
+  // Déconnecter Firebase Auth si connecté
+  try { await signOut(clientAuth) } catch(e) {}
+  // Effacer la session Firestore locale
+  sessionStorage.removeItem("svClientSession")
+  svCurrentUser.value  = null
   svShowProfile.value  = false
   svClientOrders.value = []
   svOrdersLoaded.value = false

@@ -522,46 +522,71 @@ const svLoadOrders = async (user) => {
   svOrdersLoaded.value  = false
   const results = []
 
-  const dedup = (d) => {
-    if (!results.find(r => r.id === d.id)) results.push({ id: d.id, ...d.data() })
+  // Dédoublonner par id
+  const dedup = (id, data) => {
+    if (!results.find(r => r.id === id)) results.push({ id, ...data })
   }
 
   try {
-    const { query: q, where, getDocs: gd, collection: col } = await import("firebase/firestore")
-    const uid   = user.uid
-    const email = (user.email || "").toLowerCase()
+    const { query: q, where, getDocs: gd, collection: col, getDoc: gDoc, doc: fdoc } =
+      await import("firebase/firestore")
 
-    // ── Source 1 : orders par clientId ────────────────────────
-    // (PAS de orderBy → pas besoin d'index composite)
-    try {
-      const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
-      s1.docs.forEach(dedup)
-      console.log(`[profil] orders/clientId: ${s1.docs.length} résultats`)
-    } catch(e) { console.error("[profil] orders/clientId ERREUR:", e.message) }
+    const uid   = user.uid   || ""
+    let   email = (user.email || "").toLowerCase()
+
+    // ── Récupérer l'email depuis customers/ si manquant ────────
+    // (les clients Firestore peuvent avoir email dans customers mais pas dans user.email)
+    if (!email && uid) {
+      try {
+        // Chercher directement par uid (document ID)
+        const custDoc = await gDoc(fdoc(db, "customers", uid))
+        if (custDoc.exists()) {
+          email = (custDoc.data().email || "").toLowerCase()
+          console.log(`[profil] Email récupéré depuis customers: ${email}`)
+        } else {
+          // Chercher par champ uid dans customers
+          const cq = await gd(q(col(db, "customers"), where("uid", "==", uid)))
+          if (!cq.empty) email = (cq.docs[0].data().email || "").toLowerCase()
+        }
+      } catch(e) { console.warn("[profil] customers lookup:", e.message) }
+    }
+
+    console.log(`[profil] Recherche commandes — uid: ${uid} | email: ${email}`)
+
+    // ── Source 1 : orders par clientId == uid ─────────────────
+    if (uid) {
+      try {
+        const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
+        s1.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] orders/clientId: ${s1.docs.length}`)
+      } catch(e) { console.error("[profil] orders/clientId:", e.message) }
+    }
 
     // ── Source 2 : orders par customerEmail ───────────────────
     if (email) {
       try {
         const s2 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
-        s2.docs.forEach(dedup)
-        console.log(`[profil] orders/customerEmail: ${s2.docs.length} résultats`)
-      } catch(e) { console.error("[profil] orders/customerEmail ERREUR:", e.message) }
+        s2.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] orders/email: ${s2.docs.length}`)
+      } catch(e) { console.error("[profil] orders/email:", e.message) }
     }
 
     // ── Source 3 : cmdclients par clientUid ───────────────────
-    try {
-      const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
-      s3.docs.forEach(dedup)
-      console.log(`[profil] cmdclients/clientUid: ${s3.docs.length} résultats`)
-    } catch(e) { console.error("[profil] cmdclients/clientUid ERREUR:", e.message) }
+    if (uid) {
+      try {
+        const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
+        s3.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] cmdclients/uid: ${s3.docs.length}`)
+      } catch(e) { console.error("[profil] cmdclients/uid:", e.message) }
+    }
 
     // ── Source 4 : cmdclients par clientEmail ─────────────────
     if (email) {
       try {
         const s4 = await gd(q(col(db, "cmdclients"), where("clientEmail", "==", email)))
-        s4.docs.forEach(dedup)
-        console.log(`[profil] cmdclients/clientEmail: ${s4.docs.length} résultats`)
-      } catch(e) { console.error("[profil] cmdclients/clientEmail ERREUR:", e.message) }
+        s4.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] cmdclients/email: ${s4.docs.length}`)
+      } catch(e) { console.error("[profil] cmdclients/email:", e.message) }
     }
 
     // ── Source 5 : users/{storeUid}/orders par customerEmail ──
@@ -570,16 +595,25 @@ const svLoadOrders = async (user) => {
         const s5 = await gd(q(
           col(db, "users", resolvedUid.value, "orders"),
           where("customerEmail", "==", email)))
-        s5.docs.forEach(dedup)
-        console.log(`[profil] store/orders: ${s5.docs.length} résultats`)
-      } catch(e) { console.error("[profil] store/orders ERREUR:", e.message) }
+        s5.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] store/orders: ${s5.docs.length}`)
+      } catch(e) { console.error("[profil] store/orders:", e.message) }
     }
 
-    // Trier côté client par date décroissante
+    // ── Source 6 : orders par email (champ email simple) ──────
+    if (email) {
+      try {
+        const s6 = await gd(q(col(db, "orders"), where("email", "==", email)))
+        s6.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] orders/email-simple: ${s6.docs.length}`)
+      } catch(e) { console.error("[profil] orders/email-simple:", e.message) }
+    }
+
+    // Trier par date décroissante (côté client, pas d'index requis)
     results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
     svClientOrders.value = results
     svOrdersLoaded.value = true
-    console.log(`[profil] Total commandes chargées: ${results.length}`)
+    console.log(`[profil] ✅ Total: ${results.length} commandes`)
 
   } catch(e) { console.error("[profil] svLoadOrders ERREUR:", e.message) }
   finally { svLoadingOrders.value = false }
@@ -1477,7 +1511,7 @@ const saveOrder = async (provider, transactionId) => {
 .sv-divider hr{border:none;border-top:1px solid #e5e7eb;margin:8px 60px}
 
 /* MODALS */
-.sv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px}
+.sv-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:flex-start;justify-content:center;padding:16px 20px;overflow-y:auto}
 .sv-modal-box{background:white;border-radius:16px;padding:32px;position:relative;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.18)}
 .sv-modal-close{position:absolute;top:16px;right:16px;background:#f3f4f6;border:none;color:#6b7280;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
 .sv-modal-header{text-align:center;margin-bottom:20px}
@@ -1612,7 +1646,7 @@ const saveOrder = async (provider, transactionId) => {
 .sv-profile-arrow{font-size:11px;color:#9ca3af;margin-left:2px}
 
 /* ── Modal profil ───────────────────────────────────────── */
-.sv-profile-overlay .sv-modal-box{padding:0;max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
+.sv-profile-overlay .sv-modal-box{padding:0;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;margin-top:0}
 .sv-profile-box{max-width:440px}
 
 /* Header avatar */
@@ -1643,7 +1677,7 @@ const saveOrder = async (provider, transactionId) => {
 .svp-orders-empty span{font-size:36px}
 .svp-shop-btn{background:#6c63ff;color:white;border:none;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s;margin-top:4px}
 .svp-shop-btn:hover{background:#5b52ee}
-.svp-orders-list{overflow-y:auto;flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:8px;max-height:320px}
+.svp-orders-list{overflow-y:auto;flex:1;padding:8px 12px;display:flex;flex-direction:column;gap:8px;max-height:400px}
 
 /* Carte commande */
 .svp-order-card{background:white;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;transition:border-color .15s}

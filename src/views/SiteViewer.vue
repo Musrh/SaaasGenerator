@@ -522,7 +522,7 @@ const svLoadOrders = async (user) => {
   svOrdersLoaded.value  = false
   const results = []
 
-  // Dédoublonner par id
+  // Dédoublonner par id de document Firestore
   const dedup = (id, data) => {
     if (!results.find(r => r.id === id)) results.push({ id, ...data })
   }
@@ -534,50 +534,59 @@ const svLoadOrders = async (user) => {
     const uid   = user.uid   || ""
     let   email = (user.email || "").toLowerCase()
 
-    // ── Récupérer l'email depuis customers/ si manquant ────────
-    // (les clients Firestore peuvent avoir email dans customers mais pas dans user.email)
+    // ── Étape 0 : retrouver l'email depuis customers/ ─────────
+    // IMPORTANT : svCurrentUser.email est stocké à l'inscription
+    // mais si manquant, on le récupère depuis Firestore
     if (!email && uid) {
       try {
-        // Chercher directement par uid (document ID)
         const custDoc = await gDoc(fdoc(db, "customers", uid))
         if (custDoc.exists()) {
           email = (custDoc.data().email || "").toLowerCase()
-          console.log(`[profil] Email récupéré depuis customers: ${email}`)
         } else {
-          // Chercher par champ uid dans customers
           const cq = await gd(q(col(db, "customers"), where("uid", "==", uid)))
           if (!cq.empty) email = (cq.docs[0].data().email || "").toLowerCase()
         }
+        console.log("[profil] email depuis customers:", email)
       } catch(e) { console.warn("[profil] customers lookup:", e.message) }
     }
 
-    console.log(`[profil] Recherche commandes — uid: ${uid} | email: ${email}`)
+    console.log(`[profil] uid=${uid} | email=${email} | storeUid=${resolvedUid.value}`)
 
-    // ── Source 1 : orders par clientId == uid ─────────────────
-    if (uid) {
-      try {
-        const s1 = await gd(q(col(db, "orders"), where("clientId", "==", uid)))
-        s1.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] orders/clientId: ${s1.docs.length}`)
-      } catch(e) { console.error("[profil] orders/clientId:", e.message) }
-    }
+    // ══════════════════════════════════════════════════════════
+    // DONNÉES FIRESTORE OBSERVÉES :
+    // orders.customerEmail = email client ← CHAMP PRINCIPAL
+    // orders.clientUid     = uid client Firestore ← CHAMP SECONDAIRE
+    // orders.clientId      = UID du STORE (pas du client !)
+    // orders.ownerUid      = UID du store
+    // ══════════════════════════════════════════════════════════
 
-    // ── Source 2 : orders par customerEmail ───────────────────
+    // ── Source 1 : orders par customerEmail (PRINCIPALE) ─────
     if (email) {
       try {
-        const s2 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
-        s2.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] orders/email: ${s2.docs.length}`)
-      } catch(e) { console.error("[profil] orders/email:", e.message) }
+        const s1 = await gd(q(col(db, "orders"), where("customerEmail", "==", email)))
+        s1.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] ✅ orders/customerEmail: ${s1.docs.length}`)
+      } catch(e) { console.error("[profil] orders/customerEmail:", e.message) }
     }
 
-    // ── Source 3 : cmdclients par clientUid ───────────────────
+    // ── Source 2 : orders par clientUid (UID client Firestore) ─
     if (uid) {
       try {
-        const s3 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
+        const s2 = await gd(q(col(db, "orders"), where("clientUid", "==", uid)))
+        s2.docs.forEach(d => dedup(d.id, d.data()))
+        console.log(`[profil] ✅ orders/clientUid: ${s2.docs.length}`)
+      } catch(e) { console.error("[profil] orders/clientUid:", e.message) }
+    }
+
+    // ── Source 3 : users/{storeUid}/orders par customerEmail ──
+    if (resolvedUid.value && email) {
+      try {
+        const s3 = await gd(q(
+          col(db, "users", resolvedUid.value, "orders"),
+          where("customerEmail", "==", email)))
         s3.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] cmdclients/uid: ${s3.docs.length}`)
-      } catch(e) { console.error("[profil] cmdclients/uid:", e.message) }
+        console.log(`[profil] ✅ store/orders/customerEmail: ${s3.docs.length}`)
+      } catch(e) { console.error("[profil] store/orders:", e.message) }
     }
 
     // ── Source 4 : cmdclients par clientEmail ─────────────────
@@ -585,35 +594,33 @@ const svLoadOrders = async (user) => {
       try {
         const s4 = await gd(q(col(db, "cmdclients"), where("clientEmail", "==", email)))
         s4.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] cmdclients/email: ${s4.docs.length}`)
+        console.log(`[profil] ✅ cmdclients/email: ${s4.docs.length}`)
       } catch(e) { console.error("[profil] cmdclients/email:", e.message) }
     }
 
-    // ── Source 5 : users/{storeUid}/orders par customerEmail ──
-    if (resolvedUid.value && email) {
+    // ── Source 5 : cmdclients par clientUid ───────────────────
+    if (uid) {
       try {
-        const s5 = await gd(q(
-          col(db, "users", resolvedUid.value, "orders"),
-          where("customerEmail", "==", email)))
+        const s5 = await gd(q(col(db, "cmdclients"), where("clientUid", "==", uid)))
         s5.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] store/orders: ${s5.docs.length}`)
-      } catch(e) { console.error("[profil] store/orders:", e.message) }
+        console.log(`[profil] ✅ cmdclients/uid: ${s5.docs.length}`)
+      } catch(e) { console.error("[profil] cmdclients/uid:", e.message) }
     }
 
-    // ── Source 6 : orders par email (champ email simple) ──────
+    // ── Source 6 : orders par email simple ────────────────────
     if (email) {
       try {
         const s6 = await gd(q(col(db, "orders"), where("email", "==", email)))
         s6.docs.forEach(d => dedup(d.id, d.data()))
-        console.log(`[profil] orders/email-simple: ${s6.docs.length}`)
-      } catch(e) { console.error("[profil] orders/email-simple:", e.message) }
+        console.log(`[profil] ✅ orders/email: ${s6.docs.length}`)
+      } catch(e) { console.error("[profil] orders/email:", e.message) }
     }
 
-    // Trier par date décroissante (côté client, pas d'index requis)
+    // Trier par date décroissante
     results.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
     svClientOrders.value = results
     svOrdersLoaded.value = true
-    console.log(`[profil] ✅ Total: ${results.length} commandes`)
+    console.log(`[profil] ✅ Total: ${results.length} commandes trouvées`)
 
   } catch(e) { console.error("[profil] svLoadOrders ERREUR:", e.message) }
   finally { svLoadingOrders.value = false }
@@ -622,8 +629,25 @@ const svLoadOrders = async (user) => {
 // Ouvrir le profil + recharger les commandes à chaque ouverture
 const svOpenProfile = async () => {
   svShowProfile.value  = true
-  svOrdersLoaded.value = false   // forcer rechargement
-  if (svCurrentUser.value) await svLoadOrders(svCurrentUser.value)
+  svOrdersLoaded.value = false
+
+  // S'assurer d'avoir l'objet user avec email
+  let userForOrders = svCurrentUser.value
+  if (!userForOrders) {
+    // Tenter de restaurer depuis sessionStorage
+    const saved = sessionStorage.getItem("svClientSession")
+    if (saved) {
+      try { userForOrders = JSON.parse(saved) } catch(e) {}
+    }
+  }
+
+  if (userForOrders) {
+    // Log pour debug
+    console.log("[profil] Ouverture profil — user:", userForOrders.email, "| uid:", userForOrders.uid)
+    await svLoadOrders(userForOrders)
+  } else {
+    console.warn("[profil] svOpenProfile : aucun user connecté")
+  }
 }
 
 // ── Stripe Checkout (redirect) ───────────────────────────────
